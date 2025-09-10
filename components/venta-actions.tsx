@@ -17,13 +17,24 @@ import { MoreHorizontal, Edit, Trash2, ExternalLink } from "lucide-react"
 import { deleteVenta } from "@/lib/actions/ventas"
 import { useRouter } from "next/navigation"
 import { toast } from "@/hooks/use-toast"
+import { EditarVentaModal } from "./editar-venta-modal"
 
 interface VentaActionsProps {
   venta: {
     id: string
-    saleCode: string
+    fecha: Date
     comprador: string
+    plataforma: string
+    metodoPago: string
+    condicion: string
+    productoId: string
+    pvBruto: number
+    cargoEnvioCosto: number
     trackingUrl?: string | null
+    estadoEnvio: string
+    courier?: string | null
+    externalOrderId?: string | null
+    saleCode?: string
   }
 }
 
@@ -69,10 +80,12 @@ export function VentaActions({ venta }: VentaActionsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => router.push(`/ventas/${venta.id}/editar`)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar
-          </DropdownMenuItem>
+          <EditarVentaModal venta={venta}>
+            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+              <Edit className="mr-2 h-4 w-4" />
+              Editar
+            </DropdownMenuItem>
+          </EditarVentaModal>
           {venta.trackingUrl && (
             <DropdownMenuItem onClick={() => window.open(venta.trackingUrl!, "_blank")}>
               <ExternalLink className="mr-2 h-4 w-4" />
@@ -91,7 +104,7 @@ export function VentaActions({ venta }: VentaActionsProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la venta <strong>{venta.saleCode}</strong>{" "}
+              Esta acción no se puede deshacer. Se eliminará permanentemente la venta <strong>{venta.saleCode || venta.id}</strong>{" "}
               de <strong>{venta.comprador}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>

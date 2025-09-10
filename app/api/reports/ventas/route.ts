@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { supabase } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,13 +21,20 @@ export async function GET(request: NextRequest) {
       whereClause.plataforma = plataforma
     }
 
-    const ventas = await prisma.venta.findMany({
-      where: whereClause,
-      include: {
-        producto: true,
-      },
-      orderBy: { fecha: "desc" },
-    })
+    let query = supabase
+      .from("venta")
+      .select("*, producto(*)")
+      .order("fecha", { ascending: false });
+
+    if (whereClause.fecha) {
+      query = query.gte("fecha", (whereClause.fecha.gte as Date).toISOString())
+                   .lte("fecha", (whereClause.fecha.lte as Date).toISOString());
+    }
+    if (whereClause.plataforma) {
+      query = query.eq("plataforma", whereClause.plataforma);
+    }
+    const { data: ventas, error } = await query;
+    if (error) throw error;
 
     // Calcular totales
     const totales = ventas.reduce(

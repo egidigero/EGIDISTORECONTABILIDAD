@@ -14,8 +14,8 @@ export default function NuevaVentaPage() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <VentaForm />
+        <div className="max-w-6xl mx-auto">
+          <VentaForm key="nueva-venta-form" />
         </div>
       </main>
     </div>

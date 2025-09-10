@@ -1,17 +1,24 @@
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { LiquidacionForm } from "@/components/liquidacion-form"
-import { getLiquidacionById } from "@/lib/actions/liquidaciones"
+import { getLiquidacion, updateLiquidacion } from "@/lib/actions/liquidaciones"
+import type { LiquidacionFormData } from "@/lib/validations"
 
 interface EditarLiquidacionPageProps {
   params: { id: string }
 }
 
 export default async function EditarLiquidacionPage({ params }: EditarLiquidacionPageProps) {
-  const liquidacion = await getLiquidacionById(params.id)
+  const liquidacion = await getLiquidacion(params.id)
 
   if (!liquidacion) {
     notFound()
+  }
+
+  const handleSubmit = async (data: LiquidacionFormData) => {
+    "use server"
+    await updateLiquidacion(params.id, data)
+    redirect("/liquidaciones")
   }
 
   return (
@@ -26,7 +33,11 @@ export default async function EditarLiquidacionPage({ params }: EditarLiquidacio
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <LiquidacionForm liquidacion={liquidacion} />
+        <LiquidacionForm 
+          defaultValues={liquidacion}
+          onSubmit={handleSubmit}
+          mode="edit"
+        />
       </main>
     </div>
   )

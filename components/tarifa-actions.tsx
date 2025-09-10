@@ -15,21 +15,28 @@ import {
 } from "@/components/ui/alert-dialog"
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
 import { deleteTarifa } from "@/lib/actions/tarifas"
-import { useRouter } from "next/navigation"
 import { toast } from "@/hooks/use-toast"
+import { EditTarifaModal } from "@/components/edit-tarifa-modal"
 
 interface TarifaActionsProps {
   tarifa: {
     id: string
     plataforma: string
     metodoPago: string
+    condicion?: string
+    comisionPct: number
+    comisionExtraPct?: number
+    iibbPct?: number
+    fijoPorOperacion?: number
+    descuentoPct?: number
   }
+  onUpdated?: () => void
 }
 
-export function TarifaActions({ tarifa }: TarifaActionsProps) {
+export function TarifaActions({ tarifa, onUpdated }: TarifaActionsProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const router = useRouter()
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -68,7 +75,7 @@ export function TarifaActions({ tarifa }: TarifaActionsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => router.push(`/tarifas/${tarifa.id}/editar`)}>
+          <DropdownMenuItem onClick={() => setShowEditModal(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Editar
           </DropdownMenuItem>
@@ -103,6 +110,13 @@ export function TarifaActions({ tarifa }: TarifaActionsProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <EditTarifaModal
+        open={showEditModal}
+        onOpenChange={setShowEditModal}
+        tarifa={tarifa}
+        onUpdated={onUpdated}
+      />
     </>
   )
 }

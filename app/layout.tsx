@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: "EGIDI Store - Sistema de Gestión",
   description: "Sistema de gestión contable y control para EGIDI Store",
   generator: "v0.app",
+  charset: "utf-8",
 }
 
 export default function RootLayout({
@@ -18,7 +19,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
+      <head>
+        <meta charSet="utf-8" />
+      </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <Suspense fallback={null}>{children}</Suspense>
         <Analytics />

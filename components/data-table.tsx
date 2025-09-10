@@ -40,9 +40,13 @@ export function DataTable<T extends Record<string, any>>({
   const [searchQuery, setSearchQuery] = useState("")
 
   const filteredData = searchQuery
-    ? data.filter((item) =>
-        Object.values(item).some((value) => String(value).toLowerCase().includes(searchQuery.toLowerCase())),
-      )
+    ? data.filter((item) => {
+        const queryWords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+        return Object.values(item).some((value) => {
+          const val = String(value).toLowerCase();
+          return queryWords.every(word => val.includes(word));
+        });
+      })
     : data
 
   const totalPages = Math.ceil(filteredData.length / pageSize)

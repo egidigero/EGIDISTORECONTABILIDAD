@@ -5,12 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Plus, Receipt } from "lucide-react"
 import { GastosIngresosTable } from "@/components/gastos-ingresos-table"
 import { GastosIngresosFilters } from "@/components/gastos-ingresos-filters"
+import { NewGastoIngresoModal } from "@/components/new-gasto-ingreso-modal"
 
-export default function GastosPage({
+export default async function GastosPage({
   searchParams,
 }: {
-  searchParams: { [key: string]: string | string[] | undefined }
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
+  const resolvedSearchParams = await searchParams
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
@@ -22,12 +24,12 @@ export default function GastosPage({
               </Link>
               <h1 className="text-2xl font-bold text-foreground mt-1">Gastos e Ingresos</h1>
             </div>
-            <Button asChild>
-              <Link href="/gastos/nuevo">
+            <NewGastoIngresoModal>
+              <Button>
                 <Plus className="h-4 w-4 mr-2" />
                 Nuevo Movimiento
-              </Link>
-            </Button>
+              </Button>
+            </NewGastoIngresoModal>
           </div>
         </div>
       </header>
@@ -50,7 +52,7 @@ export default function GastosPage({
               </Suspense>
 
               <Suspense fallback={<div>Cargando movimientos...</div>}>
-                <GastosIngresosTable searchParams={searchParams} />
+                <GastosIngresosTable searchParams={resolvedSearchParams} />
               </Suspense>
             </CardContent>
           </Card>

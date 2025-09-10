@@ -1,9 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { calcularEERR, getDetalleVentas, getDetalleGastosIngresos, getResumenPorPeriodo } from "@/lib/actions/eerr"
-import { DataTable } from "@/components/data-table"
-import { EstadoEnvioBadge } from "@/components/estado-envio-badge"
+import { calcularEERR, getResumenPorPeriodo } from "@/lib/actions/eerr"
+import { getDetalleVentas } from "@/lib/actions/getDetalleVentas"
+import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos"
+import { EERRVentasTable } from "@/components/eerr-ventas-table"
+import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
 import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Receipt } from "lucide-react"
 import type { Plataforma } from "@/lib/types"
 
@@ -18,13 +20,9 @@ const canalLabels = {
   General: "General",
 }
 
-const tipoLabels = {
-  Gasto: "Gasto",
-  OtroIngreso: "Otro Ingreso",
-}
-
-export async function EERRReport({ searchParams }: EERRReportProps) {
+export async function EERRReport({ searchParams: searchParamsPromise }: EERRReportProps) {
   // Parsear parámetros
+  const searchParams = await searchParamsPromise
   const fechaDesde = searchParams.fechaDesde
     ? new Date(searchParams.fechaDesde as string)
     : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -40,97 +38,6 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
     getDetalleGastosIngresos(fechaDesde, fechaHasta, canal),
   ])
 
-  // Columnas para tabla de ventas
-  const ventasColumns = [
-    {
-      key: "fecha",
-      header: "Fecha",
-      render: (venta: any) => new Date(venta.fecha).toLocaleDateString(),
-    },
-    {
-      key: "saleCode",
-      header: "Código",
-      render: (venta: any) => <code className="text-xs bg-muted px-2 py-1 rounded">{venta.saleCode}</code>,
-    },
-    {
-      key: "comprador",
-      header: "Comprador",
-    },
-    {
-      key: "producto",
-      header: "Producto",
-      render: (venta: any) => venta.producto.modelo,
-    },
-    {
-      key: "pvBruto",
-      header: "PV Bruto",
-      render: (venta: any) => `$${Number(venta.pvBruto).toLocaleString()}`,
-    },
-    {
-      key: "precioNeto",
-      header: "Precio Neto",
-      render: (venta: any) => `$${Number(venta.precioNeto).toLocaleString()}`,
-    },
-    {
-      key: "ingresoMargen",
-      header: "Margen",
-      render: (venta: any) => {
-        const margen = Number(venta.ingresoMargen)
-        return <span className={margen >= 0 ? "text-green-600" : "text-red-600"}>${margen.toLocaleString()}</span>
-      },
-    },
-    {
-      key: "estadoEnvio",
-      header: "Estado",
-      render: (venta: any) => <EstadoEnvioBadge estado={venta.estadoEnvio} />,
-    },
-  ]
-
-  // Columnas para tabla de gastos e ingresos
-  const gastosIngresosColumns = [
-    {
-      key: "fecha",
-      header: "Fecha",
-      render: (item: any) => new Date(item.fecha).toLocaleDateString(),
-    },
-    {
-      key: "tipo",
-      header: "Tipo",
-      render: (item: any) => (
-        <Badge variant={item.tipo === "Gasto" ? "destructive" : "default"}>
-          {tipoLabels[item.tipo as keyof typeof tipoLabels]}
-        </Badge>
-      ),
-    },
-    {
-      key: "canal",
-      header: "Canal",
-      render: (item: any) => (
-        <Badge variant="outline">{item.canal ? canalLabels[item.canal as keyof typeof canalLabels] : "General"}</Badge>
-      ),
-    },
-    {
-      key: "categoria",
-      header: "Categoría",
-    },
-    {
-      key: "descripcion",
-      header: "Descripción",
-    },
-    {
-      key: "montoARS",
-      header: "Monto",
-      render: (item: any) => {
-        const monto = Number(item.montoARS)
-        return (
-          <span className={item.tipo === "Gasto" ? "text-red-600" : "text-green-600"}>
-            {item.tipo === "Gasto" ? "-" : "+"}${monto.toLocaleString()}
-          </span>
-        )
-      },
-    },
-  ]
-
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`
   const formatPercentage = (current: number, previous: number) => {
     if (previous === 0) return "N/A"
@@ -141,65 +48,89 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
   return (
     <div className="space-y-6">
       {/* Tarjetas de resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ventas Brutas</CardTitle>
+            <CardTitle className="text-sm font-medium">Ventas Totales</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(eerrData.ventasBrutas)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(eerrData.ventasTotales)}</div>
             <div className="flex items-center text-xs text-muted-foreground">
               {resumenPeriodo.variacion.ventasBrutas >= 0 ? (
                 <TrendingUp className="h-3 w-3 mr-1 text-green-600" />
               ) : (
                 <TrendingDown className="h-3 w-3 mr-1 text-red-600" />
               )}
-              {formatPercentage(eerrData.ventasBrutas, resumenPeriodo.anterior.ventasBrutas)} vs período anterior
+              {formatPercentage(eerrData.ventasTotales, resumenPeriodo.anterior.ventasBrutas)} vs período anterior
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Margen Bruto</CardTitle>
+            <CardTitle className="text-sm font-medium">Ventas Netas</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(eerrData.margenBruto)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(eerrData.ventasNetas)}</div>
             <div className="text-xs text-muted-foreground">
-              {eerrData.ventasBrutas > 0
-                ? `${((eerrData.margenBruto / eerrData.ventasBrutas) * 100).toFixed(1)}% de las ventas`
-                : "0% de las ventas"}
+              Descuentos: -{formatCurrency(eerrData.descuentos)}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gastos Totales</CardTitle>
+            <CardTitle className="text-sm font-medium">Resultado Bruto</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(eerrData.resultadoBruto)}</div>
+            <div className="text-xs text-muted-foreground">
+              Costo productos: -{formatCurrency(eerrData.costoProducto)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Costos Plataforma</CardTitle>
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              -{formatCurrency(eerrData.gastosCanal + eerrData.gastosGenerales)}
+              -{formatCurrency(eerrData.totalCostosPlataforma)}
             </div>
             <div className="text-xs text-muted-foreground">
-              Canal: {formatCurrency(eerrData.gastosCanal)} | General: {formatCurrency(eerrData.gastosGenerales)}
+              Comisiones Totales + Envíos + IIBB
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Resultado Operativo</CardTitle>
+            <CardTitle className="text-sm font-medium">ROAS</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{eerrData.roas.toFixed(2)}x</div>
+            <div className="text-xs text-muted-foreground">
+              Publicidad: {formatCurrency(eerrData.publicidad)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Margen Operativo</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div
-              className={`text-2xl font-bold ${eerrData.resultadoOperativo >= 0 ? "text-green-600" : "text-red-600"}`}
+              className={`text-2xl font-bold ${eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}`}
             >
-              {formatCurrency(eerrData.resultadoOperativo)}
+              {formatCurrency(eerrData.margenOperativo)}
             </div>
             <div className="flex items-center text-xs text-muted-foreground">
               {resumenPeriodo.variacion.resultadoOperativo >= 0 ? (
@@ -207,8 +138,7 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
               ) : (
                 <TrendingDown className="h-3 w-3 mr-1 text-red-600" />
               )}
-              {formatPercentage(eerrData.resultadoOperativo, resumenPeriodo.anterior.resultadoOperativo)} vs período
-              anterior
+              {formatPercentage(eerrData.margenOperativo, resumenPeriodo.anterior.resultadoOperativo)} vs período anterior
             </div>
           </CardContent>
         </Card>
@@ -224,55 +154,154 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="font-medium text-lg mb-2">Ingresos</div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Ventas Brutas:</span>
-                    <span className="font-medium">{formatCurrency(eerrData.ventasBrutas)}</span>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+              {/* Columna 1: Ingresos y Resultado Bruto */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-blue-700">📊 INGRESOS</h3>
+                  <div className="space-y-2 bg-blue-50 p-3 rounded">
+                    <div className="flex justify-between">
+                      <span>Ventas Totales:</span>
+                      <span className="font-medium">{formatCurrency(eerrData.ventasTotales)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Descuentos:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.descuentos)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-semibold">
+                      <span>= Ventas Netas:</span>
+                      <span>{formatCurrency(eerrData.ventasNetas)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Precio Neto:</span>
-                    <span className="font-medium">{formatCurrency(eerrData.precioNeto)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Otros Ingresos:</span>
-                    <span className="font-medium text-green-600">+{formatCurrency(eerrData.otrosIngresos)}</span>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-green-700">💰 RESULTADO BRUTO</h3>
+                  <div className="space-y-2 bg-green-50 p-3 rounded">
+                    <div className="flex justify-between">
+                      <span>Ventas Netas:</span>
+                      <span className="font-medium">{formatCurrency(eerrData.ventasNetas)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Costo Productos:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.costoProducto)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-semibold">
+                      <span>= Resultado Bruto:</span>
+                      <span>{formatCurrency(eerrData.resultadoBruto)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div>
-                <div className="font-medium text-lg mb-2">Costos y Gastos</div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Costo de Productos:</span>
-                    <span className="font-medium text-red-600">-{formatCurrency(eerrData.costoProducto)}</span>
+              {/* Columna 2: Costos y Resultado Final */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-orange-700">🏪 COSTOS DE PLATAFORMA</h3>
+                  <div className="space-y-2 bg-orange-50 p-3 rounded">
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Comisiones Base:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.comisionesBase)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600 ml-4">
+                      <span>• IVA:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.ivaComisiones)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600 ml-4">
+                      <span>• IIBB:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.iibbComisiones)}</span>
+                    </div>
+                    {eerrData.comisionesExtra > 0 && (
+                      <>
+                        <div className="flex justify-between text-red-600">
+                          <span>(-) Comisiones Extra:</span>
+                          <span className="font-medium">-{formatCurrency(eerrData.comisionesExtra)}</span>
+                        </div>
+                        <div className="flex justify-between text-red-600 ml-4">
+                          <span>• IVA:</span>
+                          <span className="font-medium">-{formatCurrency(eerrData.comisionesExtra * 0.21)}</span>
+                        </div>
+                        <div className="flex justify-between text-red-600 ml-4">
+                          <span>• IIBB:</span>
+                          <span className="font-medium">-{formatCurrency(eerrData.comisionesExtra * 0.03)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex justify-between text-red-600 border-t pt-2">
+                      <span>= Comisiones Totales:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.comisiones)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Envíos:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.envios)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-semibold text-red-600">
+                      <span>= Total Costos Plataforma:</span>
+                      <span>-{formatCurrency(eerrData.totalCostosPlataforma)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Costo de Envío:</span>
-                    <span className="font-medium text-red-600">-{formatCurrency(eerrData.costoEnvio)}</span>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-teal-700">💎 RESULTADO PARCIAL</h3>
+                  <div className="space-y-2 bg-teal-50 p-3 rounded">
+                    <div className="flex justify-between">
+                      <span>Resultado Bruto:</span>
+                      <span className="font-medium">{formatCurrency(eerrData.resultadoBruto)}</span>
+                    </div>
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Costos Plataforma:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.totalCostosPlataforma)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-semibold text-teal-700">
+                      <span>= Resultado Parcial:</span>
+                      <span>{formatCurrency(eerrData.resultadoBruto - eerrData.totalCostosPlataforma)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Gastos del Canal:</span>
-                    <span className="font-medium text-red-600">-{formatCurrency(eerrData.gastosCanal)}</span>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-purple-700">📈 PUBLICIDAD Y ROAS</h3>
+                  <div className="space-y-2 bg-purple-50 p-3 rounded">
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Publicidad (Meta ADS):</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.publicidad)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>ROAS:</span>
+                      <span className="font-bold text-purple-700">{eerrData.roas.toFixed(2)}x</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {eerrData.roas >= 3 ? "✅ ROAS excelente" : eerrData.roas >= 2 ? "⚠️ ROAS aceptable" : "🔴 ROAS bajo"}
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Gastos Generales:</span>
-                    <span className="font-medium text-red-600">-{formatCurrency(eerrData.gastosGenerales)}</span>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-lg mb-3 text-gray-700">💼 OTROS GASTOS</h3>
+                  <div className="space-y-2 bg-gray-50 p-3 rounded">
+                    <div className="flex justify-between text-red-600">
+                      <span>(-) Otros Gastos del Canal:</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.otrosGastos)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center text-lg font-bold">
-                <span>Resultado Operativo:</span>
-                <span className={eerrData.resultadoOperativo >= 0 ? "text-green-600" : "text-red-600"}>
-                  {formatCurrency(eerrData.resultadoOperativo)}
-                </span>
+            {/* Resultado Final */}
+            <div className="border-t-2 pt-4">
+              <div className="bg-slate-100 p-4 rounded-lg">
+                <div className="flex justify-between items-center text-xl font-bold">
+                  <span>💰 MARGEN OPERATIVO FINAL:</span>
+                  <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>
+                    {formatCurrency(eerrData.margenOperativo)}
+                  </span>
+                </div>
+                <div className="text-sm text-muted-foreground mt-2">
+                  Margen sobre ventas: {eerrData.ventasNetas > 0 ? `${((eerrData.margenOperativo / eerrData.ventasNetas) * 100).toFixed(2)}%` : "0%"}
+                </div>
               </div>
             </div>
           </div>
@@ -293,12 +322,7 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
               <CardDescription>Todas las ventas del período seleccionado</CardDescription>
             </CardHeader>
             <CardContent>
-              <DataTable
-                data={detalleVentas}
-                columns={ventasColumns}
-                searchable
-                searchPlaceholder="Buscar por comprador o código..."
-              />
+              <EERRVentasTable data={detalleVentas} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -310,12 +334,7 @@ export async function EERRReport({ searchParams }: EERRReportProps) {
               <CardDescription>Todos los movimientos del período seleccionado</CardDescription>
             </CardHeader>
             <CardContent>
-              <DataTable
-                data={detalleGastosIngresos}
-                columns={gastosIngresosColumns}
-                searchable
-                searchPlaceholder="Buscar por descripción o categoría..."
-              />
+              <EERRGastosIngresosTable data={detalleGastosIngresos} />
             </CardContent>
           </Card>
         </TabsContent>

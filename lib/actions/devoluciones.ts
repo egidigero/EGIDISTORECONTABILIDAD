@@ -1,23 +1,17 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { prisma } from "@/lib/prisma"
+import { supabase } from "@/lib/supabase"
 import { devolucionSchema, type DevolucionFormData } from "@/lib/validations"
 
 export async function getDevoluciones() {
   try {
-    const devoluciones = await prisma.devolucion.findMany({
-      include: {
-        venta: {
-          include: {
-            producto: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    })
-
-    return devoluciones
+    const { data, error } = await supabase
+      .from('devoluciones')
+      .select('*, ventas(*, productos(*))')
+      .order('createdAt', { ascending: false })
+    if (error) throw error
+    return data
   } catch (error) {
     console.error("Error al obtener devoluciones:", error)
     throw new Error("Error al obtener devoluciones")
@@ -28,19 +22,14 @@ export async function createDevolucion(data: DevolucionFormData) {
   try {
     const validatedData = devolucionSchema.parse(data)
 
-    const devolucion = await prisma.devolucion.create({
-      data: validatedData,
-      include: {
-        venta: {
-          include: {
-            producto: true,
-          },
-        },
-      },
-    })
-
+    const { data: created, error } = await supabase
+      .from('devoluciones')
+      .insert([validatedData])
+      .select('*, ventas(*, productos(*))')
+      .single()
+    if (error) throw error
     revalidatePath("/devoluciones")
-    return { success: true, data: devolucion }
+    return { success: true, data: created }
   } catch (error) {
     console.error("Error al crear devolución:", error)
     if (error instanceof Error) {
@@ -54,20 +43,15 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
   try {
     const validatedData = devolucionSchema.parse(data)
 
-    const devolucion = await prisma.devolucion.update({
-      where: { id },
-      data: validatedData,
-      include: {
-        venta: {
-          include: {
-            producto: true,
-          },
-        },
-      },
-    })
-
+    const { data: updated, error } = await supabase
+      .from('devoluciones')
+      .update(validatedData)
+      .eq('id', id)
+      .select('*, ventas(*, productos(*))')
+      .single()
+    if (error) throw error
     revalidatePath("/devoluciones")
-    return { success: true, data: devolucion }
+    return { success: true, data: updated }
   } catch (error) {
     console.error("Error al actualizar devolución:", error)
     if (error instanceof Error) {
@@ -79,12 +63,15 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
 
 export async function deleteDevolucion(id: string) {
   try {
-    await prisma.devolucion.delete({
-      where: { id },
-    })
-
+    const { data: deleted, error } = await supabase
+      .from('devoluciones')
+      .delete()
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
     revalidatePath("/devoluciones")
-    return { success: true }
+    return { success: true, data: deleted }
   } catch (error) {
     console.error("Error al eliminar devolución:", error)
     return { success: false, error: "Error al eliminar devolución" }
@@ -93,17 +80,13 @@ export async function deleteDevolucion(id: string) {
 
 export async function getDevolucionById(id: string) {
   try {
-    const devolucion = await prisma.devolucion.findUnique({
-      where: { id },
-      include: {
-        venta: {
-          include: {
-            producto: true,
-          },
-        },
-      },
-    })
-    return devolucion
+    const { data, error } = await supabase
+      .from('devoluciones')
+      .select('*, ventas(*, productos(*))')
+      .eq('id', id)
+      .single()
+    if (error) throw error
+    return data
   } catch (error) {
     console.error("Error al obtener devolución:", error)
     throw new Error("Error al obtener devolución")
@@ -112,22 +95,14 @@ export async function getDevolucionById(id: string) {
 
 export async function buscarVentas(query: string) {
   try {
-    const ventas = await prisma.venta.findMany({
-      where: {
-        OR: [
-          { saleCode: { contains: query, mode: "insensitive" } },
-          { externalOrderId: { contains: query, mode: "insensitive" } },
-          { comprador: { contains: query, mode: "insensitive" } },
-        ],
-      },
-      include: {
-        producto: true,
-      },
-      take: 10,
-      orderBy: { createdAt: "desc" },
-    })
-
-    return ventas
+    const { data, error } = await supabase
+      .from('ventas')
+      .select('*, productos(*)')
+      .or(`saleCode.ilike.%${query}%,externalOrderId.ilike.%${query}%,comprador.ilike.%${query}%`)
+      .order('createdAt', { ascending: false })
+      .limit(10)
+    if (error) throw error
+    return data
   } catch (error) {
     console.error("Error al buscar ventas:", error)
     return []

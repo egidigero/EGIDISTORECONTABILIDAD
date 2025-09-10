@@ -15,21 +15,17 @@ import {
 } from "@/components/ui/alert-dialog"
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
 import { deleteGastoIngreso } from "@/lib/actions/gastos-ingresos"
-import { useRouter } from "next/navigation"
 import { toast } from "@/hooks/use-toast"
+import { EditGastoIngresoModal } from "@/components/edit-gasto-ingreso-modal"
+import type { GastoIngreso } from "@/lib/types"
 
 interface GastoIngresoActionsProps {
-  gastoIngreso: {
-    id: string
-    tipo: string
-    descripcion: string
-  }
+  gastoIngreso: GastoIngreso
 }
 
 export function GastoIngresoActions({ gastoIngreso }: GastoIngresoActionsProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-  const router = useRouter()
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -68,10 +64,12 @@ export function GastoIngresoActions({ gastoIngreso }: GastoIngresoActionsProps) 
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => router.push(`/gastos/${gastoIngreso.id}/editar`)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar
-          </DropdownMenuItem>
+          <EditGastoIngresoModal gastoIngreso={gastoIngreso}>
+            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+              <Edit className="mr-2 h-4 w-4" />
+              Editar
+            </DropdownMenuItem>
+          </EditGastoIngresoModal>
           <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-destructive">
             <Trash2 className="mr-2 h-4 w-4" />
             Eliminar

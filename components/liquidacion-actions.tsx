@@ -1,88 +1,25 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
-import { toast } from "sonner"
-import { eliminarLiquidacion } from "@/lib/actions/liquidaciones"
-import type { Liquidacion } from "@prisma/client"
+import { Edit } from "lucide-react"
+import { EditarLiquidacionModal } from "@/components/editar-liquidacion-modal"
+import type { Liquidacion } from "@/lib/types"
 
 interface LiquidacionActionsProps {
   liquidacion: Liquidacion
 }
 
 export function LiquidacionActions({ liquidacion }: LiquidacionActionsProps) {
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const router = useRouter()
-
-  async function handleDelete() {
-    setIsDeleting(true)
-    try {
-      await eliminarLiquidacion(liquidacion.id)
-      toast.success("Liquidación eliminada correctamente")
-      router.refresh()
-    } catch (error) {
-      toast.error("Error al eliminar la liquidación")
-    } finally {
-      setIsDeleting(false)
-      setShowDeleteDialog(false)
-    }
-  }
-
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => router.push(`/liquidaciones/${liquidacion.id}/editar`)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
-            Eliminar
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la liquidación del{" "}
-              {new Date(liquidacion.fecha).toLocaleDateString()}.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? "Eliminando..." : "Eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <EditarLiquidacionModal 
+      liquidacion={liquidacion}
+      trigger={
+        <Button variant="ghost" size="sm">
+          <Edit className="h-4 w-4 mr-2" />
+          Editar
+        </Button>
+      }
+    />
   )
 }

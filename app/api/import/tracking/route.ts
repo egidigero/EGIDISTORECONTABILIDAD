@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { supabase } from "@/lib/supabase"
 import { tiendaNubeClient } from "@/lib/clients/tiendanube"
 import { mercadoLibreClient } from "@/lib/clients/mercadolibre"
 
@@ -16,38 +16,46 @@ export async function POST(request: NextRequest) {
     const errors: Array<{ orderId: string; error: string }> = []
 
     // Obtener ventas a actualizar
-    const ventas = await prisma.venta.findMany({
-      where: {
-        plataforma: source === "TN" ? "TN" : "ML",
-        ...(orderIds && { externalOrderId: { in: orderIds } }),
-      },
-    })
+    let ventas = [];
+    if (orderIds && orderIds.length > 0) {
+      const { data, error } = await supabase
+        .from("venta")
+        .select("*")
+        .eq("plataforma", source)
+        .in("externalOrderId", orderIds);
+      if (error) throw error;
+      ventas = data || [];
+    } else {
+      const { data, error } = await supabase
+        .from("venta")
+        .select("*")
+        .eq("plataforma", source);
+      if (error) throw error;
+      ventas = data || [];
+    }
 
     for (const venta of ventas) {
       try {
         if (source === "TN") {
-          const order = await tiendaNubeClient.getOrder(venta.externalOrderId)
-
-          await prisma.venta.update({
-            where: { id: venta.id },
-            data: {
+          const order = await tiendaNubeClient.getOrder(venta.externalOrderId);
+          await supabase
+            .from("venta")
+            .update({
               trackingUrl: order.tracking_url,
               estadoEnvio: mapShippingStatus(order.shipping_status, "TN"),
-            },
-          })
+            })
+            .eq("id", venta.id);
         } else if (source === "ML") {
-          const order = await mercadoLibreClient.getOrder(venta.externalOrderId)
-
-          await prisma.venta.update({
-            where: { id: venta.id },
-            data: {
+          const order = await mercadoLibreClient.getOrder(venta.externalOrderId);
+          await supabase
+            .from("venta")
+            .update({
               trackingUrl: order.shipping.tracking_number,
               estadoEnvio: mapShippingStatus(order.shipping.status, "ML"),
-            },
-          })
+            })
+            .eq("id", venta.id);
         }
-
-        updated++
+        updated++;
       } catch (error) {
         errors.push({
           orderId: venta.externalOrderId,
@@ -86,6 +94,6 @@ function mapShippingStatus(status: string | undefined, source: "TN" | "ML") {
       not_delivered: "Devuelto",
       cancelled: "Cancelado",
     }
-    return mapping[status] || "Pendiente"
+    return mapping[status ?? "pending"] || "Pendiente"
   }
 }

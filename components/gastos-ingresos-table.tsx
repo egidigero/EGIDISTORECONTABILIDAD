@@ -1,7 +1,9 @@
 import { Badge } from "@/components/ui/badge"
-import { DataTable } from "@/components/data-table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { GastoIngresoActions } from "@/components/gasto-ingreso-actions"
 import { getGastosIngresos } from "@/lib/actions/gastos-ingresos"
+import { Calculator, Target } from "lucide-react"
 import type { GastoIngresoFilters } from "@/lib/types"
 
 interface GastosIngresosTableProps {
@@ -11,12 +13,12 @@ interface GastosIngresosTableProps {
 const canalLabels = {
   TN: "Tienda Nube",
   ML: "Mercado Libre",
-  Directo: "Venta Directa",
+  General: "General",
 }
 
 const tipoLabels = {
   Gasto: "Gasto",
-  OtroIngreso: "Otro Ingreso",
+  Ingreso: "Ingreso",
 }
 
 export async function GastosIngresosTable({ searchParams }: GastosIngresosTableProps) {
@@ -30,50 +32,6 @@ export async function GastosIngresosTable({ searchParams }: GastosIngresosTableP
   if (searchParams.categoria) filters.categoria = searchParams.categoria as string
 
   const gastosIngresos = await getGastosIngresos(filters)
-
-  const columns = [
-    {
-      key: "fecha",
-      header: "Fecha",
-      render: (item: any) => new Date(item.fecha).toLocaleDateString(),
-    },
-    {
-      key: "tipo",
-      header: "Tipo",
-      render: (item: any) => (
-        <Badge variant={item.tipo === "Gasto" ? "destructive" : "default"}>
-          {tipoLabels[item.tipo as keyof typeof tipoLabels]}
-        </Badge>
-      ),
-    },
-    {
-      key: "canal",
-      header: "Canal",
-      render: (item: any) => (
-        <Badge variant="outline">{item.canal ? canalLabels[item.canal as keyof typeof canalLabels] : "General"}</Badge>
-      ),
-    },
-    {
-      key: "categoria",
-      header: "Categoría",
-    },
-    {
-      key: "descripcion",
-      header: "Descripción",
-    },
-    {
-      key: "montoARS",
-      header: "Monto",
-      render: (item: any) => {
-        const monto = Number(item.montoARS)
-        return (
-          <span className={item.tipo === "Gasto" ? "text-red-600" : "text-green-600"}>
-            {item.tipo === "Gasto" ? "-" : "+"}${monto.toLocaleString()}
-          </span>
-        )
-      },
-    },
-  ]
 
   // Calcular totales
   const totales = gastosIngresos.reduce(
@@ -91,13 +49,93 @@ export async function GastosIngresosTable({ searchParams }: GastosIngresosTableP
 
   return (
     <div className="space-y-4">
-      <DataTable
-        data={gastosIngresos}
-        columns={columns}
-        searchable
-        searchPlaceholder="Buscar por descripción o categoría..."
-        actions={(item) => <GastoIngresoActions gastoIngreso={item} />}
-      />
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Canal</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead>Monto</TableHead>
+              <TableHead>ROAS</TableHead>
+              <TableHead>Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {gastosIngresos.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{new Date(item.fecha).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  {item.tipo === "Gasto" ? (
+                    <Badge variant="destructive">
+                      {tipoLabels[item.tipo as keyof typeof tipoLabels]}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                      {tipoLabels[item.tipo as keyof typeof tipoLabels]}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">
+                    {item.canal ? canalLabels[item.canal as keyof typeof canalLabels] : "General"}
+                  </Badge>
+                </TableCell>
+                <TableCell>{item.categoria}</TableCell>
+                <TableCell>{item.descripcion}</TableCell>
+                <TableCell>
+                  <span className={item.tipo === "Gasto" ? "text-red-600" : "text-green-600"}>
+                    {item.tipo === "Gasto" ? "-" : "+"}${Number(item.montoARS).toLocaleString()}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <TooltipProvider>
+                    {item.roas_objetivo && item.ventas_periodo ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1 text-sm">
+                            <Target className="h-3 w-3" />
+                            <span className="font-medium">{item.roas_objetivo}x</span>
+                            {item.calculo_automatico && (
+                              <Calculator className="h-3 w-3 text-blue-500" />
+                            )}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="text-xs space-y-1">
+                            <p><strong>ROAS Objetivo:</strong> {item.roas_objetivo}x</p>
+                            <p><strong>Ventas del período:</strong> ${Number(item.ventas_periodo).toLocaleString()}</p>
+                            {item.gasto_calculado && (
+                              <p><strong>Gasto calculado:</strong> ${Number(item.gasto_calculado).toLocaleString()}</p>
+                            )}
+                            {item.calculo_automatico && (
+                              <p className="text-blue-600">✓ Cálculo automático</p>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">-</span>
+                    )}
+                  </TooltipProvider>
+                </TableCell>
+                <TableCell>
+                  <GastoIngresoActions gastoIngreso={item} />
+                </TableCell>
+              </TableRow>
+            ))}
+            {gastosIngresos.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  No se encontraron resultados
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {gastosIngresos.length > 0 && (
         <div className="bg-muted/50 p-4 rounded-lg">

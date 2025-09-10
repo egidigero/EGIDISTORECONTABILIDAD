@@ -11,11 +11,9 @@ import { Calendar, TrendingUp } from "lucide-react"
 import { format, subDays, startOfMonth, endOfMonth } from "date-fns"
 
 const canalOptions = [
-  { value: "all", label: "Todos los canales" },
+  { value: "General", label: "General" },
   { value: "TN", label: "Tienda Nube" },
   { value: "ML", label: "Mercado Libre" },
-  { value: "Directo", label: "Venta Directa" },
-  { value: "General", label: "General" },
 ]
 
 const periodosPreset = [
@@ -32,7 +30,7 @@ export function EERRFilters() {
   const [filters, setFilters] = useState({
     fechaDesde: searchParams.get("fechaDesde") || format(subDays(new Date(), 30), "yyyy-MM-dd"),
     fechaHasta: searchParams.get("fechaHasta") || format(new Date(), "yyyy-MM-dd"),
-    canal: searchParams.get("canal") || "all",
+  canal: searchParams.get("canal") || "General",
   })
 
   const applyFilters = () => {

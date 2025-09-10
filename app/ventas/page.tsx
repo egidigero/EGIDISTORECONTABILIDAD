@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Plus, ShoppingCart, Clock } from "lucide-react"
 import { VentasTable } from "@/components/ventas-table"
 import { VentasFilters } from "@/components/ventas-filters"
+import { NuevaVentaModal } from "@/components/nueva-venta-modal"
 
 export default function VentasPage({
   searchParams,
@@ -29,12 +30,7 @@ export default function VentasPage({
                   Pendientes de Envío
                 </Link>
               </Button>
-              <Button asChild>
-                <Link href="/ventas/nueva">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nueva Venta
-                </Link>
-              </Button>
+              <NuevaVentaModal />
             </div>
           </div>
         </div>

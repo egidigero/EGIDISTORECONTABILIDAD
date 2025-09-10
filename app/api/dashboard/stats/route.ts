@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { supabase } from "@/lib/supabase"
 
 export async function GET() {
   try {
@@ -13,66 +13,61 @@ export async function GET() {
     const endOfYesterday = new Date(yesterday.setHours(23, 59, 59, 999))
 
     // Ventas de hoy
-    const ventasHoy = await prisma.venta.findMany({
-      where: {
-        fecha: {
-          gte: startOfToday,
-          lte: endOfToday,
-        },
-      },
-    })
+    const { data: ventasHoy, error: errorHoy } = await supabase
+      .from("venta")
+      .select("*")
+      .gte("fecha", startOfToday.toISOString())
+      .lte("fecha", endOfToday.toISOString());
+    if (errorHoy) throw errorHoy;
 
     // Ventas de ayer
-    const ventasAyer = await prisma.venta.findMany({
-      where: {
-        fecha: {
-          gte: startOfYesterday,
-          lte: endOfYesterday,
-        },
-      },
-    })
+    const { data: ventasAyer, error: errorAyer } = await supabase
+      .from("venta")
+      .select("*")
+      .gte("fecha", startOfYesterday.toISOString())
+      .lte("fecha", endOfYesterday.toISOString());
+    if (errorAyer) throw errorAyer;
 
     // Calcular totales
-    const totalVentasHoy = ventasHoy.reduce((sum, venta) => sum + Number(venta.pvBruto), 0)
-    const totalVentasAyer = ventasAyer.reduce((sum, venta) => sum + Number(venta.pvBruto), 0)
-    const variacionVentas = totalVentasAyer > 0 ? ((totalVentasHoy - totalVentasAyer) / totalVentasAyer) * 100 : 0
+    const totalVentasHoy = (ventasHoy || []).reduce((sum, venta) => sum + Number(venta.pvBruto), 0);
+    const totalVentasAyer = (ventasAyer || []).reduce((sum, venta) => sum + Number(venta.pvBruto), 0);
+    const variacionVentas = totalVentasAyer > 0 ? ((totalVentasHoy - totalVentasAyer) / totalVentasAyer) * 100 : 0;
 
-    const totalMargenHoy = ventasHoy.reduce((sum, venta) => sum + Number(venta.ingresoMargen), 0)
-    const totalMargenAyer = ventasAyer.reduce((sum, venta) => sum + Number(venta.ingresoMargen), 0)
-    const variacionMargen = totalMargenAyer > 0 ? ((totalMargenHoy - totalMargenAyer) / totalMargenAyer) * 100 : 0
-
-    // Envíos pendientes
-    const enviosPendientes = await prisma.venta.count({
-      where: {
-        estadoEnvio: {
-          in: ["Pendiente", "EnCamino"],
-        },
-      },
-    })
+    const totalMargenHoy = (ventasHoy || []).reduce((sum, venta) => sum + Number(venta.ingresoMargen), 0);
+    const totalMargenAyer = (ventasAyer || []).reduce((sum, venta) => sum + Number(venta.ingresoMargen), 0);
+    const variacionMargen = totalMargenAyer > 0 ? ((totalMargenHoy - totalMargenAyer) / totalMargenAyer) * 100 : 0;
 
     // Liquidaciones pendientes (simulado - en un caso real vendría de la tabla liquidaciones)
+    // Envíos pendientes
+    const { data: enviosPendientesData, error: errorPendientes } = await supabase
+      .from("venta")
+      .select("id")
+      .in("estadoEnvio", ["Pendiente", "EnCamino"]);
+    if (errorPendientes) throw errorPendientes;
+    const enviosPendientes = enviosPendientesData ? enviosPendientesData.length : 0;
+
     const liquidacionesPendientes = {
       mp: Math.floor(Math.random() * 50000) + 10000,
       tn: Math.floor(Math.random() * 30000) + 5000,
-    }
+    };
 
     const stats = {
       ventasHoy: {
         total: Math.round(totalVentasHoy),
-        cantidad: ventasHoy.length,
+        cantidad: ventasHoy ? ventasHoy.length : 0,
         variacion: Math.round(variacionVentas * 100) / 100,
       },
       margenHoy: {
         total: Math.round(totalMargenHoy),
         variacion: Math.round(variacionMargen * 100) / 100,
       },
-      enviosPendientes,
+      enviosPendientes: enviosPendientes,
       liquidacionesPendientes,
-    }
+    };
 
-    return NextResponse.json(stats)
+    return NextResponse.json(stats);
   } catch (error) {
-    console.error("Error fetching dashboard stats:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    console.error("Error fetching dashboard stats:", error);
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }
