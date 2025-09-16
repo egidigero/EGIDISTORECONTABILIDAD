@@ -18,7 +18,7 @@ export interface Producto {
   stockFull: number
   activo: boolean
   createdAt: Date
-  updatedAt: Date
+    esPersonal?: boolean // Opcional para coincidir con el schema
 }
 
 // Tipos para formularios y validaciones
@@ -157,6 +157,8 @@ export interface LiquidacionForm {
 
 // Tipos para reportes EERR
 export interface EERRData {
+  detalleOtrosGastos?: any[]
+  detalleOtrosIngresos?: any[]
   // Ventas
   ventasTotales: number       // Ventas brutas
   descuentos: number          // Descuentos aplicados
@@ -191,6 +193,8 @@ export interface EERRData {
   gastosGenerales: number
   otrosIngresos: number
   resultadoOperativo: number
+  gastosPersonales?: number
+  margenFinalConPersonales?: number
 }
 
 // Tipos para configuraciones de comisiones

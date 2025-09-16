@@ -45,7 +45,7 @@ export const gastoIngresoSchema = z.object({
   categoria: z.string().min(1, "La categoría es requerida"),
   descripcion: z.string().min(1, "La descripción es requerida"),
   montoARS: z.number().min(0, "El monto debe ser mayor a 0"),
-  esPersonal: z.boolean().default(false), // Nueva opción para gastos personales
+    esPersonal: z.boolean().optional(), // Ahora opcional para evitar error de tipos
 })
 
 export type GastoIngresoFormData = z.infer<typeof gastoIngresoSchema>
@@ -99,6 +99,7 @@ export const ventaSchema = z.object({
   productoId: z.string().min(1, "El producto es requerido"),
   pvBruto: z.number().min(0, "El precio de venta debe ser mayor a 0"),
   cargoEnvioCosto: z.number().min(0, "El cargo de envío debe ser mayor o igual a 0").default(0),
+  iibb: z.number().min(0, "El IIBB debe ser mayor o igual a 0").optional(),
   usarComisionManual: z.boolean().default(false),
   comisionManual: z.number().min(0, "La comisión manual debe ser mayor o igual a 0").optional(),
   comisionExtraManual: z.number().min(0, "La comisión extra manual debe ser mayor o igual a 0").optional(),

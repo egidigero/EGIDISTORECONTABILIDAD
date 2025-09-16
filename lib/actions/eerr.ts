@@ -1,8 +1,10 @@
 //
 "use server"
 
+
 import { supabase } from "@/lib/supabase"
-import type { EERRData, Plataforma } from "@/lib/types"
+import type { EERRData, Plataforma, MetodoPago } from "@/lib/types"
+import { calcularVenta, getTarifa } from "@/lib/calculos"
 
 export async function calcularEERR(
   fechaDesde: Date,
@@ -39,48 +41,45 @@ export async function calcularEERR(
       throw new Error("Error al obtener ventas")
     }
 
-    // Calcular totales de ventas
-    const ventasTotales = (ventas || []).reduce(
-      (acc, venta) => {
-        const pvBruto = Number(venta.pvBruto || 0);
-        const comisionBruta = Number(venta.comision || 0);
-        const envios = Number(venta.cargoEnvioCosto || 0);
-        let comisionBase = 0;
-        let ivaComisiones = 0;
-        let iibbComisiones = 0;
-        if (venta.plataforma === 'TN') {
-          comisionBase = comisionBruta / 1.24;
-          ivaComisiones = comisionBase * 0.21;
-          iibbComisiones = comisionBase * 0.03;
-        } else {
-          comisionBase = comisionBruta / 1.21;
-          ivaComisiones = comisionBase * 0.21;
-          iibbComisiones = 0;
-        }
-        return {
-          ventasTotales: acc.ventasTotales + pvBruto,
-          costoProducto: acc.costoProducto + Number(venta.costoProducto || 0),
-          envios: acc.envios + envios,
-          comisionesBase: acc.comisionesBase + comisionBase,
-          ivaComisiones: acc.ivaComisiones + ivaComisiones,
-          iibbComisiones: acc.iibbComisiones + iibbComisiones,
-          comisionesTotales: acc.comisionesTotales + comisionBase + ivaComisiones + iibbComisiones,
-          comisionesExtra: acc.comisionesExtra, // Por ahora en 0
-          margenBruto: acc.margenBruto + Number(venta.ingresoMargen || 0),
-        };
-      },
-      {
-        ventasTotales: 0,
-        costoProducto: 0,
-        envios: 0,
-        comisionesBase: 0,
-        ivaComisiones: 0,
-        iibbComisiones: 0,
-        comisionesTotales: 0,
-        comisionesExtra: 0,
-        margenBruto: 0,
+
+    // Calcular totales de ventas usando la lógica centralizada de calcularVenta
+    let ventasTotales = {
+      ventasTotales: 0,
+      costoProducto: 0,
+      envios: 0,
+      comisionesBase: 0,
+      ivaComisiones: 0,
+      iibbComisiones: 0,
+      comisionesTotales: 0,
+      comisionesExtra: 0,
+      margenBruto: 0,
+    };
+
+    for (const venta of ventas || []) {
+      const pvBruto = Number(venta.pvBruto || 0);
+      const costoProducto = Number(venta.costoProducto || 0);
+      const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0);
+      // En la BD, "comision" es la base (sin IVA ni IIBB)
+      const comisionBase = Number(venta.comision || 0);
+      let ivaComisiones = 0;
+      let iibbComisiones = 0;
+      if (venta.plataforma === 'TN') {
+        ivaComisiones = comisionBase * 0.21;
+        iibbComisiones = comisionBase * 0.03;
+      } else {
+        ivaComisiones = comisionBase * 0.21;
+        iibbComisiones = 0;
       }
-    );
+      const comisionTotal = comisionBase + ivaComisiones + iibbComisiones;
+      ventasTotales.ventasTotales += pvBruto;
+      ventasTotales.costoProducto += costoProducto;
+      ventasTotales.envios += cargoEnvioCosto;
+      ventasTotales.comisionesTotales += comisionTotal;
+      ventasTotales.comisionesBase += comisionBase;
+      ventasTotales.ivaComisiones += ivaComisiones;
+      ventasTotales.iibbComisiones += iibbComisiones;
+      ventasTotales.margenBruto += Number(venta.ingresoMargen || 0);
+    }
 
     // Definir descuentos (ajustar según lógica real si aplica)
     const descuentos = 0;
@@ -89,8 +88,8 @@ export async function calcularEERR(
     const totalCostosPlataforma = Math.round((ventasTotales.comisionesTotales + ventasTotales.envios) * 100) / 100;
     // Precio neto = Ventas después de descuentos - Costos de plataforma
     const precioNeto = Math.round((ventasDespuesDescuentos - totalCostosPlataforma) * 100) / 100;
-    // Resultado bruto = Ventas Netas (después de descuentos) - Costo productos
-    const resultadoBruto = Math.round((ventasDespuesDescuentos - ventasTotales.costoProducto) * 100) / 100;
+  // Resultado bruto = Ventas Netas (después de descuentos) - Costo productos
+  const resultadoBruto = Math.round((ventasDespuesDescuentos - ventasTotales.costoProducto) * 100) / 100;
 
     // Obtener publicidad específica para el canal
     let publicidadQuery = supabase
@@ -102,10 +101,8 @@ export async function calcularEERR(
       .or('categoria.eq.Gastos del negocio - ADS,descripcion.ilike.%Meta ADS%');
 
     if (canal && canal !== "General") {
-      // Mostrar gastos del canal y generales (null o 'General')
       publicidadQuery = publicidadQuery.or(`canal.eq.${canal},canal.is.null,canal.eq.General`);
     }
-
     const { data: publicidadData, error: publicidadError } = await publicidadQuery;
     const publicidad = !publicidadError && publicidadData 
       ? Math.round(publicidadData.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100
@@ -114,17 +111,18 @@ export async function calcularEERR(
     // Calcular ROAS sobre Ventas Netas (después de descuentos, no precio neto)
     const roas = publicidad > 0 ? Math.round((ventasDespuesDescuentos / publicidad) * 100) / 100 : 0;
 
-    // Otros gastos del canal (excluyendo publicidad y envíos)
+
+
+    // Otros gastos del negocio (excluyendo ADS/publicidad y envíos)
     let otrosGastosQuery = supabase
       .from("gastos_ingresos")
-      .select("montoARS,categoria")
+      .select("id,fecha,montoARS,categoria,descripcion,canal")
       .gte("fecha", fechaDesde.toISOString())
       .lte("fecha", fechaHasta.toISOString())
       .eq("tipo", "Gasto")
-      .eq("categoria", "Otros gastos del negocio");
+      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos)");
 
     if (canal && canal !== "General") {
-      // Mostrar gastos del canal y generales (null o 'General')
       otrosGastosQuery = otrosGastosQuery.or(`canal.eq.${canal},canal.is.null,canal.eq.General`);
     }
 
@@ -133,15 +131,41 @@ export async function calcularEERR(
       ? Math.round(otrosGastosData.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100
       : 0;
 
-    // Margen operativo = Resultado bruto - Costos plataforma - Publicidad - Otros gastos
-    const margenOperativo = Math.round((resultadoBruto - totalCostosPlataforma - publicidad - otrosGastos) * 100) / 100;
+    // Otros ingresos del negocio (excepto ventas)
+    let otrosIngresosQuery = supabase
+      .from("gastos_ingresos")
+      .select("id,fecha,montoARS,categoria,descripcion,canal")
+      .gte("fecha", fechaDesde.toISOString())
+      .lte("fecha", fechaHasta.toISOString())
+      .eq("tipo", "Ingreso");
 
-    // Calcular gastos personales (por canal y período)
-    const { getGastosPersonalesTotal } = await import("@/lib/actions/gastos-personales");
-    const gastosPersonales = await getGastosPersonalesTotal(fechaDesde, fechaHasta, canal);
+    if (canal && canal !== "General") {
+      otrosIngresosQuery = otrosIngresosQuery.or(`canal.eq.${canal},canal.is.null,canal.eq.General`);
+    }
+    // Excluir ingresos de ventas si existieran en la tabla (por seguridad)
+    const { data: otrosIngresosData, error: otrosIngresosError } = await otrosIngresosQuery;
+    const otrosIngresosFiltrados = otrosIngresosData
+      ? otrosIngresosData.filter((ingreso) => ingreso.categoria !== "Ventas")
+      : [];
+    const otrosIngresos = !otrosIngresosError && otrosIngresosFiltrados.length > 0
+      ? Math.round(otrosIngresosFiltrados.reduce((acc, ingreso) => acc + Number(ingreso.montoARS || 0), 0) * 100) / 100
+      : 0;
 
-    // Margen después de gastos personales
-    const margenFinal = Math.round((margenOperativo - gastosPersonales) * 100) / 100;
+  // Margen operativo = Resultado bruto - Costos plataforma - Publicidad
+  const margenOperativo = Math.round((resultadoBruto - totalCostosPlataforma - publicidad) * 100) / 100;
+
+    // Gastos personales solo para canal General
+  const { getGastosPersonalesTotal } = await import("@/lib/actions/gastos-personales");
+  const gastosPersonales = await getGastosPersonalesTotal(fechaDesde, fechaHasta, canal);
+
+    // Neto final = margen operativo - otros gastos + otros ingresos
+    const margenNetoNegocio = Math.round((margenOperativo - otrosGastos + otrosIngresos) * 100) / 100;
+
+    // Margen final después de gastos personales (solo para canal General)
+    let margenFinalConPersonales = undefined;
+    if (!canal || canal === "General") {
+      margenFinalConPersonales = Math.round((margenNetoNegocio - gastosPersonales) * 100) / 100;
+    }
 
     return {
       ventasTotales: Math.round(ventasTotales.ventasTotales * 100) / 100,
@@ -159,16 +183,20 @@ export async function calcularEERR(
       totalCostosPlataforma: Math.round(totalCostosPlataforma * 100) / 100,
       publicidad: Math.round(publicidad * 100) / 100,
       roas: Math.round(roas * 100) / 100,
-      otrosGastos: Math.round(otrosGastos * 100) / 100,
       margenOperativo: Math.round(margenOperativo * 100) / 100,
+      otrosGastos: Math.round(otrosGastos * 100) / 100,
+      detalleOtrosGastos: otrosGastosData || [],
+  otrosIngresos: Math.round(otrosIngresos * 100) / 100,
+      detalleOtrosIngresos: otrosIngresosFiltrados || [],
       ventasBrutas: Math.round(ventasTotales.ventasTotales * 100) / 100,
       precioNeto: Math.round(precioNeto * 100) / 100,
       costoEnvio: Math.round(ventasTotales.envios * 100) / 100,
       margenBruto: Math.round(ventasTotales.margenBruto * 100) / 100,
       gastosCanal: Math.round(otrosGastos * 100) / 100,
       gastosGenerales: 0,
-      otrosIngresos: 0,
-      resultadoOperativo: Math.round(margenOperativo * 100) / 100,
+  resultadoOperativo: Math.round(margenOperativo * 100) / 100,
+  gastosPersonales: Math.round(gastosPersonales * 100) / 100,
+  margenFinalConPersonales: margenFinalConPersonales,
     };
   } catch (error) {
     console.error("Error al calcular EERR:", error);

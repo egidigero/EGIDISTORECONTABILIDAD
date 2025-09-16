@@ -28,6 +28,9 @@ interface ParametrosCalculo {
   precioVenta: number
   costoEnvio: number
   roas: number
+  iibbManual?: number // IIBB individual opcional
+  usarComisionManual: boolean // Habilita el campo de comisión manual
+  comisionManual?: number // Valor de comisión manual
 }
 
 interface TarifaData {
@@ -76,8 +79,23 @@ export function CalculadoraPrecios({
     condicion: "Transferencia",
     precioVenta: precioVentaInicial,
     costoEnvio: 0,
-    roas: 5
+    roas: 5,
+    iibbManual: undefined,
+    usarComisionManual: false,
+    comisionManual: undefined
   })
+  // Habilitar y forzar comisión manual para TN + MercadoPago + Transferencia
+  useEffect(() => {
+    if (
+      parametros.plataforma === "TN" &&
+      parametros.metodoPago === "MercadoPago" &&
+      parametros.condicion === "Transferencia"
+    ) {
+      setParametros(prev => ({ ...prev, usarComisionManual: true }));
+    } else {
+      setParametros(prev => ({ ...prev, usarComisionManual: false }));
+    }
+  }, [parametros.plataforma, parametros.metodoPago, parametros.condicion]);
   
   const [tarifa, setTarifa] = useState<TarifaData | null>(null)
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
@@ -130,24 +148,39 @@ export function CalculadoraPrecios({
     const resultadoOperativo = precioConDescuento - costo
 
     // 3. Costos de Plataforma usando tarifas reales sobre precio con descuento
-    const comision = precioConDescuento * tarifa.comisionPct
-    const comisionExtra = precioConDescuento * (tarifa.comisionExtraPct || 0)
+    // Si usarComisionManual, usar el valor manual para la comisión base
+    const comision = parametros.usarComisionManual && parametros.comisionManual !== undefined
+      ? parametros.comisionManual
+      : precioConDescuento * tarifa.comisionPct
+    // Para TN+MercadoPago+Transferencia, la comisión extra es directa, sin IVA ni IIBB
+    const comisionExtra = parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia"
+      ? precioConDescuento * (tarifa.comisionExtraPct || 0)
+      : (precioConDescuento * (tarifa.comisionExtraPct || 0))
     const envio = parametros.costoEnvio
     
     let iva = 0
     let iibb = 0
     let comisionSinIva = comision
     let comisionExtraSinIva = comisionExtra
-    
-    if (parametros.plataforma === "TN") {
-      // TN: IVA e IIBB se agregan sobre las comisiones
-      iva = (comision + comisionExtra) * 0.21 // 21% IVA sobre comisiones
-      iibb = (comision + comisionExtra) * 0.03 // 3% IIBB sobre comisiones
+
+    // Lógica especial TN + MercadoPago + Transferencia
+    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia") {
+      iva = comision * 0.21; // Solo la comisión base lleva IVA
+      // Comisión extra es directa, sin IVA ni IIBB
+      // IIBB: usar manual si está, si no, 0
+      iibb = parametros.iibbManual !== undefined && !isNaN(parametros.iibbManual)
+        ? parametros.iibbManual
+        : 0;
+    } else if (parametros.plataforma === "TN") {
+      iva = (comision + comisionExtra) * 0.21;
+      iibb = parametros.iibbManual !== undefined && !isNaN(parametros.iibbManual)
+        ? parametros.iibbManual
+        : (comision + comisionExtra) * (tarifa.iibbPct || 0.03);
     } else if (parametros.plataforma === "ML") {
-      // ML: La comisión ya incluye IVA, necesitamos desglosarlo
-      comisionSinIva = comision / 1.21 // Comisión sin IVA
-      comisionExtraSinIva = comisionExtra / 1.21 // Comisión extra sin IVA
-      iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva // IVA incluido
+      comisionSinIva = comision / 1.21;
+      comisionExtraSinIva = comisionExtra / 1.21;
+      iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva;
+      // ML no tiene IIBB adicional
     }
     
     // Calcular subtotales por separado para mayor claridad
@@ -340,6 +373,50 @@ export function CalculadoraPrecios({
                       costoEnvio: parseFloat(e.target.value) || 0 
                     }))}
                     placeholder="Costo del envío"
+                  />
+                </div>
+                {/* Solo mostrar comisión manual si corresponde, y forzarla a obligatoria en TN+MercadoPago+Transferencia */}
+                {parametros.usarComisionManual && (
+                  <div className="space-y-2">
+                    <Label>Comisión Base (ARS, manual) <span className="text-red-600">*</span></Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={parametros.comisionManual ?? ""}
+                      onChange={(e) => setParametros(prev => ({
+                        ...prev,
+                        comisionManual: e.target.value === "" ? undefined : parseFloat(e.target.value)
+                      }))}
+                      placeholder="Ingresá la comisión base"
+                      required
+                      disabled={!(parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia") ? false : false}
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>IIBB (ARS, individual)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={parametros.iibbManual ?? ""}
+                    onChange={(e) => setParametros(prev => ({
+                      ...prev,
+                      iibbManual: e.target.value === "" ? undefined : parseFloat(e.target.value)
+                    }))}
+                    placeholder="Dejar vacío para automático"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>IIBB (ARS, individual)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={parametros.iibbManual ?? ""}
+                    onChange={(e) => setParametros(prev => ({
+                      ...prev,
+                      iibbManual: e.target.value === "" ? undefined : parseFloat(e.target.value)
+                    }))}
+                    placeholder="Dejar vacío para automático"
                   />
                 </div>
 
@@ -598,17 +675,20 @@ export function CalculadoraPrecios({
                           </div>
                           {parametros.plataforma === "TN" && (
                             <>
+                              {/* Solo IVA sobre comisión base y solo IIBB si es manual */}
                               <div className="flex justify-between text-red-600 ml-4">
                                 <span>• IVA (21%):</span>
-                                <span className="font-mono">${(resultado.comision * 0.21).toFixed(2)}</span>
+                                <span className="font-mono">${(parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia" ? (resultado.comision * 0.21) : (resultado.comision * 0.21)).toFixed(2)}</span>
                               </div>
-                              <div className="flex justify-between text-red-600 ml-4">
-                                <span>• IIBB (3%):</span>
-                                <span className="font-mono">${(resultado.comision * 0.03).toFixed(2)}</span>
-                              </div>
+                              {(parametros.iibbManual !== undefined && parametros.iibbManual > 0) && (
+                                <div className="flex justify-between text-red-600 ml-4">
+                                  <span>• IIBB (manual):</span>
+                                  <span className="font-mono">${resultado.iibb.toFixed(2)}</span>
+                                </div>
+                              )}
                               <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                                 <span>Subtotal Comisión:</span>
-                                <span className="font-mono">${(resultado.comision + (resultado.comision * 0.21) + (resultado.comision * 0.03)).toFixed(2)}</span>
+                                <span className="font-mono">${(resultado.comision + (parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia" ? (resultado.comision * 0.21) : (resultado.comision * 0.21)) + (parametros.iibbManual || 0)).toFixed(2)}</span>
                               </div>
                             </>
                           )}
@@ -645,17 +725,17 @@ export function CalculadoraPrecios({
                             </div>
                             {parametros.plataforma === "TN" && (
                               <>
-                                <div className="flex justify-between text-red-600 ml-4">
-                                  <span>• IVA (21%):</span>
-                                  <span className="font-mono">${(resultado.comisionExtra * 0.21).toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between text-red-600 ml-4">
-                                  <span>• IIBB (3%):</span>
-                                  <span className="font-mono">${(resultado.comisionExtra * 0.03).toFixed(2)}</span>
-                                </div>
+                                {/* Para TN+MercadoPago+Transferencia, comisión extra es directa, sin IVA ni IIBB */}
+                                {(parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia") ? null : (
+                                  <div className="flex justify-between text-red-600 ml-4">
+                                    <span>• IVA (21%):</span>
+                                    <span className="font-mono">${(resultado.comisionExtra * 0.21).toFixed(2)}</span>
+                                  </div>
+                                )}
+                                {/* No mostrar IIBB en comisión extra para este caso */}
                                 <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                                   <span>Subtotal Comisión Extra:</span>
-                                  <span className="font-mono">${(resultado.comisionExtra + (resultado.comisionExtra * 0.21) + (resultado.comisionExtra * 0.03)).toFixed(2)}</span>
+                                  <span className="font-mono">${resultado.comisionExtra.toFixed(2)}</span>
                                 </div>
                               </>
                             )}

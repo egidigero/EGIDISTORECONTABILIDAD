@@ -45,6 +45,29 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     return `${percentage > 0 ? "+" : ""}${percentage.toFixed(1)}%`
   }
 
+  // Categorías personales y de negocio (deben estar disponibles en todo el render)
+  const categoriasPersonales = [
+    'Gastos de Casa',
+    'Gastos de Geronimo',
+    'Gastos de Sergio',
+  ];
+  const categoriasNegocioExcluir = [
+    'Gastos del negocio - ADS',
+    // 'Gastos del negocio - Envios', // No excluir, se maneja abajo
+  ];
+
+  // Envíos pagados como gasto (solo Tienda Nube)
+  const enviosPagadosGastoTN = Array.isArray(eerrData.detalleOtrosGastos)
+    ? eerrData.detalleOtrosGastos.filter((g: any) =>
+        g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'
+      )
+    : [];
+  const totalEnviosPagadosGastoTN = enviosPagadosGastoTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+
+  // Envíos en costos de plataforma (solo Tienda Nube)
+  // Usar eerrData.envios, que representa los envíos de Tienda Nube en costos de plataforma
+  const totalEnviosCostosPlataformaTN = typeof eerrData.envios === 'number' ? eerrData.envios : 0;
+
   return (
     <div className="space-y-6">
       {/* Tarjetas de resumen */}
@@ -278,32 +301,197 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="font-semibold text-lg mb-3 text-gray-700">💼 OTROS GASTOS</h3>
-                  <div className="space-y-2 bg-gray-50 p-3 rounded">
-                    <div className="flex justify-between text-red-600">
-                      <span>(-) Otros Gastos del Canal:</span>
-                      <span className="font-medium">-{formatCurrency(eerrData.otrosGastos)}</span>
+                {/* Margen Operativo */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-blue-900">💼 Margen Operativo</h3>
+                  <div className="space-y-2 bg-blue-50 p-3 rounded">
+                    <div className="flex justify-between font-bold">
+                      <span>Margen Operativo:</span>
+                      <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenOperativo)}</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Otros Gastos del Negocio (desglosado, solo negocio) */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-gray-700">💸 Otros Gastos del Negocio</h3>
+                  <div className="space-y-2 bg-gray-50 p-3 rounded">
+                    {(() => {
+                      // Gastos del negocio: todos menos personales y ADS
+                      let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
+                        ? eerrData.detalleOtrosGastos.filter((g: any) =>
+                            !categoriasPersonales.includes(g.categoria) &&
+                            g.categoria !== 'Gastos del negocio - ADS'
+                          )
+                        : [];
+                      // De los gastos del negocio, separar los envíos TN
+                      const enviosNegocioTN = gastosNegocio.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN');
+                      const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // La diferencia entre envíos pagados y los de costos de plataforma (solo TN)
+                      const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN;
+                      // Otros gastos del negocio: todos menos los envíos TN (que se muestran como línea aparte)
+                      const otrosGastosNegocio = gastosNegocio.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'));
+                      const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // Total final de otros gastos del negocio incluye la diferencia de envíos
+                      const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
+                      return <>
+                        <div className="flex justify-between text-red-600 font-semibold">
+                          <span>(-) Total Otros Gastos:</span>
+                          <span>-{formatCurrency(totalNegocio)}</span>
+                        </div>
+                        {/* Mostrar diferencia de envíos si existe */}
+                        {diferenciaEnvios !== 0 && (
+                          <div className="flex justify-between text-red-600 text-xs">
+                            <span>Diferencia Envíos TN (pagados - en plataforma):</span>
+                            <span>-{formatCurrency(diferenciaEnvios)}</span>
+                          </div>
+                        )}
+                        {otrosGastosNegocio.length > 0 ? (
+                          <div className="mt-2">
+                            <ul className="text-xs text-gray-700 space-y-1">
+                              {otrosGastosNegocio.map((gasto: any) => (
+                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                  <span className="text-red-600">-{formatCurrency(gasto.montoARS)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 mt-2">Sin otros gastos en el período</div>
+                        )}
+                      </>;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Otros Ingresos del Negocio (desglosado) */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-green-700">💵 Otros Ingresos del Negocio</h3>
+                  <div className="space-y-2 bg-green-50 p-3 rounded">
+                    <div className="flex justify-between text-green-700 font-semibold">
+                      <span>+ Total Otros Ingresos:</span>
+                      <span>{formatCurrency(eerrData.otrosIngresos)}</span>
+                    </div>
+                    {Array.isArray(eerrData.detalleOtrosIngresos) && eerrData.detalleOtrosIngresos.length > 0 ? (
+                      <div className="mt-2">
+                        <ul className="text-xs text-gray-700 space-y-1">
+                          {eerrData.detalleOtrosIngresos.map((ingreso: any) => (
+                            <li key={ingreso.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                              <span>{ingreso.fecha?.slice(0,10) || ''} - {ingreso.categoria}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
+                              <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 mt-2">Sin otros ingresos en el período</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Margen Neto */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-black">🧮 Margen Neto</h3>
+                  <div className="space-y-2 bg-yellow-50 p-3 rounded">
+                    {(() => {
+                      // Gastos del negocio: todos menos personales y ADS
+                      let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
+                        ? eerrData.detalleOtrosGastos.filter((g: any) =>
+                            !categoriasPersonales.includes(g.categoria) &&
+                            g.categoria !== 'Gastos del negocio - ADS'
+                          )
+                        : [];
+                      // De los gastos del negocio, separar los envíos TN
+                      const enviosNegocioTN = gastosNegocio.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN');
+                      const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // La diferencia entre envíos pagados y los de costos de plataforma (solo TN)
+                      const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN;
+                      // Otros gastos del negocio: todos menos los envíos TN (que se muestran como línea aparte)
+                      const otrosGastosNegocio = gastosNegocio.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'));
+                      const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // Total final de otros gastos del negocio incluye la diferencia de envíos
+                      const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
+                      const margenNeto = eerrData.margenOperativo - totalNegocio + eerrData.otrosIngresos;
+                      return <div className="flex justify-between text-black font-bold text-lg">
+                        <span>Margen Neto:</span>
+                        <span className={margenNeto >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenNeto)}</span>
+                      </div>;
+                    })()}
+                  </div>
+                </div>
+                {/* Gastos personales y margen final después de gastos personales */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-pink-700">👤 Gastos Personales</h3>
+                  <div className="space-y-2 bg-pink-50 p-3 rounded">
+                    {(() => {
+                      const gastosPersonales = Array.isArray(eerrData.detalleOtrosGastos)
+                        ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
+                        : [];
+                      const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      return <>
+                        <div className="flex justify-between text-pink-700 font-semibold">
+                          <span>(-) Total Gastos Personales:</span>
+                          <span>-{formatCurrency(totalPersonales)}</span>
+                        </div>
+                        {gastosPersonales.length > 0 ? (
+                          <div className="mt-2">
+                            <ul className="text-xs text-gray-700 space-y-1">
+                              {gastosPersonales.map((gasto: any) => (
+                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                  <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 mt-2">Sin gastos personales en el período</div>
+                        )}
+                      </>;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Margen final después de gastos personales */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-black">💎 Margen Final después de Gastos Personales</h3>
+                  <div className="space-y-2 bg-lime-50 p-3 rounded">
+                    {(() => {
+                      // Gastos del negocio: todos menos personales y ADS
+                      let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
+                        ? eerrData.detalleOtrosGastos.filter((g: any) =>
+                            !categoriasPersonales.includes(g.categoria) &&
+                            g.categoria !== 'Gastos del negocio - ADS'
+                          )
+                        : [];
+                      // De los gastos del negocio, separar los envíos TN
+                      const enviosNegocioTN = gastosNegocio.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN');
+                      const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // La diferencia entre envíos pagados y los de costos de plataforma (solo TN)
+                      const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN;
+                      // Otros gastos del negocio: todos menos los envíos TN (que se muestran como línea aparte)
+                      const otrosGastosNegocio = gastosNegocio.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'));
+                      const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      // Total final de otros gastos del negocio incluye la diferencia de envíos
+                      const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
+                      const gastosPersonales = Array.isArray(eerrData.detalleOtrosGastos)
+                        ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
+                        : [];
+                      const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      const margenNeto = eerrData.margenOperativo - totalNegocio + eerrData.otrosIngresos;
+                      const margenFinal = margenNeto - totalPersonales;
+                      return <div className="flex justify-between text-black font-bold text-lg">
+                        <span>Margen Final:</span>
+                        <span className={margenFinal >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenFinal)}</span>
+                      </div>;
+                    })()}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Resultado Final */}
-            <div className="border-t-2 pt-4">
-              <div className="bg-slate-100 p-4 rounded-lg">
-                <div className="flex justify-between items-center text-xl font-bold">
-                  <span>💰 MARGEN OPERATIVO FINAL:</span>
-                  <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>
-                    {formatCurrency(eerrData.margenOperativo)}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground mt-2">
-                  Margen sobre ventas: {eerrData.ventasNetas > 0 ? `${((eerrData.margenOperativo / eerrData.ventasNetas) * 100).toFixed(2)}%` : "0%"}
-                </div>
-              </div>
-            </div>
+            {/* Resultado Final removido para evitar duplicidad y respetar el nuevo orden solicitado */}
           </div>
         </CardContent>
       </Card>

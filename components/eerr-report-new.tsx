@@ -244,32 +244,119 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="font-semibold text-lg mb-3 text-gray-700">💼 OTROS GASTOS</h3>
-                  <div className="space-y-2 bg-gray-50 p-3 rounded">
-                    <div className="flex justify-between text-red-600">
-                      <span>(-) Otros Gastos del Canal:</span>
-                      <span className="font-medium">-{formatCurrency(eerrData.otrosGastos)}</span>
+                {/* Margen Operativo */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-blue-900">💼 Margen Operativo</h3>
+                  <div className="space-y-2 bg-blue-50 p-3 rounded">
+                    <div className="flex justify-between font-bold">
+                      <span>Margen Operativo:</span>
+                      <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenOperativo)}</span>
                     </div>
                   </div>
                 </div>
+
+                {/* Otros Gastos del Negocio (desglosado) */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-gray-700">💸 Otros Gastos del Negocio</h3>
+                  <div className="space-y-2 bg-gray-50 p-3 rounded">
+                    <div className="flex justify-between text-red-600 font-semibold">
+                      <span>(-) Total Otros Gastos:</span>
+                      <span>-{formatCurrency(eerrData.otrosGastos)}</span>
+                    </div>
+                    {Array.isArray(eerrData.detalleOtrosGastos) && eerrData.detalleOtrosGastos.length > 0 ? (
+                      <div className="mt-2">
+                        <ul className="text-xs text-gray-700 space-y-1">
+                          {eerrData.detalleOtrosGastos.map((gasto: any) => (
+                            <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                              <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                              <span className="text-red-600">-{formatCurrency(gasto.montoARS)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 mt-2">Sin otros gastos en el período</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Otros Ingresos del Negocio (desglosado) */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-green-700">💵 Otros Ingresos del Negocio</h3>
+                  <div className="space-y-2 bg-green-50 p-3 rounded">
+                    <div className="flex justify-between text-green-700 font-semibold">
+                      <span>+ Total Otros Ingresos:</span>
+                      <span>{formatCurrency(eerrData.otrosIngresos)}</span>
+                    </div>
+                    {Array.isArray(eerrData.detalleOtrosIngresos) && eerrData.detalleOtrosIngresos.length > 0 ? (
+                      <div className="mt-2">
+                        <ul className="text-xs text-gray-700 space-y-1">
+                          {eerrData.detalleOtrosIngresos.map((ingreso: any) => (
+                            <li key={ingreso.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                              <span>{ingreso.fecha?.slice(0,10) || ''} - {ingreso.categoria}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
+                              <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 mt-2">Sin otros ingresos en el período</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Margen Neto */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-black">🧮 Margen Neto</h3>
+                  <div className="space-y-2 bg-yellow-50 p-3 rounded">
+                    <div className="flex justify-between text-black font-bold text-lg">
+                      <span>Margen Neto:</span>
+                      <span className={((eerrData.margenOperativo - eerrData.otrosGastos + eerrData.otrosIngresos) >= 0 ? "text-green-600" : "text-red-600")}>{formatCurrency(eerrData.margenOperativo - eerrData.otrosGastos + eerrData.otrosIngresos)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Gastos personales y margen final solo en General */}
+                {(!canal || canal === "General") && (
+                  <>
+                    <div className="mb-6">
+                      <h3 className="font-semibold text-lg mb-3 text-pink-700">👤 Gastos Personales</h3>
+                      <div className="space-y-2 bg-pink-50 p-3 rounded">
+                        <div className="flex justify-between text-pink-700 font-semibold">
+                          <span>(-) Total Gastos Personales:</span>
+                          <span>-{formatCurrency(eerrData.gastosPersonales)}</span>
+                        </div>
+                        {Array.isArray(eerrData.detalleGastosPersonales) && eerrData.detalleGastosPersonales.length > 0 ? (
+                          <div className="mt-2">
+                            <ul className="text-xs text-gray-700 space-y-1">
+                              {eerrData.detalleGastosPersonales.map((gasto: any) => (
+                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                  <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 mt-2">Sin gastos personales en el período</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mb-6">
+                      <h3 className="font-semibold text-lg mb-3 text-black">💎 Margen Final después de Gastos Personales</h3>
+                      <div className="space-y-2 bg-lime-50 p-3 rounded">
+                        <div className="flex justify-between text-black font-bold text-lg">
+                          <span>Margen Final:</span>
+                          <span className={eerrData.margenFinalConPersonales >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenFinalConPersonales ?? 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Resultado Final */}
-            <div className="border-t-2 pt-4">
-              <div className="bg-slate-100 p-4 rounded-lg">
-                <div className="flex justify-between items-center text-xl font-bold">
-                  <span>💰 MARGEN OPERATIVO FINAL:</span>
-                  <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>
-                    {formatCurrency(eerrData.margenOperativo)}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground mt-2">
-                  Margen sobre ventas: {eerrData.ventasNetas > 0 ? `${((eerrData.margenOperativo / eerrData.ventasNetas) * 100).toFixed(2)}%` : "0%"}
-                </div>
-              </div>
-            </div>
+            {/* Resultado Final removido para evitar duplicidad y respetar el nuevo orden solicitado */}
           </div>
         </CardContent>
       </Card>

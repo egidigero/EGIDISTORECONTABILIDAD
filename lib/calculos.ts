@@ -65,21 +65,27 @@ export function calcularVenta(
     ? comisionExtraManual
     : pvConDescuento * (tarifa.comisionExtraPct || 0) // Comisión extra si existe
   
-  // 3. Calcular IVA e IIBB según la plataforma
+  // 3. Calcular IVA e IIBB según la plataforma y método de pago
   let iva = 0
   let iibb = 0
   let comisionSinIva = comisionBase
   let comisionExtraSinIva = comisionExtra
-  
-  if (plataforma === "TN") {
+
+  // Caso especial: TN + MercadoPago
+  if (plataforma === "TN" && tarifa && (tarifa as any).metodoPago === "MercadoPago") {
+    // Solo la comisión base lleva IVA, la extra NO
+    iva = comisionBase * 0.21;
+    // IIBB según tarifa (puede ser variable)
+    iibb = (comisionBase + comisionExtra) * (tarifa.iibbPct || 0);
+  } else if (plataforma === "TN") {
     // TN: IVA e IIBB se agregan sobre las comisiones
-    iva = (comisionBase + comisionExtra) * 0.21 // 21% IVA sobre comisiones
-    iibb = (comisionBase + comisionExtra) * 0.03 // 3% IIBB sobre comisiones
+    iva = (comisionBase + comisionExtra) * 0.21; // 21% IVA sobre comisiones
+    iibb = (comisionBase + comisionExtra) * (tarifa.iibbPct || 0.03); // IIBB según tarifa o 3%
   } else if (plataforma === "ML") {
     // ML: La comisión ya incluye IVA, necesitamos desglosarlo
-    comisionSinIva = comisionBase / 1.21 // Comisión sin IVA
-    comisionExtraSinIva = comisionExtra / 1.21 // Comisión extra sin IVA
-    iva = comisionBase - comisionSinIva + comisionExtra - comisionExtraSinIva // IVA incluido
+    comisionSinIva = comisionBase / 1.21; // Comisión sin IVA
+    comisionExtraSinIva = comisionExtra / 1.21; // Comisión extra sin IVA
+    iva = comisionBase - comisionSinIva + comisionExtra - comisionExtraSinIva; // IVA incluido
     // ML no tiene IIBB adicional
   }
   
@@ -87,7 +93,7 @@ export function calcularVenta(
   const comisionTotal = comisionBase + comisionExtra + tarifa.fijoPorOperacion
   
   // 5. Precio neto = PV Bruto - Comisiones totales - Envíos (según base de datos)
-  const precioNeto = pvConDescuento - comisionTotal - iva - iibb
+  const precioNeto = pvConDescuento - comisionTotal - iva - iibb - cargoEnvioCosto
   // 6. Margen es precio neto menos costo del producto
   const ingresoMargen = precioNeto - costoProducto
   

@@ -487,6 +487,19 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                     <p className="text-sm text-destructive">{errors.cargoEnvioCosto.message}</p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="iibb">IIBB (ARS, individual)</Label>
+                  <Input
+                    id="iibb"
+                    type="number"
+                    step="0.01"
+                    {...register("iibb", { valueAsNumber: true })}
+                    placeholder="0.00"
+                  />
+                  {errors.iibb && (
+                    <p className="text-sm text-destructive">{errors.iibb.message}</p>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
