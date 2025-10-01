@@ -22,7 +22,7 @@ export const tarifaSchema = z.object({
   metodoPago: z.enum(["PagoNube", "MercadoPago", "Transferencia", "Efectivo"], {
     required_error: "Selecciona un método de pago",
   }),
-  condicion: z.enum(["Transferencia", "Cuotas sin interés"], {
+  condicion: z.enum(["Transferencia", "Cuotas sin interés", "Normal"], {
     required_error: "Selecciona una condición de pago",
   }).default("Transferencia"),
   comisionPct: z.number().min(0).max(100, "La comisión debe estar entre 0 y 100%"),
@@ -93,16 +93,16 @@ export const ventaSchema = z.object({
   metodoPago: z.enum(["PagoNube", "MercadoPago"], {
     required_error: "Selecciona un método de pago",
   }),
-  condicion: z.enum(["Transferencia", "Cuotas sin interés"], {
+  condicion: z.enum(["Transferencia", "Cuotas sin interés", "Normal"], {
     required_error: "Selecciona una condición",
   }),
   productoId: z.string().min(1, "El producto es requerido"),
   pvBruto: z.number().min(0, "El precio de venta debe ser mayor a 0"),
   cargoEnvioCosto: z.number().min(0, "El cargo de envío debe ser mayor o igual a 0").default(0),
-  iibb: z.number().min(0, "El IIBB debe ser mayor o igual a 0").optional(),
   usarComisionManual: z.boolean().default(false),
   comisionManual: z.number().min(0, "La comisión manual debe ser mayor o igual a 0").optional(),
   comisionExtraManual: z.number().min(0, "La comisión extra manual debe ser mayor o igual a 0").optional(),
+  iibbManual: z.number().min(0, "El IIBB manual debe ser mayor o igual a 0").optional(), // Para ML
   trackingUrl: z.string().optional().or(z.literal("")).refine(
     (value) => !value || z.string().url().safeParse(value).success,
     "URL inválida"

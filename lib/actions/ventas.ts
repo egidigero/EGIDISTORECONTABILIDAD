@@ -70,6 +70,7 @@ export async function createVenta(data: VentaFormData) {
     const comisionExtraManualParaUsar = (validatedData as any).usarComisionManual && (validatedData as any).comisionExtraManual 
       ? (validatedData as any).comisionExtraManual 
       : undefined
+    const iibbManualParaUsar = (validatedData as any).iibbManual || undefined
     const calculos = calcularVenta(
       pvBrutoConDescuento, // Usar el precio ya con descuento aplicado
       validatedData.cargoEnvioCosto,
@@ -78,13 +79,14 @@ export async function createVenta(data: VentaFormData) {
       validatedData.plataforma, // Agregar plataforma para cálculos específicos
       comisionManualParaUsar, // Pasar comisión manual solo si está habilitada
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
+      iibbManualParaUsar, // Pasar IIBB manual para ML
     )
 
     // Generar código de venta único
     const saleCode = generarSaleCode()
 
     // Filtrar campos que no existen en la base de datos o que no deben incluirse en INSERT
-    const { courier, externalOrderId, usarComisionManual, comisionManual, comisionExtraManual, ...ventaDataParaInsertar } = validatedData
+    const { courier, externalOrderId, usarComisionManual, comisionManual, comisionExtraManual, iibbManual, ...ventaDataParaInsertar } = validatedData
 
     // Filtrar también descuentoAplicado de los cálculos
     const { descuentoAplicado, ...calculosSinDescuento } = calculos
@@ -180,6 +182,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
     const comisionExtraManualParaUsar = (validatedData as any).usarComisionManual && (validatedData as any).comisionExtraManual 
       ? (validatedData as any).comisionExtraManual 
       : undefined
+    const iibbManualParaUsar = (validatedData as any).iibbManual || undefined
     const calculos = calcularVenta(
       pvBrutoConDescuento, // Usar el precio ya con descuento aplicado
       validatedData.cargoEnvioCosto,
@@ -188,10 +191,11 @@ export async function updateVenta(id: string, data: VentaFormData) {
       validatedData.plataforma, // Agregar plataforma para cálculos específicos
       comisionManualParaUsar, // Pasar comisión manual solo si está habilitada
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
+      iibbManualParaUsar, // Pasar IIBB manual para ML
     )
 
     // Filtrar campos que no existen en la base de datos o que no deben incluirse en UPDATE  
-    const { courier, externalOrderId, usarComisionManual, comisionManual, comisionExtraManual, ...ventaDataParaActualizar } = validatedData
+    const { courier, externalOrderId, usarComisionManual, comisionManual, comisionExtraManual, iibbManual, ...ventaDataParaActualizar } = validatedData
 
     // Filtrar también descuentoAplicado de los cálculos
     const { descuentoAplicado, ...calculosSinDescuento } = calculos

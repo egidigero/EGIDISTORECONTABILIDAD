@@ -21,6 +21,7 @@ const metodoPagoLabels = {
 const condicionLabels = {
   "Transferencia": "Transferencia",
   "Cuotas sin interés": "Cuotas sin interés",
+  "Normal": "Normal",
 }
 
 interface TarifasTableClientProps {

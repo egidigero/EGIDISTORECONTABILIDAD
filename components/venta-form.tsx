@@ -40,6 +40,7 @@ const metodoPagoOptions = [
 const condicionOptions = [
   { value: "Transferencia", label: "Transferencia" },
   { value: "Cuotas sin interés", label: "Cuotas sin interés" },
+  { value: "Normal", label: "Normal" },
 ]
 
 const estadoEnvioOptions = [
@@ -115,7 +116,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         },
   })
 
-  const watchedFields = watch(["productoId", "plataforma", "metodoPago", "condicion", "pvBruto", "cargoEnvioCosto", "usarComisionManual", "comisionManual", "comisionExtraManual"])
+  const watchedFields = watch(["productoId", "plataforma", "metodoPago", "condicion", "pvBruto", "cargoEnvioCosto", "usarComisionManual", "comisionManual", "comisionExtraManual", "iibbManual"])
   
   // Variables individuales para la calculadora
   const watchPvBruto = watch("pvBruto")
@@ -124,6 +125,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
   const watchUsarComisionManual = watch("usarComisionManual")
   const watchComisionManual = watch("comisionManual")
   const watchComisionExtraManual = watch("comisionExtraManual")
+  const watchIibbManual = watch("iibbManual")
 
   // Cargar productos
   useEffect(() => {
@@ -163,7 +165,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
 
   // Calcular preview cuando cambien los campos relevantes
   useEffect(() => {
-    const [productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto, usarComisionManual, comisionManual, comisionExtraManual] = watchedFields
+    const [productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto, usarComisionManual, comisionManual, comisionExtraManual, iibbManual] = watchedFields
 
     if (productoId && plataforma && metodoPago && condicion && pvBruto > 0) {
       setIsCalculating(true)
@@ -171,7 +173,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       // Usar la misma lógica exacta que la calculadora de productos
       const comisionParaUsar = usarComisionManual && comisionManual ? comisionManual : undefined
       const comisionExtraParaUsar = usarComisionManual && comisionExtraManual ? comisionExtraManual : undefined
-      calcularPreviewConTarifaCompleta(productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto || 0, comisionParaUsar, comisionExtraParaUsar)
+      calcularPreviewConTarifaCompleta(productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto || 0, comisionParaUsar, comisionExtraParaUsar, iibbManual)
         .then((result) => {
           console.log("Preview result:", result) // Debug
           if (result.success) {
@@ -204,7 +206,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     pvBruto: number,
     cargoEnvioCosto: number,
     comisionManual?: number,
-    comisionExtraManual?: number
+    comisionExtraManual?: number,
+    iibbManual?: number
   ) => {
     try {
       // Obtener el producto para el costo
@@ -253,23 +256,26 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       if (plataforma === "TN") {
         // TN: IVA e IIBB se agregan sobre las comisiones
         iva = (comision + comisionExtra) * 0.21 // 21% IVA sobre comisiones
-        iibb = (comision + comisionExtra) * 0.03 // 3% IIBB sobre comisiones
+        iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinámico desde tarifa
       } else if (plataforma === "ML") {
         // ML: La comisión ya incluye IVA, necesitamos desglosarlo
         comisionSinIva = comision / 1.21 // Comisión sin IVA
         comisionExtraSinIva = comisionExtra / 1.21 // Comisión extra sin IVA
         iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva // IVA incluido
+        // ML: IIBB es manual, se pasa desde el formulario
+        iibb = iibbManual || 0
       }
       
       // Calcular subtotales por separado para mayor claridad
       const subtotalComision = plataforma === "TN" 
-        ? comision + (comision * 0.21) + (comision * 0.03) 
-        : comision // Para ML, la comisión ya incluye todo
+        ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) 
+        : comision // Para ML, la comisión ya incluye IVA
       const subtotalComisionExtra = plataforma === "TN" 
-        ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * 0.03)
-        : comisionExtra // Para ML, la comisión extra ya incluye todo
+        ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03))
+        : comisionExtra // Para ML, la comisión extra ya incluye IVA
       
-      const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0)
+      // Para ML, agregar el IIBB manual al total de costos
+      const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
       const margenOperativo = resultadoOperativo - totalCostosPlataforma
@@ -487,19 +493,27 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                     <p className="text-sm text-destructive">{errors.cargoEnvioCosto.message}</p>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="iibb">IIBB (ARS, individual)</Label>
-                  <Input
-                    id="iibb"
-                    type="number"
-                    step="0.01"
-                    {...register("iibb", { valueAsNumber: true })}
-                    placeholder="0.00"
-                  />
-                  {errors.iibb && (
-                    <p className="text-sm text-destructive">{errors.iibb.message}</p>
-                  )}
-                </div>
+
+                {/* IIBB Manual para Mercado Libre */}
+                {watchPlataforma === "ML" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="iibbManual">IIBB (ARS) *Manual para ML*</Label>
+                    <Input
+                      id="iibbManual"
+                      type="number"
+                      step="0.01"
+                      {...register("iibbManual", { valueAsNumber: true })}
+                      placeholder="Ej: 500.00"
+                    />
+                    <p className="text-xs text-gray-600">
+                      Para Mercado Libre, el IIBB debe ingresarse manualmente. No se calcula automáticamente.
+                    </p>
+                    {errors.iibbManual && (
+                      <p className="text-sm text-destructive">{errors.iibbManual.message}</p>
+                    )}
+                  </div>
+                )}
+
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -685,8 +699,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                             <span className="font-mono">${(preview.data.comision * 0.21).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-red-600 ml-4">
-                            <span>• IIBB (3%):</span>
-                            <span className="font-mono">${(preview.data.comision * 0.03).toFixed(2)}</span>
+                            <span>• IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
+                            <span className="font-mono">${(preview.data.comision * (tarifaCompleta?.iibbPct || 0.03)).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                             <span>Subtotal Comisión:</span>
@@ -739,8 +753,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                               <span className="font-mono">${(preview.data.comisionExtra * 0.21).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-red-600 ml-4">
-                              <span>• IIBB (3%):</span>
-                              <span className="font-mono">${(preview.data.comisionExtra * 0.03).toFixed(2)}</span>
+                              <span>• IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
+                              <span className="font-mono">${(preview.data.comisionExtra * (tarifaCompleta?.iibbPct || 0.03)).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                               <span>Subtotal Comisión Extra:</span>
@@ -770,6 +784,14 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                             <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* IIBB Manual (solo para ML) */}
+                    {watchPlataforma === "ML" && watchIibbManual && watchIibbManual > 0 && (
+                      <div className="flex justify-between border-t pt-2 mt-2">
+                        <span className="font-medium">IIBB (Manual):</span>
+                        <span className="font-mono font-medium text-orange-600">${Number(watchIibbManual).toFixed(2)}</span>
                       </div>
                     )}
 

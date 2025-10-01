@@ -56,12 +56,11 @@ export const columns = [
     key: "comisiones",
     header: "Comisiones",
     render: (venta: VentaConProducto) => {
+      // Usar los valores directos de la base de datos
       const comisionBase = Number(venta.comision || 0)
-      
-      // Para TN: IVA 21% + IIBB 3% sobre la comisión base
-      const ivaComision = venta.plataforma === 'TN' ? comisionBase * 0.21 : 0
-      const iibbComision = venta.plataforma === 'TN' ? comisionBase * 0.03 : 0
-      const total = comisionBase + ivaComision + iibbComision
+      const iva = Number(venta.iva || 0)
+      const iibb = Number(venta.iibb || 0)
+      const total = comisionBase + iva + iibb
       
       return (
         <TooltipProvider>
@@ -78,17 +77,17 @@ export const columns = [
                   <span>Comisión base:</span>
                   <span>${comisionBase.toFixed(2)}</span>
                 </div>
-                {venta.plataforma === 'TN' && (
-                  <>
-                    <div className="flex justify-between text-orange-600">
-                      <span>• IVA (21%):</span>
-                      <span>${ivaComision.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-blue-600">
-                      <span>• IIBB (3%):</span>
-                      <span>${iibbComision.toFixed(2)}</span>
-                    </div>
-                  </>
+                {iva > 0 && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>• IVA (21%):</span>
+                    <span>${iva.toFixed(2)}</span>
+                  </div>
+                )}
+                {iibb > 0 && (
+                  <div className="flex justify-between text-blue-600">
+                    <span>• IIBB:</span>
+                    <span>${iibb.toFixed(2)}</span>
+                  </div>
                 )}
                 <div className="border-t pt-1 mt-1 flex justify-between font-medium">
                   <span>Total:</span>
@@ -134,20 +133,16 @@ export function VentasTableClient({ ventas }: { ventas: VentaConProducto[] }) {
   const totales = ventas.reduce(
     (acc, venta) => {
       const comisionBase = Number(venta.comision || 0)
+      const iva = Number(venta.iva || 0)
       const iibb = Number(venta.iibb || 0)
       
-      // Para TN, calcular IVA adicional sobre comisiones si no está incluido
-      let ivaAdicional = 0
-      if (venta.plataforma === 'TN') {
-        ivaAdicional = comisionBase * 0.21 // 21% IVA sobre comisiones
-      }
-      
-      const comisionTotal = comisionBase + ivaAdicional + iibb
+      // Comisión total = comisión base + IVA + IIBB (todos ahora vienen de la BD)
+      const comisionTotal = comisionBase + iva + iibb
       
       return {
         pvBruto: acc.pvBruto + Number(venta.pvBruto),
         cargoEnvio: acc.cargoEnvio + Number(venta.cargoEnvioCosto),
-        comisiones: acc.comisiones + comisionTotal,
+        comisiones: Number((acc.comisiones + comisionTotal).toFixed(2)),
         costoUnitario: acc.costoUnitario + Number(venta.producto.costoUnitarioARS),
         margen: acc.margen + Number(venta.ingresoMargen || 0),
       }

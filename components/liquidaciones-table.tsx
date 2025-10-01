@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 import { type Liquidacion } from "@/lib/types"
 import { LiquidacionActions } from "@/components/liquidacion-actions"
+import { calcularDetalleVentasTN } from "@/lib/actions/ventas-tn-liquidacion"
+import { calcularDetalleVentasMP } from "@/lib/actions/ventas-mp-liquidacion"
 
 interface MovimientosDetalle {
   fecha: Date
@@ -31,7 +33,22 @@ interface VentasTNDetalle {
     totalPVBruto: number
     totalDescuentos: number
     totalComisiones: number
+    totalIVA?: number
     totalIIBB: number
+    totalALiquidar: number
+  }
+}
+
+interface VentasMPDetalle {
+  ventas: any[]
+  resumen: {
+    cantidadVentas: number
+    totalPVBruto: number
+    totalDescuentos: number
+    totalComisiones: number
+    totalIVA: number
+    totalIIBB: number
+    totalEnvios: number
     totalALiquidar: number
   }
 }
@@ -42,6 +59,7 @@ export function LiquidacionesTable() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [movimientosDetalle, setMovimientosDetalle] = useState<Record<string, MovimientosDetalle>>({})
   const [ventasTNDetalle, setVentasTNDetalle] = useState<Record<string, VentasTNDetalle>>({})
+  const [ventasMPDetalle, setVentasMPDetalle] = useState<Record<string, VentasMPDetalle>>({})
   async function fetchJSON<T>(url: string): Promise<T> {
     const res = await fetch(url)
     if (!res.ok) throw new Error(`Request failed: ${res.status}`)
@@ -86,7 +104,9 @@ export function LiquidacionesTable() {
   }
 
   async function fetchDetalleVentasTN(fechaISO: string): Promise<VentasTNDetalle> {
-    return fetchJSON<VentasTNDetalle>(`/api/ventas/tn-detalle?fecha=${encodeURIComponent(fechaISO)}`)
+    // Usar la función server action en lugar del endpoint API antiguo
+    const resultado = await calcularDetalleVentasTN(fechaISO)
+    return resultado
   }
 
   useEffect(() => {
@@ -191,6 +211,21 @@ export function LiquidacionesTable() {
           }))
         } catch (error) {
           console.error("Error al cargar detalle ventas TN:", error)
+        }
+      }
+
+      // Cargar detalle de ventas MP (ML) si no está cargado
+      if (!ventasMPDetalle[liquidacionId]) {
+        try {
+          const fechaStr = format(fecha, 'yyyy-MM-dd')
+          const detalleVentasMP = await calcularDetalleVentasMP(fechaStr)
+          
+          setVentasMPDetalle(prev => ({
+            ...prev,
+            [liquidacionId]: detalleVentasMP
+          }))
+        } catch (error) {
+          console.error("Error al cargar detalle ventas MP:", error)
         }
       }
     }
@@ -471,54 +506,56 @@ export function LiquidacionesTable() {
                                 </div>
                               )}
 
-                              {/* Detalle de ventas TN que suman a "TN a Liquidar" */}
-                              {detalleVentasTN && (
+                              {/* Detalle de ventas MP (ML) que suman a "MP a Liquidar" */}
+                              {ventasMPDetalle[liquidacion.id] && (
                                 <div className="space-y-2">
-                                  <h4 className="font-medium text-sm">Ventas TN que suman a liquidar:</h4>
-                                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                                  <h4 className="font-medium text-sm">Ventas ML (MercadoPago) que suman a liquidar:</h4>
+                                  <div className="bg-green-50 p-3 rounded-lg border border-green-200">
                                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 text-xs">
                                       <div>
-                                        <span className="font-medium text-purple-700">Ventas:</span>
-                                        <div className="font-semibold">{detalleVentasTN.resumen.cantidadVentas}</div>
+                                        <span className="font-medium text-green-700">Ventas:</span>
+                                        <div className="font-semibold">{ventasMPDetalle[liquidacion.id].resumen.cantidadVentas}</div>
                                       </div>
                                       <div>
-                                        <span className="font-medium text-purple-700">PV Bruto:</span>
-                                        <div className="font-semibold">{formatCurrency(detalleVentasTN.resumen.totalPVBruto)}</div>
+                                        <span className="font-medium text-green-700">PV Bruto:</span>
+                                        <div className="font-semibold">{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalPVBruto)}</div>
                                       </div>
                                       <div>
-                                        <span className="font-medium text-red-700">Comisiones:</span>
-                                        <div className="font-semibold">-{formatCurrency(detalleVentasTN.resumen.totalComisiones)}</div>
+                                        <span className="font-medium text-red-700">Deducciones:</span>
+                                        <div className="space-y-0.5 text-xs">
+                                          <div>• Com: -{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalComisiones)}</div>
+                                          <div>• IVA: -{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalIVA || 0)}</div>
+                                          <div>• IIBB: -{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalIIBB || 0)}</div>
+                                          <div>• Envío: -{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalEnvios || 0)}</div>
+                                        </div>
                                       </div>
                                       <div>
-                                        <span className="font-medium text-red-700">IIBB:</span>
-                                        <div className="font-semibold">-{formatCurrency(detalleVentasTN.resumen.totalIIBB)}</div>
+                                        <span className="font-medium text-red-800">Total Desc.:</span>
+                                        <div className="font-semibold text-red-800">
+                                          -{formatCurrency((ventasMPDetalle[liquidacion.id].resumen.totalComisiones || 0) + (ventasMPDetalle[liquidacion.id].resumen.totalIVA || 0) + (ventasMPDetalle[liquidacion.id].resumen.totalIIBB || 0) + (ventasMPDetalle[liquidacion.id].resumen.totalEnvios || 0))}
+                                        </div>
                                       </div>
                                       <div>
                                         <span className="font-medium text-green-700">A Liquidar:</span>
-                                        <div className="font-semibold text-lg">{formatCurrency(detalleVentasTN.resumen.totalALiquidar)}</div>
+                                        <div className="font-semibold text-lg">{formatCurrency(ventasMPDetalle[liquidacion.id].resumen.totalALiquidar)}</div>
                                       </div>
                                     </div>
                                     
-                                    {detalleVentasTN.ventas.length > 0 && (
+                                    {ventasMPDetalle[liquidacion.id].ventas.length > 0 && (
                                       <div className="space-y-1 max-h-40 overflow-y-auto">
-                                        <div className="text-xs font-medium text-purple-700 mb-1">Detalle por venta:</div>
-                                        {detalleVentasTN.ventas.map(venta => (
-                                          <div key={venta.id} className="text-xs bg-white p-3 rounded border border-purple-100">
+                                        <div className="text-xs font-medium text-green-700 mb-1">Detalle por venta:</div>
+                                        {ventasMPDetalle[liquidacion.id].ventas.map(venta => (
+                                          <div key={venta.id} className="text-xs bg-white p-3 rounded border border-green-100">
+                                            {/* Nombre del comprador arriba */}
+                                            <div className="font-medium text-blue-700 mb-1.5">
+                                              👤 {venta.comprador || 'Comprador no especificado'}
+                                            </div>
+                                            
                                             <div className="flex justify-between items-start">
                                               <div className="flex-1">
-                                                {/* Información del comprador */}
-                                                <div className="font-medium text-blue-700">
-                                                  👤 {venta.nombreComprador || 'Comprador no especificado'}
-                                                </div>
-                                                {venta.emailComprador && (
-                                                  <div className="text-muted-foreground text-xs">
-                                                    📧 {venta.emailComprador}
-                                                  </div>
-                                                )}
-                                                
                                                 {/* Información del producto */}
-                                                <div className="mt-1">
-                                                  <div className="font-medium text-purple-700">
+                                                <div>
+                                                  <div className="font-medium text-green-700">
                                                     📦 {venta.producto?.nombre || venta.producto?.modelo || 'Producto sin nombre'}
                                                   </div>
                                                   {venta.producto?.sku && (
@@ -530,8 +567,8 @@ export function LiquidacionesTable() {
                                                 
                                                 {/* Detalles de la venta */}
                                                 <div className="text-muted-foreground mt-1 space-y-0.5">
-                                                  <div>📊 Cantidad: {venta.cantidad} • PV: {formatCurrency(venta.pvBruto)}</div>
-                                                  <div>💳 Método: {venta.metodoPago} • Estado: {venta.estadoEnvio}</div>
+                                                  <div>📊 PV: {formatCurrency(venta.pvBruto)}</div>
+                                                  <div>💳 Método: MercadoPago</div>
                                                   {venta.tracking && (
                                                     <div>🚚 Tracking: {venta.tracking}</div>
                                                   )}
@@ -548,14 +585,135 @@ export function LiquidacionesTable() {
                                                     A Liquidar
                                                   </div>
                                                 </div>
-                                                <div className="text-xs text-muted-foreground mt-1">
-                                                  Comisiones: -{formatCurrency(Number(venta.comisionesTotales || venta.comision || 0))}
-                                                </div>
-                                                {venta.iibbComisiones && Number(venta.iibbComisiones) > 0 && (
-                                                  <div className="text-xs text-muted-foreground">
-                                                    IIBB: -{formatCurrency(Number(venta.iibbComisiones))}
+                                                {/* Desglose de comisiones */}
+                                                <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                                                  <div className="font-medium text-gray-700">Deducciones:</div>
+                                                  <div className="pl-2">
+                                                    <div>• Comisión: -{formatCurrency(Number(venta.comision || 0))}</div>
+                                                    {venta.iva && Number(venta.iva) > 0 && (
+                                                      <div>• IVA (21%): -{formatCurrency(Number(venta.iva))}</div>
+                                                    )}
+                                                    {venta.iibb && Number(venta.iibb) > 0 && (
+                                                      <div>• IIBB: -{formatCurrency(Number(venta.iibb))}</div>
+                                                    )}
+                                                    {venta.cargoEnvioCosto && Number(venta.cargoEnvioCosto) > 0 && (
+                                                      <div>• Envío: -{formatCurrency(Number(venta.cargoEnvioCosto))}</div>
+                                                    )}
+                                                    <div className="border-t border-gray-300 mt-0.5 pt-0.5 font-medium">
+                                                      Total: -{formatCurrency(Number(venta.comision || 0) + Number(venta.iva || 0) + Number(venta.iibb || 0) + Number(venta.cargoEnvioCosto || 0))}
+                                                    </div>
                                                   </div>
-                                                )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    
+                                    {ventasMPDetalle[liquidacion.id].ventas.length === 0 && (
+                                      <div className="text-xs text-muted-foreground text-center py-2">
+                                        No hay ventas ML este día
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Detalle de ventas TN que suman a "TN a Liquidar" */}
+                              {ventasTNDetalle[liquidacion.id] && (
+                                <div className="space-y-2">
+                                  <h4 className="font-medium text-sm">Ventas TN que suman a liquidar:</h4>
+                                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 text-xs">
+                                      <div>
+                                        <span className="font-medium text-purple-700">Ventas:</span>
+                                        <div className="font-semibold">{ventasTNDetalle[liquidacion.id].resumen.cantidadVentas}</div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-purple-700">PV Bruto:</span>
+                                        <div className="font-semibold">{formatCurrency(ventasTNDetalle[liquidacion.id].resumen.totalPVBruto)}</div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-red-700">Deducciones:</span>
+                                        <div className="space-y-0.5 text-xs">
+                                          <div>• Com: -{formatCurrency(ventasTNDetalle[liquidacion.id].resumen.totalComisiones)}</div>
+                                          <div>• IVA: -{formatCurrency(ventasTNDetalle[liquidacion.id].resumen.totalIVA || 0)}</div>
+                                          <div>• IIBB: -{formatCurrency(ventasTNDetalle[liquidacion.id].resumen.totalIIBB || 0)}</div>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-red-800">Total Desc.:</span>
+                                        <div className="font-semibold text-red-800">
+                                          -{formatCurrency((ventasTNDetalle[liquidacion.id].resumen.totalComisiones || 0) + (ventasTNDetalle[liquidacion.id].resumen.totalIVA || 0) + (ventasTNDetalle[liquidacion.id].resumen.totalIIBB || 0))}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-green-700">A Liquidar:</span>
+                                        <div className="font-semibold text-lg">{formatCurrency(ventasTNDetalle[liquidacion.id].resumen.totalALiquidar)}</div>
+                                      </div>
+                                    </div>
+                                    
+                                    {ventasTNDetalle[liquidacion.id].ventas.length > 0 && (
+                                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                                        <div className="text-xs font-medium text-purple-700 mb-1">Detalle por venta:</div>
+                                        {ventasTNDetalle[liquidacion.id].ventas.map(venta => (
+                                          <div key={venta.id} className="text-xs bg-white p-3 rounded border border-purple-100">
+                                            {/* Nombre del comprador arriba */}
+                                            <div className="font-medium text-blue-700 mb-1.5">
+                                              👤 {venta.comprador || 'Comprador no especificado'}
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-start">
+                                              <div className="flex-1">
+                                                {/* Información del producto */}
+                                                <div>
+                                                  <div className="font-medium text-purple-700">
+                                                    📦 {venta.producto?.nombre || venta.producto?.modelo || 'Producto sin nombre'}
+                                                  </div>
+                                                  {venta.producto?.sku && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                      SKU: {venta.producto.sku}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                
+                                                {/* Detalles de la venta */}
+                                                <div className="text-muted-foreground mt-1 space-y-0.5">
+                                                  <div>📊 PV: {formatCurrency(venta.pvBruto)}</div>
+                                                  <div>💳 Método: {venta.metodoPago}</div>
+                                                  {venta.tracking && (
+                                                    <div>🚚 Tracking: {venta.tracking}</div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              
+                                              {/* Monto a liquidar destacado */}
+                                              <div className="text-right ml-4">
+                                                <div className="bg-green-100 px-2 py-1 rounded">
+                                                  <div className="font-bold text-green-700 text-sm">
+                                                    💰 {formatCurrency(venta.montoALiquidar)}
+                                                  </div>
+                                                  <div className="text-xs text-green-600">
+                                                    A Liquidar
+                                                  </div>
+                                                </div>
+                                                {/* Desglose de comisiones */}
+                                                <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                                                  <div className="font-medium text-gray-700">Deducciones:</div>
+                                                  <div className="pl-2">
+                                                    <div>• Comisión: -{formatCurrency(Number(venta.comision || 0))}</div>
+                                                    {venta.iva && Number(venta.iva) > 0 && (
+                                                      <div>• IVA (21%): -{formatCurrency(Number(venta.iva))}</div>
+                                                    )}
+                                                    {venta.iibb && Number(venta.iibb) > 0 && (
+                                                      <div>• IIBB (3%): -{formatCurrency(Number(venta.iibb))}</div>
+                                                    )}
+                                                    <div className="border-t border-gray-300 mt-0.5 pt-0.5 font-medium">
+                                                      Total: -{formatCurrency(Number(venta.comision || 0) + Number(venta.iva || 0) + Number(venta.iibb || 0))}
+                                                    </div>
+                                                  </div>
+                                                </div>
                                               </div>
                                             </div>
                                           </div>

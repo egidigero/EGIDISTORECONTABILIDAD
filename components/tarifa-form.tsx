@@ -23,7 +23,7 @@ const tarifaFormSchema = z.object({
   metodoPago: z.enum(["PagoNube", "MercadoPago", "Transferencia", "Efectivo"], {
     required_error: "Selecciona un método de pago",
   }),
-  condicion: z.enum(["Transferencia", "Cuotas sin interés"], {
+  condicion: z.enum(["Transferencia", "Cuotas sin interés", "Normal"], {
     required_error: "Selecciona una condición de pago",
   }),
   comisionPct: z.number().min(0).max(100, "La comisión debe estar entre 0 y 100%"),
@@ -62,7 +62,7 @@ export function TarifaForm({ tarifa, onSuccess }: TarifaFormProps) {
   const isEditing = !!tarifa
 
   const form = useForm<TarifaFormInputs>({
-    resolver: zodResolver(tarifaFormSchema),
+    resolver: zodResolver(tarifaFormSchema) as any,
     defaultValues: {
       id: tarifa?.id, // Solo incluir ID si estamos editando
       plataforma: tarifa?.plataforma ?? "TN",
@@ -174,6 +174,7 @@ export function TarifaForm({ tarifa, onSuccess }: TarifaFormProps) {
                 <SelectContent>
                   <SelectItem value="Transferencia">Transferencia</SelectItem>
                   <SelectItem value="Cuotas sin interés">Cuotas sin interés</SelectItem>
+                  <SelectItem value="Normal">Normal</SelectItem>
                 </SelectContent>
               </Select>
               {errors.condicion && <p className="text-sm text-destructive">{errors.condicion.message}</p>}

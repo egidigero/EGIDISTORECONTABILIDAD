@@ -46,7 +46,7 @@ export async function calcularEERR(
     let ventasTotales = {
       ventasTotales: 0,
       costoProducto: 0,
-      envios: 0,
+      envios: 0, // Solo envíos de TN (para comparar con gastos de envío)
       comisionesBase: 0,
       ivaComisiones: 0,
       iibbComisiones: 0,
@@ -59,21 +59,20 @@ export async function calcularEERR(
       const pvBruto = Number(venta.pvBruto || 0);
       const costoProducto = Number(venta.costoProducto || 0);
       const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0);
-      // En la BD, "comision" es la base (sin IVA ni IIBB)
+      // En la BD, "comision" es la base (sin IVA para ML, sin IVA ni IIBB para TN)
       const comisionBase = Number(venta.comision || 0);
-      let ivaComisiones = 0;
-      let iibbComisiones = 0;
-      if (venta.plataforma === 'TN') {
-        ivaComisiones = comisionBase * 0.21;
-        iibbComisiones = comisionBase * 0.03;
-      } else {
-        ivaComisiones = comisionBase * 0.21;
-        iibbComisiones = 0;
-      }
+      // Usar el IIBB guardado en la BD (para TN es auto-calculado, para ML es manual)
+      const iibbComisiones = Number(venta.iibb || 0);
+      // IVA siempre es 21% sobre la comisión base
+      const ivaComisiones = comisionBase * 0.21;
+      
       const comisionTotal = comisionBase + ivaComisiones + iibbComisiones;
       ventasTotales.ventasTotales += pvBruto;
       ventasTotales.costoProducto += costoProducto;
-      ventasTotales.envios += cargoEnvioCosto;
+      // Solo sumar envíos de Tienda Nube para la comparación con gastos
+      if (venta.plataforma === 'TN') {
+        ventasTotales.envios += cargoEnvioCosto;
+      }
       ventasTotales.comisionesTotales += comisionTotal;
       ventasTotales.comisionesBase += comisionBase;
       ventasTotales.ivaComisiones += ivaComisiones;

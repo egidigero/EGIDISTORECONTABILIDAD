@@ -2,6 +2,7 @@
 
 import { supabase } from "@/lib/supabase"
 import { calcularDetalleVentasTN } from "@/lib/actions/ventas-tn-liquidacion"
+import { calcularDetalleVentasMP } from "@/lib/actions/ventas-mp-liquidacion"
 import { calcularImpactoEnMPDisponible } from "@/lib/actions/gastos-ingresos"
 import { revalidatePath } from "next/cache"
 
@@ -57,6 +58,10 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
     const detalleVentasTN = await calcularDetalleVentasTN(fecha)
     const impactoVentasTN = detalleVentasTN.resumen.totalALiquidar
 
+    // 3b. Calcular impacto de ventas ML del día
+    const detalleVentasML = await calcularDetalleVentasMP(fecha)
+    const impactoVentasML = detalleVentasML.resumen.totalALiquidar
+
     // 4. Calcular impacto de gastos/ingresos del día
     const impactoGastosIngresos = await calcularImpactoEnMPDisponible(fecha)
 
@@ -70,8 +75,8 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       // MP Disponible = Base anterior + Gastos/Ingresos + Liquidaciones recibidas
       mp_disponible: Math.round((valoresBase.mp_disponible + impactoGastosIngresos.impactoNeto + mp_liquidado_hoy + tn_liquidado_hoy - tn_iibb_descuento) * 100) / 100,
       
-      // MP A Liquidar = Base anterior - MP liquidado hoy
-      mp_a_liquidar: Math.round((valoresBase.mp_a_liquidar - mp_liquidado_hoy) * 100) / 100,
+      // MP A Liquidar = Base anterior + Ventas ML del día - MP liquidado hoy
+      mp_a_liquidar: Math.round((valoresBase.mp_a_liquidar + impactoVentasML - mp_liquidado_hoy) * 100) / 100,
       
       // TN A Liquidar = Base anterior + Ventas TN del día - TN liquidado hoy
       tn_a_liquidar: Math.round((valoresBase.tn_a_liquidar + impactoVentasTN - tn_liquidado_hoy) * 100) / 100
@@ -80,7 +85,7 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
     // Calcular totales adicionales (también redondeados)
     const mp_total = Math.round((nuevosValores.mp_disponible + nuevosValores.mp_a_liquidar) * 100) / 100
     const total_disponible = Math.round((nuevosValores.mp_disponible + nuevosValores.tn_a_liquidar) * 100) / 100
-    const movimiento_neto_dia = Math.round((impactoGastosIngresos.impactoNeto + impactoVentasTN) * 100) / 100
+    const movimiento_neto_dia = Math.round((impactoGastosIngresos.impactoNeto + impactoVentasTN + impactoVentasML) * 100) / 100
 
     // 7. Actualizar liquidación
     const { error: updateError } = await supabase
@@ -102,9 +107,17 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       valoresBase,
       impactos: {
         ventasTN: impactoVentasTN,
+        ventasML: impactoVentasML,
         gastosIngresos: impactoGastosIngresos.impactoNeto
       },
       liquidacionesProcesadas: { mp_liquidado_hoy, tn_liquidado_hoy, tn_iibb_descuento },
+      calculoMP: {
+        base: valoresBase.mp_a_liquidar,
+        masVentas: impactoVentasML,
+        menosLiquidado: mp_liquidado_hoy,
+        resultado: valoresBase.mp_a_liquidar + impactoVentasML - mp_liquidado_hoy,
+        resultadoRedondeado: nuevosValores.mp_a_liquidar
+      },
       calculoTN: {
         base: valoresBase.tn_a_liquidar,
         masVentas: impactoVentasTN,

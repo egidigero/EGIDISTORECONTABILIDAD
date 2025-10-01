@@ -219,6 +219,7 @@ export function CalculadoraCostos({
                       <SelectContent>
                         <SelectItem value="Transferencia">Transferencia</SelectItem>
                         <SelectItem value="Cuotas sin interés">Cuotas sin interés</SelectItem>
+                        <SelectItem value="Normal">Normal</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -11,6 +11,7 @@ export interface TarifaData {
 
 export interface VentaCalculos {
   comision: number
+  iva: number
   iibb: number
   precioNeto: number
   costoProducto: number
@@ -53,6 +54,7 @@ export function calcularVenta(
   plataforma?: string,
   comisionManual?: number,
   comisionExtraManual?: number,
+  iibbManual?: number, // IIBB manual para ML
 ): VentaCalculos {
   // 1. Aplicar descuento pre-comisión si existe (ej: 15% para TN + Transferencia)
   const pvConDescuento = pvBruto * (1 - (tarifa.descuentoPct || 0))
@@ -86,11 +88,16 @@ export function calcularVenta(
     comisionSinIva = comisionBase / 1.21; // Comisión sin IVA
     comisionExtraSinIva = comisionExtra / 1.21; // Comisión extra sin IVA
     iva = comisionBase - comisionSinIva + comisionExtra - comisionExtraSinIva; // IVA incluido
-    // ML no tiene IIBB adicional
+    // ML: IIBB es MANUAL por venta, se pasa desde el formulario
+    iibb = iibbManual || 0;
   }
   
-  // 4. Agregar fijo por operación a las comisiones
-  const comisionTotal = comisionBase + comisionExtra + tarifa.fijoPorOperacion
+  // 4. Agregar fijo por operación - Para ML, usar comisiones SIN IVA
+  let comisionTotal = comisionBase + comisionExtra + tarifa.fijoPorOperacion
+  if (plataforma === "ML") {
+    // Para ML, guardar la comisión SIN IVA (porque el IVA ya está separado)
+    comisionTotal = comisionSinIva + comisionExtraSinIva + (tarifa.fijoPorOperacion / 1.21)
+  }
   
   // 5. Precio neto = PV Bruto - Comisiones totales - Envíos (según base de datos)
   const precioNeto = pvConDescuento - comisionTotal - iva - iibb - cargoEnvioCosto
@@ -103,7 +110,8 @@ export function calcularVenta(
 
   return {
     comision: Number(comisionTotal.toFixed(2)), // Comisión base + extra + fijo
-    iibb: Number(iibb.toFixed(2)), // Solo IIBB (IVA no se guarda por separado)
+    iva: Number(iva.toFixed(2)), // IVA calculado según plataforma
+    iibb: Number(iibb.toFixed(2)), // IIBB calculado según tarifa
     precioNeto: Number(precioNeto.toFixed(2)),
     costoProducto: Number(costoProducto.toFixed(2)),
     ingresoMargen: Number(ingresoMargen.toFixed(2)),

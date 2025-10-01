@@ -5,13 +5,13 @@ import type { VentaConProducto } from "@/lib/types"
 
 /**
  * Actualiza la liquidación del día cuando se crea/actualiza una venta
- * Solo procesa ventas de Tienda Nube (TN)
+ * Procesa ventas de Tienda Nube (TN) y Mercado Libre (ML)
  */
 export async function actualizarLiquidacionPorVenta(venta: VentaConProducto, isUpdate = false, ventaAnterior?: VentaConProducto) {
   try {
-    // Solo procesar ventas de Tienda Nube
-    if (venta.plataforma !== 'TN') {
-      console.log('Venta no es de TN, no afecta liquidación')
+    // Solo procesar ventas de TN o ML
+    if (venta.plataforma !== 'TN' && venta.plataforma !== 'ML') {
+      console.log('Venta no es de TN ni ML, no afecta liquidación')
       return { success: true }
     }
 
@@ -29,49 +29,50 @@ export async function actualizarLiquidacionPorVenta(venta: VentaConProducto, isU
       return { success: false, error: 'Liquidación no encontrada' }
     }
 
-    // Calcular el monto a liquidar de esta venta: PV - Descuento - Comisiones (con IVA) - IIBB
-    // Para TN: el descuentoAplicado ya está incluido en el cálculo del precio
+    // Calcular el monto a liquidar de esta venta
     const pvBruto = Number(venta.pvBruto || 0)
     const comisionBase = Number(venta.comision || 0)
+    const iva = Number(venta.iva || 0)
     const iibb = Number(venta.iibb || 0)
+    const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
     
-    // Para TN, incluir IVA sobre comisiones (21%)
-    const comisionesConIVA = venta.plataforma === 'TN' 
-      ? comisionBase * 1.21 
-      : comisionBase
-    
-    // Si hay descuentos aplicados (diferencia entre PV bruto y lo que realmente se cobra)
-    const descuentosAplicados = 0 // Por ahora asumimos 0, se puede calcular si es necesario
-    
-    // Fórmula: PV Bruto - Descuentos - Comisiones (con IVA) - IIBB = Monto neto a liquidar
-    const montoVentaALiquidar = pvBruto - descuentosAplicados - comisionesConIVA - iibb
+    // Para ML: PV - Comisión - IVA - IIBB - Envío
+    // Para TN: PV - Comisión - IVA - IIBB
+    const montoVentaALiquidar = pvBruto - comisionBase - iva - iibb - (venta.plataforma === 'ML' ? cargoEnvioCosto : 0)
     
     let nuevoTnALiquidar = liquidacion.tn_a_liquidar
+    let nuevoMpALiquidar = liquidacion.mp_a_liquidar
 
     if (isUpdate && ventaAnterior) {
       // Si es actualización, primero restar el valor anterior
       const pvBrutoAnterior = Number(ventaAnterior.pvBruto || 0)
       const comisionBaseAnterior = Number(ventaAnterior.comision || 0)
+      const ivaAnterior = Number(ventaAnterior.iva || 0)
       const iibbAnterior = Number(ventaAnterior.iibb || 0)
+      const cargoEnvioCostoAnterior = Number(ventaAnterior.cargoEnvioCosto || 0)
       
-      // Para TN, incluir IVA sobre comisiones anteriores también
-      const comisionesConIVAAnterior = ventaAnterior.plataforma === 'TN' 
-        ? comisionBaseAnterior * 1.21 
-        : comisionBaseAnterior
+      const montoAnteriorALiquidar = pvBrutoAnterior - comisionBaseAnterior - ivaAnterior - iibbAnterior - (ventaAnterior.plataforma === 'ML' ? cargoEnvioCostoAnterior : 0)
       
-      const montoAnteriorALiquidar = pvBrutoAnterior - comisionesConIVAAnterior - iibbAnterior
-      
-      nuevoTnALiquidar -= montoAnteriorALiquidar
+      if (ventaAnterior.plataforma === 'TN') {
+        nuevoTnALiquidar -= montoAnteriorALiquidar
+      } else if (ventaAnterior.plataforma === 'ML') {
+        nuevoMpALiquidar -= montoAnteriorALiquidar
+      }
     }
 
-    // Sumar el nuevo monto
-    nuevoTnALiquidar += montoVentaALiquidar
+    // Sumar el nuevo monto a la plataforma correspondiente
+    if (venta.plataforma === 'TN') {
+      nuevoTnALiquidar += montoVentaALiquidar
+    } else if (venta.plataforma === 'ML') {
+      nuevoMpALiquidar += montoVentaALiquidar
+    }
 
     // Actualizar la liquidación
     const { error: errorActualizacion } = await supabase
       .from('liquidaciones')
       .update({
         tn_a_liquidar: nuevoTnALiquidar,
+        mp_a_liquidar: nuevoMpALiquidar,
         updated_at: new Date().toISOString()
       })
       .eq('id', liquidacion.id)
@@ -83,10 +84,12 @@ export async function actualizarLiquidacionPorVenta(venta: VentaConProducto, isU
 
     console.log('Liquidación actualizada:', {
       fecha: fechaVenta,
+      plataforma: venta.plataforma,
       montoVenta: montoVentaALiquidar,
       tn_a_liquidar_anterior: liquidacion.tn_a_liquidar,
       tn_a_liquidar_nuevo: nuevoTnALiquidar,
-      diferencia: nuevoTnALiquidar - liquidacion.tn_a_liquidar
+      mp_a_liquidar_anterior: liquidacion.mp_a_liquidar,
+      mp_a_liquidar_nuevo: nuevoMpALiquidar
     })
 
     return { success: true }
@@ -102,8 +105,8 @@ export async function actualizarLiquidacionPorVenta(venta: VentaConProducto, isU
  */
 export async function eliminarVentaDeLiquidacion(venta: VentaConProducto) {
   try {
-    // Solo procesar ventas de Tienda Nube
-    if (venta.plataforma !== 'TN') {
+    // Solo procesar ventas de TN o ML
+    if (venta.plataforma !== 'TN' && venta.plataforma !== 'ML') {
       return { success: true }
     }
 
@@ -121,25 +124,30 @@ export async function eliminarVentaDeLiquidacion(venta: VentaConProducto) {
       return { success: false, error: 'Liquidación no encontrada' }
     }
 
-    // Calcular el monto a restar: PV - Descuento - Comisiones (con IVA) - IIBB
+    // Calcular el monto a restar
     const pvBruto = Number(venta.pvBruto || 0)
     const comisionBase = Number(venta.comision || 0)
+    const iva = Number(venta.iva || 0)
     const iibb = Number(venta.iibb || 0)
-    const descuentosAplicados = 0 // Por ahora asumimos 0
+    const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
     
-    // Para TN, incluir IVA sobre comisiones (21%)
-    const comisionesConIVA = venta.plataforma === 'TN' 
-      ? comisionBase * 1.21 
-      : comisionBase
+    const montoVentaALiquidar = pvBruto - comisionBase - iva - iibb - (venta.plataforma === 'ML' ? cargoEnvioCosto : 0)
     
-    const montoVentaALiquidar = pvBruto - descuentosAplicados - comisionesConIVA - iibb
-    const nuevoTnALiquidar = liquidacion.tn_a_liquidar - montoVentaALiquidar
+    let nuevoTnALiquidar = liquidacion.tn_a_liquidar
+    let nuevoMpALiquidar = liquidacion.mp_a_liquidar
+    
+    if (venta.plataforma === 'TN') {
+      nuevoTnALiquidar -= montoVentaALiquidar
+    } else if (venta.plataforma === 'ML') {
+      nuevoMpALiquidar -= montoVentaALiquidar
+    }
 
     // Actualizar la liquidación
     const { error: errorActualizacion } = await supabase
       .from('liquidaciones')
       .update({
         tn_a_liquidar: nuevoTnALiquidar,
+        mp_a_liquidar: nuevoMpALiquidar,
         updated_at: new Date().toISOString()
       })
       .eq('id', liquidacion.id)

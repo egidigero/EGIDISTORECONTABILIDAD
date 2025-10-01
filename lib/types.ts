@@ -3,7 +3,7 @@
 // Tipos para los enums
 export type Plataforma = "TN" | "ML" | "General" | "Directo"
 export type MetodoPago = "PagoNube" | "MercadoPago"
-export type Condicion = "Transferencia" | "Cuotas sin interés"
+export type Condicion = "Transferencia" | "Cuotas sin interés" | "Normal"
 export type EstadoEnvio = "Pendiente" | "EnCamino" | "Entregado" | "Devuelto" | "Cancelado"
 export type TipoMovimiento = "Gasto" | "Ingreso"
 
@@ -102,6 +102,7 @@ export interface VentaConProducto {
   saleCode?: string;
   // Campos calculados
   comision?: number;
+  iva?: number;
   iibb?: number;
   precioNeto?: number;
   costoProducto?: number;
