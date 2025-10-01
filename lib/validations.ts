@@ -52,16 +52,62 @@ export type GastoIngresoFormData = z.infer<typeof gastoIngresoSchema>
 
 // Validaciones para Devolución
 export const devolucionSchema = z.object({
-  fecha: z.date(),
+  // Relaciones
   ventaId: z.string().min(1, "Selecciona una venta"),
-  plataforma: z.enum(["TN", "ML", "Directo"]),
+  productoNuevoId: z.string().optional(), // Solo si es cambio de producto
+  
+  // Fechas
+  fechaCompra: z.date({
+    required_error: "La fecha de compra es requerida",
+  }),
+  fechaReclamo: z.date({
+    required_error: "La fecha de reclamo es requerida",
+  }).default(new Date()),
+  fechaCompletada: z.date().optional(),
+  
+  // Información de contacto
+  nombreContacto: z.string().min(1, "El nombre de contacto es requerido"),
+  telefonoContacto: z.string().min(1, "El teléfono de contacto es requerido"),
+  
+  // Estado del reclamo
+  estado: z.enum([
+    "Pendiente",
+    "Aceptada en camino",
+    "Entregada - Reembolso",
+    "Entregada - Cambio mismo producto",
+    "Entregada - Cambio otro producto",
+    "Entregada - Sin reembolso",
+    "Rechazada"
+  ], {
+    required_error: "Selecciona un estado",
+  }).default("Pendiente"),
+  
+  // Detalles
   motivo: z.string().min(1, "El motivo es requerido"),
-  estado: z.string().min(1, "El estado es requerido"),
-  montoDevuelto: z.number().min(0, "El monto debe ser mayor o igual a 0"),
-  costoEnvioIda: z.number().min(0, "El costo debe ser mayor o igual a 0"),
-  costoEnvioVuelta: z.number().min(0, "El costo debe ser mayor o igual a 0"),
-  recuperoProducto: z.boolean().default(false),
   observaciones: z.string().optional(),
+  
+  // Costos de envío
+  costoEnvioOriginal: z.number().min(0).default(0),
+  costoEnvioDevolucion: z.number().min(0).default(0),
+  costoEnvioNuevo: z.number().min(0).default(0),
+  
+  // Resolución
+  tipoResolucion: z.enum([
+    "Reembolso",
+    "Cambio mismo producto",
+    "Cambio otro producto",
+    "Sin reembolso"
+  ]).optional(),
+  
+  // Costos de productos (auto-completados desde la venta)
+  costoProductoOriginal: z.number().min(0).default(0),
+  costoProductoNuevo: z.number().min(0).default(0),
+  
+  // Impacto financiero (auto-completados desde la venta)
+  montoVentaOriginal: z.number().min(0).default(0),
+  montoReembolsado: z.number().min(0).default(0),
+  comisionOriginal: z.number().min(0).default(0),
+  comisionDevuelta: z.number().min(0).default(0),
 })
 
 export type DevolucionFormData = z.infer<typeof devolucionSchema>

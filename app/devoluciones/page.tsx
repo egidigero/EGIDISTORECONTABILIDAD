@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, RotateCcw } from "lucide-react"
+import { Plus, RotateCcw, FileText } from "lucide-react"
 import { DevolucionesTable } from "@/components/devoluciones-table"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 
@@ -19,12 +19,20 @@ export default async function DevolucionesPage() {
               </Link>
               <h1 className="text-2xl font-bold text-foreground mt-1">Devoluciones</h1>
             </div>
-            <Button asChild>
-              <Link href="/devoluciones/nueva">
-                <Plus className="h-4 w-4 mr-2" />
-                Nueva Devolución
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/devoluciones/reportes">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Ver Reportes
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/devoluciones/nueva">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Nueva Devolución
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
