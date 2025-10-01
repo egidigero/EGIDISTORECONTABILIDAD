@@ -184,6 +184,7 @@ export interface EERRData {
   // Otros gastos y resultado final
   otrosGastos: number         // Otros gastos del canal
   margenOperativo: number     // Resultado después de todos los gastos
+  margenNetoNegocio: number   // Margen neto del negocio (sin gastos personales)
   
   // Campos legacy (mantener compatibilidad)
   ventasBrutas: number

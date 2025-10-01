@@ -55,24 +55,6 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ventas Totales</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(eerrData.ventasTotales)}</div>
-            <div className="flex items-center text-xs text-muted-foreground">
-              {resumenPeriodo.variacion.ventasBrutas >= 0 ? (
-                <TrendingUp className="h-3 w-3 mr-1 text-green-600" />
-              ) : (
-                <TrendingDown className="h-3 w-3 mr-1 text-red-600" />
-              )}
-              {formatPercentage(eerrData.ventasTotales, resumenPeriodo.anterior.ventasBrutas)} vs período anterior
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Ventas Netas</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -136,13 +118,35 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             >
               {formatCurrency(eerrData.margenOperativo)}
             </div>
-            <div className="flex items-center text-xs text-muted-foreground">
-              {resumenPeriodo.variacion.resultadoOperativo >= 0 ? (
-                <TrendingUp className="h-3 w-3 mr-1 text-green-600" />
-              ) : (
-                <TrendingDown className="h-3 w-3 mr-1 text-red-600" />
-              )}
-              {formatPercentage(eerrData.margenOperativo, resumenPeriodo.anterior.resultadoOperativo)} vs período anterior
+            <div className="flex gap-1 mt-1">
+              <Badge variant="secondary" className="text-xs">
+                {eerrData.ventasNetas > 0 ? ((eerrData.margenOperativo / eerrData.ventasNetas) * 100).toFixed(1) : 0}% s/Ventas
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {eerrData.costoProducto > 0 ? ((eerrData.margenOperativo / eerrData.costoProducto) * 100).toFixed(1) : 0}% s/Costo
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Margen Neto</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`text-2xl font-bold ${eerrData.margenNetoNegocio >= 0 ? "text-green-600" : "text-red-600"}`}
+            >
+              {formatCurrency(eerrData.margenNetoNegocio)}
+            </div>
+            <div className="flex gap-1 mt-1">
+              <Badge variant="secondary" className="text-xs">
+                {eerrData.ventasNetas > 0 ? ((eerrData.margenNetoNegocio / eerrData.ventasNetas) * 100).toFixed(1) : 0}% s/Ventas
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {eerrData.costoProducto > 0 ? ((eerrData.margenNetoNegocio / eerrData.costoProducto) * 100).toFixed(1) : 0}% s/Costo
+              </Badge>
             </div>
           </CardContent>
         </Card>
@@ -317,29 +321,16 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                 </div>
 
                 {/* Gastos personales y margen final solo en General */}
-                {(!canal || canal === "General") && (
+                {(!canal || canal === "General") && eerrData.gastosPersonales !== undefined && (
                   <>
                     <div className="mb-6">
                       <h3 className="font-semibold text-lg mb-3 text-pink-700">👤 Gastos Personales</h3>
                       <div className="space-y-2 bg-pink-50 p-3 rounded">
                         <div className="flex justify-between text-pink-700 font-semibold">
                           <span>(-) Total Gastos Personales:</span>
-                          <span>-{formatCurrency(eerrData.gastosPersonales)}</span>
+                          <span>-{formatCurrency(eerrData.gastosPersonales ?? 0)}</span>
                         </div>
-                        {Array.isArray(eerrData.detalleGastosPersonales) && eerrData.detalleGastosPersonales.length > 0 ? (
-                          <div className="mt-2">
-                            <ul className="text-xs text-gray-700 space-y-1">
-                              {eerrData.detalleGastosPersonales.map((gasto: any) => (
-                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
-                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
-                                  <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-gray-400 mt-2">Sin gastos personales en el período</div>
-                        )}
+                        <div className="text-xs text-gray-400 mt-2">Gastos personales del período</div>
                       </div>
                     </div>
                     <div className="mb-6">
@@ -347,7 +338,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       <div className="space-y-2 bg-lime-50 p-3 rounded">
                         <div className="flex justify-between text-black font-bold text-lg">
                           <span>Margen Final:</span>
-                          <span className={eerrData.margenFinalConPersonales >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenFinalConPersonales ?? 0)}</span>
+                          <span className={(eerrData.margenFinalConPersonales ?? 0) >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenFinalConPersonales ?? 0)}</span>
                         </div>
                       </div>
                     </div>

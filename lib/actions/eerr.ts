@@ -112,7 +112,7 @@ export async function calcularEERR(
 
 
 
-    // Otros gastos del negocio (excluyendo ADS/publicidad y envíos)
+    // Otros gastos (todos, excluyendo solo ADS y envíos que ya están en costos de plataforma)
     let otrosGastosQuery = supabase
       .from("gastos_ingresos")
       .select("id,fecha,montoARS,categoria,descripcion,canal")
@@ -126,8 +126,14 @@ export async function calcularEERR(
     }
 
     const { data: otrosGastosData, error: otrosGastosError } = await otrosGastosQuery;
-    const otrosGastos = !otrosGastosError && otrosGastosData 
-      ? Math.round(otrosGastosData.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100
+    
+    // Para el cálculo del margen neto: solo gastos del negocio (excluir personales)
+    const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"];
+    const gastosNegocio = otrosGastosData 
+      ? otrosGastosData.filter(g => !categoriasPersonales.includes(g.categoria))
+      : [];
+    const otrosGastos = !otrosGastosError && gastosNegocio.length > 0
+      ? Math.round(gastosNegocio.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100
       : 0;
 
     // Otros ingresos del negocio (excepto ventas)
@@ -187,6 +193,7 @@ export async function calcularEERR(
       detalleOtrosGastos: otrosGastosData || [],
   otrosIngresos: Math.round(otrosIngresos * 100) / 100,
       detalleOtrosIngresos: otrosIngresosFiltrados || [],
+      margenNetoNegocio: Math.round(margenNetoNegocio * 100) / 100,
       ventasBrutas: Math.round(ventasTotales.ventasTotales * 100) / 100,
       precioNeto: Math.round(precioNeto * 100) / 100,
       costoEnvio: Math.round(ventasTotales.envios * 100) / 100,
@@ -217,6 +224,7 @@ export async function calcularEERR(
       roas: 0,
       otrosGastos: 0,
       margenOperativo: 0,
+      margenNetoNegocio: 0,
       ventasBrutas: 0,
       precioNeto: 0,
       costoEnvio: 0,
