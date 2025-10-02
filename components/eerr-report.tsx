@@ -288,7 +288,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                     </div>
                     <div className="flex justify-between text-red-600">
                       <span>(-) Envíos:</span>
-                      <span className="font-medium">-{formatCurrency(eerrData.envios)}</span>
+                      <span className="font-medium">-{formatCurrency(eerrData.enviosTotales)}</span>
                     </div>
                     <div className="flex justify-between border-t pt-2 font-semibold text-red-600">
                       <span>= Total Costos Plataforma:</span>

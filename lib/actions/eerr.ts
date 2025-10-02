@@ -47,6 +47,7 @@ export async function calcularEERR(
       ventasTotales: 0,
       costoProducto: 0,
       envios: 0, // Solo envíos de TN (para comparar con gastos de envío)
+      enviosTotales: 0, // Todos los envíos (TN + ML) para mostrar en costos de plataforma
       comisionesBase: 0,
       ivaComisiones: 0,
       iibbComisiones: 0,
@@ -69,6 +70,8 @@ export async function calcularEERR(
       const comisionTotal = comisionBase + ivaComisiones + iibbComisiones;
       ventasTotales.ventasTotales += pvBruto;
       ventasTotales.costoProducto += costoProducto;
+      // Sumar TODOS los envíos (TN + ML) para costos de plataforma
+      ventasTotales.enviosTotales += cargoEnvioCosto;
       // Solo sumar envíos de Tienda Nube para la comparación con gastos
       if (venta.plataforma === 'TN') {
         ventasTotales.envios += cargoEnvioCosto;
@@ -83,8 +86,8 @@ export async function calcularEERR(
     // Definir descuentos (ajustar según lógica real si aplica)
     const descuentos = 0;
     const ventasDespuesDescuentos = Math.round((ventasTotales.ventasTotales - descuentos) * 100) / 100;
-    // Costos de plataforma total
-    const totalCostosPlataforma = Math.round((ventasTotales.comisionesTotales + ventasTotales.envios) * 100) / 100;
+    // Costos de plataforma total (comisiones + TODOS los envíos)
+    const totalCostosPlataforma = Math.round((ventasTotales.comisionesTotales + ventasTotales.enviosTotales) * 100) / 100;
     // Precio neto = Ventas después de descuentos - Costos de plataforma
     const precioNeto = Math.round((ventasDespuesDescuentos - totalCostosPlataforma) * 100) / 100;
   // Resultado bruto = Ventas Netas (después de descuentos) - Costo productos
@@ -183,7 +186,8 @@ export async function calcularEERR(
       comisionesExtra: Math.round(ventasTotales.comisionesExtra * 100) / 100,
       ivaComisiones: Math.round(ventasTotales.ivaComisiones * 100) / 100,
       iibbComisiones: Math.round(ventasTotales.iibbComisiones * 100) / 100,
-      envios: Math.round(ventasTotales.envios * 100) / 100,
+      envios: Math.round(ventasTotales.envios * 100) / 100, // Solo TN (para comparar con gastos)
+      enviosTotales: Math.round(ventasTotales.enviosTotales * 100) / 100, // Todos (TN + ML) para costos plataforma
       iibb: Math.round(ventasTotales.iibbComisiones * 100) / 100,
       totalCostosPlataforma: Math.round(totalCostosPlataforma * 100) / 100,
       publicidad: Math.round(publicidad * 100) / 100,
@@ -218,6 +222,7 @@ export async function calcularEERR(
       ivaComisiones: 0,
       iibbComisiones: 0,
       envios: 0,
+      enviosTotales: 0,
       iibb: 0,
       totalCostosPlataforma: 0,
       publicidad: 0,

@@ -173,7 +173,8 @@ export interface EERRData {
   comisionesExtra: number     // Comisiones extra si las hay
   ivaComisiones: number       // IVA sobre comisiones (21%)
   iibbComisiones: number      // IIBB sobre comisiones (3%)
-  envios: number              // Costos de envío
+  envios: number              // Costos de envío solo TN (para comparar con gastos)
+  enviosTotales: number       // Costos de envío totales (TN + ML) para mostrar en costos plataforma
   iibb: number                // Total IIBB (para compatibilidad)
   totalCostosPlataforma: number // Total costos plataforma
   
