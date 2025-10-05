@@ -75,10 +75,16 @@ export function calcularVenta(
 
   // Caso especial: TN + MercadoPago
   if (plataforma === "TN" && tarifa && (tarifa as any).metodoPago === "MercadoPago") {
-    // Solo la comisión base lleva IVA, la extra NO
-    iva = comisionBase * 0.21;
-    // IIBB según tarifa (puede ser variable)
-    iibb = (comisionBase + comisionExtra) * (tarifa.iibbPct || 0);
+    // comisionBase = Comisión MP (YA incluye IVA)
+    // comisionExtra = Comisión TN (YA incluye IVA)
+    // Ambas incluyen IVA, necesitamos desglosarlo
+    
+    comisionSinIva = comisionBase / 1.21; // MP sin IVA
+    comisionExtraSinIva = comisionExtra / 1.21; // TN sin IVA
+    iva = (comisionBase - comisionSinIva) + (comisionExtra - comisionExtraSinIva); // IVA de ambas
+    
+    // IIBB según tarifa (puede ser 0 o variable)
+    iibb = pvConDescuento * (tarifa.iibbPct || 0);
   } else if (plataforma === "TN") {
     // TN: IVA e IIBB se agregan sobre las comisiones
     iva = (comisionBase + comisionExtra) * 0.21; // 21% IVA sobre comisiones
@@ -92,10 +98,11 @@ export function calcularVenta(
     iibb = iibbManual || 0;
   }
   
-  // 4. Agregar fijo por operación - Para ML, usar comisiones SIN IVA
+  // 4. Agregar fijo por operación
   let comisionTotal = comisionBase + comisionExtra + tarifa.fijoPorOperacion
-  if (plataforma === "ML") {
-    // Para ML, guardar la comisión SIN IVA (porque el IVA ya está separado)
+  
+  // Para TN+MP y ML, guardar comisiones SIN IVA (porque el IVA ya está separado)
+  if (plataforma === "ML" || (plataforma === "TN" && tarifa && (tarifa as any).metodoPago === "MercadoPago")) {
     comisionTotal = comisionSinIva + comisionExtraSinIva + (tarifa.fijoPorOperacion / 1.21)
   }
   

@@ -77,6 +77,13 @@ export async function createTarifa(data: Omit<TarifaFormData, 'id'>) {
   try {
     const now = new Date()
     
+    // Log para debug
+    console.log("🔍 Verificando existencia de tarifa:", {
+      plataforma: data.plataforma,
+      metodoPago: data.metodoPago,
+      condicion: data.condicion
+    })
+    
     // Verificar si ya existe la combinación plataforma-metodoPago-condicion
     const { data: existing, error: existingError } = await supabase
       .from("tarifas")
@@ -86,33 +93,28 @@ export async function createTarifa(data: Omit<TarifaFormData, 'id'>) {
       .eq("condicion", data.condicion)
       .limit(1)
     
+    console.log("📊 Resultado de búsqueda:", { existing, existingError })
+    
     if (existingError) {
-      console.error("Error al verificar existencia:", existingError)
+      console.error("❌ Error al verificar existencia:", existingError)
       return { success: false, error: "Error al verificar tarifas existentes" }
     }
     
     if (existing && existing.length > 0) {
+      console.log("⚠️ Tarifa existente encontrada:", existing)
       return { 
         success: false, 
         error: `Ya existe una tarifa para la combinación ${data.plataforma} - ${data.metodoPago} - ${data.condicion}.` 
       }
     }
     
-    // Generar el siguiente ID automáticamente
-    const { data: lastTarifa, error: idError } = await supabase
-      .from("tarifas")
-      .select("id")
-      .order("id", { ascending: false })
-      .limit(1)
+    console.log("✅ No existe tarifa duplicada, procediendo a crear...")
     
-    if (idError) {
-      console.error("Error al obtener último ID:", idError)
-      return { success: false, error: "Error al generar ID" }
-    }
+    // Generar ID descriptivo basado en la combinación de campos
+    // Formato: "tn-mercadopago-cuotas-sin-interes"
+    const nextId = `${data.plataforma.toLowerCase()}-${data.metodoPago.toLowerCase()}-${data.condicion.toLowerCase().replace(/\s+/g, '-')}`
     
-    const nextId = !lastTarifa || lastTarifa.length === 0 || isNaN(Number(lastTarifa[0].id)) 
-      ? "1" 
-      : String(Number(lastTarifa[0].id) + 1)
+    console.log("🆔 ID generado:", nextId)
     
     const validatedData = tarifaSchema.parse({
       ...data,
