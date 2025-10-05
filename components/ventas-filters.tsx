@@ -49,7 +49,7 @@ export function VentasFilters() {
     const params = new URLSearchParams()
 
     Object.entries(filters).forEach(([key, value]) => {
-      if (value !== "all") {
+      if (value && value !== "all" && value !== "") {
         params.set(key, value)
       }
     })

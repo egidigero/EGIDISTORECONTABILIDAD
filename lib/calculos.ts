@@ -55,6 +55,7 @@ export function calcularVenta(
   comisionManual?: number,
   comisionExtraManual?: number,
   iibbManual?: number, // IIBB manual para ML
+  metodoPago?: string, // Método de pago para detectar TN+MercadoPago
 ): VentaCalculos {
   // 1. Aplicar descuento pre-comisión si existe (ej: 15% para TN + Transferencia)
   const pvConDescuento = pvBruto * (1 - (tarifa.descuentoPct || 0))
@@ -74,17 +75,17 @@ export function calcularVenta(
   let comisionExtraSinIva = comisionExtra
 
   // Caso especial: TN + MercadoPago
-  if (plataforma === "TN" && tarifa && (tarifa as any).metodoPago === "MercadoPago") {
-    // comisionBase = Comisión MP (YA incluye IVA)
-    // comisionExtra = Comisión TN (YA incluye IVA)
-    // Ambas incluyen IVA, necesitamos desglosarlo
+  if (plataforma === "TN" && metodoPago === "MercadoPago") {
+    // comisionBase = Comisión MP 9% (NO incluye IVA, calcular IVA aparte)
+    // comisionExtra = Comisión TN 2% (SÍ incluye IVA, desagregar IVA)
     
-    comisionSinIva = comisionBase / 1.21; // MP sin IVA
-    comisionExtraSinIva = comisionExtra / 1.21; // TN sin IVA
-    iva = (comisionBase - comisionSinIva) + (comisionExtra - comisionExtraSinIva); // IVA de ambas
+    const ivaMP = comisionBase * 0.21; // IVA sobre comisión MP (agregar)
+    comisionExtraSinIva = comisionExtra / 1.21; // TN sin IVA (desagregar)
+    const ivaTN = comisionExtra - comisionExtraSinIva; // IVA incluido en TN
+    iva = ivaMP + ivaTN; // IVA total
     
-    // IIBB según tarifa (puede ser 0 o variable)
-    iibb = pvConDescuento * (tarifa.iibbPct || 0);
+    // IIBB es MANUAL para TN+MercadoPago (igual que ML, se ingresa por venta si corresponde)
+    iibb = iibbManual || 0;
   } else if (plataforma === "TN") {
     // TN: IVA e IIBB se agregan sobre las comisiones
     iva = (comisionBase + comisionExtra) * 0.21; // 21% IVA sobre comisiones
@@ -98,16 +99,27 @@ export function calcularVenta(
     iibb = iibbManual || 0;
   }
   
-  // 4. Agregar fijo por operación
-  let comisionTotal = comisionBase + comisionExtra + tarifa.fijoPorOperacion
+  // 4. Calcular comisión total a guardar en DB (SIEMPRE sin IVA)
+  // Para TN+MP: comisionBase (MP sin IVA) + comisionExtraSinIva (TN sin IVA desagregado)
+  // Para ML: comisionBase sin IVA (ML / 1.21) + comisionExtra sin IVA
+  // Para TN tradicional: comisionBase + comisionExtra (sin IVA)
+  let comisionTotalSinIva = comisionBase + comisionExtra + tarifa.fijoPorOperacion
   
-  // Para TN+MP y ML, guardar comisiones SIN IVA (porque el IVA ya está separado)
-  if (plataforma === "ML" || (plataforma === "TN" && tarifa && (tarifa as any).metodoPago === "MercadoPago")) {
-    comisionTotal = comisionSinIva + comisionExtraSinIva + (tarifa.fijoPorOperacion / 1.21)
+  // Para TN+MP: comisionBase ya es sin IVA, pero comisionExtra tiene IVA que hay que quitar
+  if (plataforma === "TN" && metodoPago === "MercadoPago") {
+    comisionTotalSinIva = comisionBase + comisionExtraSinIva + tarifa.fijoPorOperacion
+  }
+  // Para ML, guardar solo la parte sin IVA (porque viene con IVA incluido)
+  else if (plataforma === "ML") {
+    // ML: Comisiones incluyen IVA, guardar sin IVA
+    comisionTotalSinIva = comisionSinIva + comisionExtraSinIva + (tarifa.fijoPorOperacion / 1.21)
   }
   
-  // 5. Precio neto = PV Bruto - Comisiones totales - Envíos (según base de datos)
-  const precioNeto = pvConDescuento - comisionTotal - iva - iibb - cargoEnvioCosto
+  // 5. Precio neto = PV Bruto - Comisiones totales - Envíos
+  // Para TN+MercadoPago NO se resta el envío (se suma a dinero a liquidar en MP)
+  const precioNeto = plataforma === "TN" && metodoPago === "MercadoPago"
+    ? pvConDescuento - comisionTotalSinIva - iva - iibb
+    : pvConDescuento - comisionTotalSinIva - iva - iibb - cargoEnvioCosto
   // 6. Margen es precio neto menos costo del producto
   const ingresoMargen = precioNeto - costoProducto
   
@@ -116,7 +128,7 @@ export function calcularVenta(
   const rentabilidadSobreCosto = costoProducto > 0 ? ingresoMargen / costoProducto : 0
 
   return {
-    comision: Number(comisionTotal.toFixed(2)), // Comisión base + extra + fijo
+    comision: Number(comisionTotalSinIva.toFixed(2)), // Comisiones SIN IVA (bruto)
     iva: Number(iva.toFixed(2)), // IVA calculado según plataforma
     iibb: Number(iibb.toFixed(2)), // IIBB calculado según tarifa
     precioNeto: Number(precioNeto.toFixed(2)),

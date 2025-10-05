@@ -16,8 +16,8 @@ export async function getVentas(filters?: VentaFilters) {
       .select("*, producto:productos(*)")
       .order("fecha", { ascending: false });
 
-    if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde);
-    if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta);
+    if (filters?.fechaDesde) query = query.gte("fecha", filters.fechaDesde.toISOString().split('T')[0]);
+    if (filters?.fechaHasta) query = query.lte("fecha", filters.fechaHasta.toISOString().split('T')[0]);
     if (filters?.plataforma) query = query.eq("plataforma", filters.plataforma);
     if (filters?.metodoPago) query = query.eq("metodoPago", filters.metodoPago);
     if (filters?.estadoEnvio) query = query.eq("estadoEnvio", filters.estadoEnvio);
@@ -79,7 +79,8 @@ export async function createVenta(data: VentaFormData) {
       validatedData.plataforma, // Agregar plataforma para cálculos específicos
       comisionManualParaUsar, // Pasar comisión manual solo si está habilitada
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
-      iibbManualParaUsar, // Pasar IIBB manual para ML
+      iibbManualParaUsar, // Pasar IIBB manual para ML y TN+MP
+      validatedData.metodoPago, // Pasar método de pago para detectar TN+MercadoPago
     )
 
     // Generar código de venta único
@@ -191,7 +192,8 @@ export async function updateVenta(id: string, data: VentaFormData) {
       validatedData.plataforma, // Agregar plataforma para cálculos específicos
       comisionManualParaUsar, // Pasar comisión manual solo si está habilitada
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
-      iibbManualParaUsar, // Pasar IIBB manual para ML
+      iibbManualParaUsar, // Pasar IIBB manual para ML y TN+MP
+      validatedData.metodoPago, // Pasar método de pago para detectar TN+MercadoPago
     )
 
     // Filtrar campos que no existen en la base de datos o que no deben incluirse en UPDATE  

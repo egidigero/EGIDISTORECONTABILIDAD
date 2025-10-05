@@ -5,6 +5,7 @@ import type { VentaConProducto } from "@/lib/types"
 
 /**
  * Obtiene las ventas de TN de una fecha específica que contribuyen al monto "TN a Liquidar"
+ * EXCLUYE las ventas TN+MercadoPago (que van a MP a liquidar)
  */
 export async function getVentasTNPorFecha(fecha: string) {
   try {
@@ -15,6 +16,7 @@ export async function getVentasTNPorFecha(fecha: string) {
         producto:productos(*)
       `)
       .eq('plataforma', 'TN')
+      .neq('metodoPago', 'MercadoPago') // Excluir TN+MercadoPago
       .eq('fecha', fecha)
       .order('createdAt', { ascending: true })
 

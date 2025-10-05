@@ -122,6 +122,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
   const watchPvBruto = watch("pvBruto")
   const watchCargoEnvio = watch("cargoEnvioCosto")
   const watchPlataforma = watch("plataforma")
+  const watchMetodoPago = watch("metodoPago")
   const watchUsarComisionManual = watch("usarComisionManual")
   const watchComisionManual = watch("comisionManual")
   const watchComisionExtraManual = watch("comisionExtraManual")
@@ -253,8 +254,20 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       let comisionSinIva = comision
       let comisionExtraSinIva = comisionExtra
       
-      if (plataforma === "TN") {
-        // TN: IVA e IIBB se agregan sobre las comisiones
+      // Caso especial: TN + MercadoPago
+      if (plataforma === "TN" && metodoPago === "MercadoPago") {
+        // comision = Comisión MP (NO incluye IVA, se calcula aparte)
+        // comisionExtra = Comisión TN (SÍ incluye IVA, necesita desglose)
+        
+        const ivaMP = comision * 0.21 // IVA sobre comisión MP
+        comisionExtraSinIva = comisionExtra / 1.21 // TN sin IVA
+        const ivaTN = comisionExtra - comisionExtraSinIva // IVA de TN
+        iva = ivaMP + ivaTN // IVA total
+        
+        // IIBB es MANUAL para TN+MercadoPago (no se calcula automáticamente)
+        iibb = iibbManual || 0
+      } else if (plataforma === "TN") {
+        // TN + PagoNube: IVA e IIBB se agregan sobre las comisiones
         iva = (comision + comisionExtra) * 0.21 // 21% IVA sobre comisiones
         iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinámico desde tarifa
       } else if (plataforma === "ML") {
@@ -267,15 +280,21 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       }
       
       // Calcular subtotales por separado para mayor claridad
-      const subtotalComision = plataforma === "TN" 
-        ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) 
-        : comision // Para ML, la comisión ya incluye IVA
-      const subtotalComisionExtra = plataforma === "TN" 
-        ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03))
-        : comisionExtra // Para ML, la comisión extra ya incluye IVA
+      const subtotalComision = plataforma === "TN" && metodoPago !== "MercadoPago"
+        ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
+        : plataforma === "TN" && metodoPago === "MercadoPago"
+          ? comision + (comision * 0.21) // TN+MP: comisión + IVA (sin IIBB automático)
+          : comision // Para ML, la comisión ya incluye IVA
+      const subtotalComisionExtra = plataforma === "TN" && metodoPago !== "MercadoPago"
+        ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
+        : comisionExtra // Para ML y TN+MP, la comisión extra ya incluye IVA
       
-      // Para ML, agregar el IIBB manual al total de costos
-      const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
+      // Calcular total de costos según plataforma
+      // Para TN tradicional: subtotales ya incluyen IVA e IIBB, solo sumar envío y fijo
+      // Para TN+MP y ML: subtotales + envío + fijo + IIBB manual
+      const totalCostosPlataforma = plataforma === "TN" && metodoPago !== "MercadoPago"
+        ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0)
+        : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
       const margenOperativo = resultadoOperativo - totalCostosPlataforma
@@ -494,10 +513,10 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   )}
                 </div>
 
-                {/* IIBB Manual para Mercado Libre */}
-                {watchPlataforma === "ML" && (
+                {/* IIBB Manual para Mercado Libre y TN + MercadoPago */}
+                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago")) && (
                   <div className="space-y-2">
-                    <Label htmlFor="iibbManual">IIBB (ARS) *Manual para ML*</Label>
+                    <Label htmlFor="iibbManual">IIBB (ARS) *Manual*</Label>
                     <Input
                       id="iibbManual"
                       type="number"
@@ -506,7 +525,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       placeholder="Ej: 500.00"
                     />
                     <p className="text-xs text-gray-600">
-                      Para Mercado Libre, el IIBB debe ingresarse manualmente. No se calcula automáticamente.
+                      {watchPlataforma === "ML" 
+                        ? "Para Mercado Libre, el IIBB debe ingresarse manualmente." 
+                        : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
                     </p>
                     {errors.iibbManual && (
                       <p className="text-sm text-destructive">{errors.iibbManual.message}</p>
@@ -692,7 +713,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         </span>
                         <span className="font-mono">${preview.data.comision.toFixed(2)}</span>
                       </div>
-                      {watchPlataforma === "TN" && (
+                      {watchPlataforma === "TN" && watchMetodoPago !== "MercadoPago" && (
                         <>
                           <div className="flex justify-between text-red-600 ml-4">
                             <span>• IVA (21%):</span>
@@ -705,6 +726,18 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                             <span>Subtotal Comisión:</span>
                             <span className="font-mono">${preview.data.subtotalComision.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && (
+                        <>
+                          <div className="flex justify-between text-red-600 ml-4">
+                            <span>• IVA (21%):</span>
+                            <span className="font-mono">${(preview.data.comision * 0.21).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
+                            <span>Subtotal Comisión:</span>
+                            <span className="font-mono">${(preview.data.comision + (preview.data.comision * 0.21)).toFixed(2)}</span>
                           </div>
                         </>
                       )}
@@ -746,7 +779,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                           </span>
                           <span className="font-mono">${preview.data.comisionExtra.toFixed(2)}</span>
                         </div>
-                        {watchPlataforma === "TN" && (
+                        {watchPlataforma === "TN" && watchMetodoPago !== "MercadoPago" && (
                           <>
                             <div className="flex justify-between text-red-600 ml-4">
                               <span>• IVA (21%):</span>
@@ -755,6 +788,22 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                             <div className="flex justify-between text-red-600 ml-4">
                               <span>• IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
                               <span className="font-mono">${(preview.data.comisionExtra * (tarifaCompleta?.iibbPct || 0.03)).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
+                              <span>Subtotal Comisión Extra:</span>
+                              <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && (
+                          <>
+                            <div className="flex justify-between text-blue-600 ml-4">
+                              <span>• Sin IVA:</span>
+                              <span className="font-mono">${preview.data.comisionExtraSinIva.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between text-blue-600 ml-4">
+                              <span>• IVA incluido (21%):</span>
+                              <span className="font-mono">${(preview.data.comisionExtra - preview.data.comisionExtraSinIva).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                               <span>Subtotal Comisión Extra:</span>
@@ -787,8 +836,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </div>
                     )}
 
-                    {/* IIBB Manual (solo para ML) */}
-                    {watchPlataforma === "ML" && watchIibbManual && watchIibbManual > 0 && (
+                    {/* IIBB Manual (para ML y TN+MercadoPago) */}
+                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago")) && watchIibbManual && watchIibbManual > 0 && (
                       <div className="flex justify-between border-t pt-2 mt-2">
                         <span className="font-medium">IIBB (Manual):</span>
                         <span className="font-mono font-medium text-orange-600">${Number(watchIibbManual).toFixed(2)}</span>

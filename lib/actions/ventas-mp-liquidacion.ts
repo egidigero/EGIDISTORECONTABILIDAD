@@ -4,11 +4,12 @@ import { supabase } from "@/lib/supabase"
 import type { VentaConProducto } from "@/lib/types"
 
 /**
- * Obtiene las ventas de ML de una fecha específica que contribuyen al monto "MP a Liquidar"
+ * Obtiene las ventas de ML y TN+MercadoPago de una fecha específica que contribuyen al monto "MP a Liquidar"
  */
 export async function getVentasMLPorFecha(fecha: string) {
   try {
-    const { data: ventas, error } = await supabase
+    // Obtener ventas de Mercado Libre
+    const { data: ventasML, error: errorML } = await supabase
       .from('ventas')
       .select(`
         *,
@@ -18,12 +19,30 @@ export async function getVentasMLPorFecha(fecha: string) {
       .eq('fecha', fecha)
       .order('createdAt', { ascending: true })
 
-    if (error) {
-      console.error('Error fetching ventas ML by fecha:', error)
-      return []
+    if (errorML) {
+      console.error('Error fetching ventas ML by fecha:', errorML)
     }
 
-    return (ventas || []) as VentaConProducto[]
+    // Obtener ventas de TN + MercadoPago
+    const { data: ventasTNMP, error: errorTNMP } = await supabase
+      .from('ventas')
+      .select(`
+        *,
+        producto:productos(*)
+      `)
+      .eq('plataforma', 'TN')
+      .eq('metodoPago', 'MercadoPago')
+      .eq('fecha', fecha)
+      .order('createdAt', { ascending: true })
+
+    if (errorTNMP) {
+      console.error('Error fetching ventas TN+MP by fecha:', errorTNMP)
+    }
+
+    // Combinar ambas listas
+    const todasLasVentas = [...(ventasML || []), ...(ventasTNMP || [])]
+    
+    return todasLasVentas as VentaConProducto[]
   } catch (error) {
     console.error('Error in getVentasMLPorFecha:', error)
     return []
@@ -52,8 +71,11 @@ export async function calcularDetalleVentasMP(fecha: string) {
       const iibb = Number(venta.iibb || 0)
       const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
       
-      // A Liquidar = PV Bruto - (Comisión + IVA + IIBB + Envío)
-      const montoALiquidar = pvBruto - comision - iva - iibb - cargoEnvioCosto
+      // Para TN+MercadoPago NO se resta el envío (se suma a dinero a liquidar en MP)
+      // Para ML SÍ se resta el envío
+      const montoALiquidar = venta.plataforma === 'TN' && venta.metodoPago === 'MercadoPago'
+        ? pvBruto - comision - iva - iibb
+        : pvBruto - comision - iva - iibb - cargoEnvioCosto
       
       totalPVBruto += pvBruto
       totalComisiones += comision
@@ -68,7 +90,7 @@ export async function calcularDetalleVentasMP(fecha: string) {
       }
     })
     
-    console.log(`Detalle ventas ML ${fecha}:`, {
+    console.log(`Detalle ventas ML + TN+MP ${fecha}:`, {
       cantidadVentas: ventas.length,
       totalPVBruto: totalPVBruto.toFixed(2),
       totalComisiones: totalComisiones.toFixed(2),
