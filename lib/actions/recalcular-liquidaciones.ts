@@ -2,7 +2,7 @@
 
 import { supabase } from "@/lib/supabase"
 import { calcularDetalleVentasTN } from "@/lib/actions/ventas-tn-liquidacion"
-import { calcularDetalleVentasMP } from "@/lib/actions/ventas-mp-liquidacion"
+import { calcularDetalleVentasMP, calcularImpactoTransferencia } from "@/lib/actions/ventas-mp-liquidacion"
 import { calcularImpactoEnMPDisponible } from "@/lib/actions/gastos-ingresos"
 import { revalidatePath } from "next/cache"
 
@@ -58,9 +58,13 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
     const detalleVentasTN = await calcularDetalleVentasTN(fecha)
     const impactoVentasTN = detalleVentasTN.resumen.totalALiquidar
 
-    // 3b. Calcular impacto de ventas ML del día
+    // 3b. Calcular impacto de ventas ML del día (va a MP A Liquidar)
     const detalleVentasML = await calcularDetalleVentasMP(fecha)
     const impactoVentasML = detalleVentasML.resumen.totalALiquidar
+
+    // 3c. Calcular impacto de Transferencia (Directo) - va a MP Disponible
+    const detalleTransferencia = await calcularImpactoTransferencia(fecha)
+    const impactoTransferencia = detalleTransferencia.resumen.totalDisponible
 
     // 4. Calcular impacto de gastos/ingresos del día
     const impactoGastosIngresos = await calcularImpactoEnMPDisponible(fecha)
@@ -72,8 +76,8 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
 
     // 6. Calcular nuevos valores (con redondeo a 2 decimales)
     const nuevosValores = {
-      // MP Disponible = Base anterior + Gastos/Ingresos + Liquidaciones recibidas
-      mp_disponible: Math.round((valoresBase.mp_disponible + impactoGastosIngresos.impactoNeto + mp_liquidado_hoy + tn_liquidado_hoy - tn_iibb_descuento) * 100) / 100,
+      // MP Disponible = Base anterior + Gastos/Ingresos + Transferencia Directa + Liquidaciones recibidas
+      mp_disponible: Math.round((valoresBase.mp_disponible + impactoGastosIngresos.impactoNeto + impactoTransferencia + mp_liquidado_hoy + tn_liquidado_hoy - tn_iibb_descuento) * 100) / 100,
       
       // MP A Liquidar = Base anterior + Ventas ML del día - MP liquidado hoy
       mp_a_liquidar: Math.round((valoresBase.mp_a_liquidar + impactoVentasML - mp_liquidado_hoy) * 100) / 100,

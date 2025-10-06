@@ -35,6 +35,7 @@ const plataformaOptions = [
 const metodoPagoOptions = [
   { value: "PagoNube", label: "Pago Nube" },
   { value: "MercadoPago", label: "Mercado Pago" },
+  { value: "Transferencia", label: "Transferencia Directa" },
 ]
 
 const condicionOptions = [
@@ -116,13 +117,15 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         },
   })
 
-  const watchedFields = watch(["productoId", "plataforma", "metodoPago", "condicion", "pvBruto", "cargoEnvioCosto", "usarComisionManual", "comisionManual", "comisionExtraManual", "iibbManual"])
+  const watchedFields = watch(["productoId", "plataforma", "metodoPago", "condicion", "pvBruto", "cargoEnvioCosto", "usarComisionManual", "comisionManual", "comisionExtraManual", "iibbManual", "cuotas"])
   
   // Variables individuales para la calculadora
   const watchPvBruto = watch("pvBruto")
   const watchCargoEnvio = watch("cargoEnvioCosto")
   const watchPlataforma = watch("plataforma")
   const watchMetodoPago = watch("metodoPago")
+  const watchCondicion = watch("condicion")
+  const watchCuotas = watch("cuotas")
   const watchUsarComisionManual = watch("usarComisionManual")
   const watchComisionManual = watch("comisionManual")
   const watchComisionExtraManual = watch("comisionExtraManual")
@@ -155,6 +158,20 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       setValue("fecha", today)
     }
   }, [venta, setValue])
+
+  // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interés
+  useEffect(() => {
+    if (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin interés") {
+      if (!watchCuotas) {
+        setValue("cuotas", 1) // Default: 1 cuota (contado)
+      }
+    } else {
+      // Limpiar cuotas si no aplica
+      if (watchCuotas) {
+        setValue("cuotas", undefined)
+      }
+    }
+  }, [watchPlataforma, watchMetodoPago, watchCondicion, watchCuotas, setValue])
 
   // Auto-completar precio cuando se seleccione un producto
   useEffect(() => {
@@ -254,12 +271,29 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       let comisionSinIva = comision
       let comisionExtraSinIva = comisionExtra
       
+      // Caso especial: Transferencia Directa (Directo + Transferencia)
+      if (metodoPago === "Transferencia") {
+        // Sin comisiones de plataforma
+        comisionSinIva = 0
+        comisionExtraSinIva = 0
+        iva = 0
+        // IIBB manual (lo que cobra MP por la transferencia)
+        iibb = iibbManual || 0
+      }
       // Caso especial: TN + MercadoPago
-      if (plataforma === "TN" && metodoPago === "MercadoPago") {
-        // comision = Comisión MP (NO incluye IVA, se calcula aparte)
-        // comisionExtra = Comisión TN (SÍ incluye IVA, necesita desglose)
+      else if (plataforma === "TN" && metodoPago === "MercadoPago") {
+        // comision = Comisión MP base desde tarifa (ej: 3.99%, puede variar)
+        // Si hay cuotas sin interés, se suma el recargo adicional al monto de comisión
+        const cuotasValue = watch("cuotas") || 1
+        const recargoMP = cuotasValue === 2 ? 0.0520 : cuotasValue === 3 ? 0.0760 : cuotasValue === 6 ? 0.1350 : 0
+        const comisionMPAdicional = precioConDescuento * recargoMP // Monto adicional por cuotas
+        const comisionMPTotal = comision + comisionMPAdicional // Comisión total MP
         
-        const ivaMP = comision * 0.21 // IVA sobre comisión MP
+        // Tratamiento de IVA: La comisión MP completa (base + recargo) NO incluye IVA
+        comisionSinIva = comisionMPTotal // MP sin IVA (se agrega después)
+        const ivaMP = comisionMPTotal * 0.21 // IVA 21% sobre comisión MP total
+        
+        // comisionExtra = Comisión TN (SÍ incluye IVA, necesita desglose)
         comisionExtraSinIva = comisionExtra / 1.21 // TN sin IVA
         const ivaTN = comisionExtra - comisionExtraSinIva // IVA de TN
         iva = ivaMP + ivaTN // IVA total
@@ -280,21 +314,28 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       }
       
       // Calcular subtotales por separado para mayor claridad
-      const subtotalComision = plataforma === "TN" && metodoPago !== "MercadoPago"
-        ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
-        : plataforma === "TN" && metodoPago === "MercadoPago"
-          ? comision + (comision * 0.21) // TN+MP: comisión + IVA (sin IIBB automático)
-          : comision // Para ML, la comisión ya incluye IVA
-      const subtotalComisionExtra = plataforma === "TN" && metodoPago !== "MercadoPago"
-        ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
-        : comisionExtra // Para ML y TN+MP, la comisión extra ya incluye IVA
+      const subtotalComision = metodoPago === "Transferencia"
+        ? 0 // Transferencia: sin comisiones
+        : plataforma === "TN" && metodoPago !== "MercadoPago"
+          ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
+          : plataforma === "TN" && metodoPago === "MercadoPago"
+            ? comisionSinIva + (comisionSinIva * 0.21) // TN+MP: comisión total (base + recargo) + IVA
+            : comision // Para ML, la comisión ya incluye IVA
+      const subtotalComisionExtra = metodoPago === "Transferencia"
+        ? 0 // Transferencia: sin comisiones extra
+        : plataforma === "TN" && metodoPago !== "MercadoPago"
+          ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
+          : comisionExtra // Para ML y TN+MP, la comisión extra ya incluye IVA
       
       // Calcular total de costos según plataforma
+      // Para Transferencia: IIBB manual + envío (para calcular margen operativo correcto)
       // Para TN tradicional: subtotales ya incluyen IVA e IIBB, solo sumar envío y fijo
       // Para TN+MP y ML: subtotales + envío + fijo + IIBB manual
-      const totalCostosPlataforma = plataforma === "TN" && metodoPago !== "MercadoPago"
-        ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0)
-        : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
+      const totalCostosPlataforma = metodoPago === "Transferencia"
+        ? iibb + envio // IIBB manual + envío (para margen operativo)
+        : plataforma === "TN" && metodoPago !== "MercadoPago"
+          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0)
+          : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
       const margenOperativo = resultadoOperativo - totalCostosPlataforma
@@ -467,6 +508,31 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   {errors.condicion && <p className="text-sm text-destructive">{errors.condicion.message}</p>}
                 </div>
 
+                {/* Campo Cuotas: solo para TN + MercadoPago + "Cuotas sin interés" */}
+                {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin interés" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cuotas">Cantidad de Cuotas</Label>
+                    <Select 
+                      value={watch("cuotas")?.toString() || "1"} 
+                      onValueChange={(value) => setValue("cuotas", parseInt(value))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona cantidad de cuotas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 cuota (contado) - 9%</SelectItem>
+                        <SelectItem value="3">3 cuotas sin interés - 12.05%</SelectItem>
+                        <SelectItem value="6">6 cuotas sin interés - 13.95%</SelectItem>
+                        <SelectItem value="12">12 cuotas sin interés - 18.68%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      MercadoPago cobra comisión adicional por cuotas sin interés
+                    </p>
+                    {errors.cuotas && <p className="text-sm text-destructive">{errors.cuotas.message}</p>}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label>Producto</Label>
                   <Select value={watch("productoId")} onValueChange={(value) => setValue("productoId", value)}>
@@ -513,8 +579,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   )}
                 </div>
 
-                {/* IIBB Manual para Mercado Libre y TN + MercadoPago */}
-                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago")) && (
+                {/* IIBB Manual para Mercado Libre, TN + MercadoPago y Transferencia Directa */}
+                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago") || watchMetodoPago === "Transferencia") && (
                   <div className="space-y-2">
                     <Label htmlFor="iibbManual">IIBB (ARS) *Manual*</Label>
                     <Input
@@ -525,9 +591,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       placeholder="Ej: 500.00"
                     />
                     <p className="text-xs text-gray-600">
-                      {watchPlataforma === "ML" 
-                        ? "Para Mercado Libre, el IIBB debe ingresarse manualmente." 
-                        : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
+                      {watchMetodoPago === "Transferencia"
+                        ? "Para Transferencia Directa, ingresá el IIBB que cobra Mercado Pago por la transferencia bancaria."
+                        : watchPlataforma === "ML" 
+                          ? "Para Mercado Libre, el IIBB debe ingresarse manualmente." 
+                          : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
                     </p>
                     {errors.iibbManual && (
                       <p className="text-sm text-destructive">{errors.iibbManual.message}</p>
@@ -711,7 +779,12 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                             </span>
                           )}
                         </span>
-                        <span className="font-mono">${preview.data.comision.toFixed(2)}</span>
+                        <span className="font-mono">${
+                          (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" 
+                            ? preview.data.comisionSinIva 
+                            : preview.data.comision
+                          ).toFixed(2)
+                        }</span>
                       </div>
                       {watchPlataforma === "TN" && watchMetodoPago !== "MercadoPago" && (
                         <>
@@ -733,11 +806,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         <>
                           <div className="flex justify-between text-red-600 ml-4">
                             <span>• IVA (21%):</span>
-                            <span className="font-mono">${(preview.data.comision * 0.21).toFixed(2)}</span>
+                            <span className="font-mono">${(preview.data.comisionSinIva * 0.21).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
                             <span>Subtotal Comisión:</span>
-                            <span className="font-mono">${(preview.data.comision + (preview.data.comision * 0.21)).toFixed(2)}</span>
+                            <span className="font-mono">${(preview.data.comisionSinIva + (preview.data.comisionSinIva * 0.21)).toFixed(2)}</span>
                           </div>
                         </>
                       )}
@@ -836,8 +909,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </div>
                     )}
 
-                    {/* IIBB Manual (para ML y TN+MercadoPago) */}
-                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago")) && watchIibbManual && watchIibbManual > 0 && (
+                    {/* IIBB Manual (para ML, TN+MercadoPago y Transferencia) */}
+                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago") || watchMetodoPago === "Transferencia") && watchIibbManual && watchIibbManual > 0 && (
                       <div className="flex justify-between border-t pt-2 mt-2">
                         <span className="font-medium">IIBB (Manual):</span>
                         <span className="font-mono font-medium text-orange-600">${Number(watchIibbManual).toFixed(2)}</span>

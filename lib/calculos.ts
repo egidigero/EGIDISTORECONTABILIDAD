@@ -46,6 +46,23 @@ export async function getTarifa(plataforma: Plataforma, metodoPago: MetodoPago, 
   };
 }
 
+/**
+ * Calcula el recargo adicional de MercadoPago por cuotas sin interés
+ * Fuente: Configuración actual de MercadoPago Argentina
+ * @param cuotas - Cantidad de cuotas (1, 2, 3, 6)
+ * @returns Porcentaje adicional en decimal (ej: 0.0520 para 2 cuotas)
+ */
+export function getRecargoCuotasMP(cuotas?: number): number {
+  if (!cuotas || cuotas === 1) return 0; // Sin cuotas o pago de contado = 0% adicional
+  
+  switch (cuotas) {
+    case 2: return 0.0520;  // +5.20% 
+    case 3: return 0.0760;  // +7.60% 
+    case 6: return 0.1350;  // +13.50% 
+    default: return 0;
+  }
+}
+
 export function calcularVenta(
   pvBruto: number,
   cargoEnvioCosto: number,
@@ -54,8 +71,9 @@ export function calcularVenta(
   plataforma?: string,
   comisionManual?: number,
   comisionExtraManual?: number,
-  iibbManual?: number, // IIBB manual para ML
-  metodoPago?: string, // Método de pago para detectar TN+MercadoPago
+  iibbManual?: number, // IIBB manual para ML y Transferencia
+  metodoPago?: string, // Método de pago para detectar TN+MercadoPago y Transferencia
+  cuotas?: number, // Cantidad de cuotas sin interés para TN+MercadoPago
 ): VentaCalculos {
   // 1. Aplicar descuento pre-comisión si existe (ej: 15% para TN + Transferencia)
   const pvConDescuento = pvBruto * (1 - (tarifa.descuentoPct || 0))
@@ -74,12 +92,27 @@ export function calcularVenta(
   let comisionSinIva = comisionBase
   let comisionExtraSinIva = comisionExtra
 
+  // Caso especial: Transferencia (Directo + Transferencia)
+  if (metodoPago === "Transferencia") {
+    // Sin comisiones de plataforma, solo IIBB manual (fees de MP en transferencias)
+    comisionSinIva = 0
+    comisionExtraSinIva = 0
+    iva = 0
+    iibb = iibbManual || 0
+  }
   // Caso especial: TN + MercadoPago
-  if (plataforma === "TN" && metodoPago === "MercadoPago") {
-    // comisionBase = Comisión MP 9% (NO incluye IVA, calcular IVA aparte)
-    // comisionExtra = Comisión TN 2% (SÍ incluye IVA, desagregar IVA)
+  else if (plataforma === "TN" && metodoPago === "MercadoPago") {
+    // comisionBase = Comisión MP base desde tarifa (ej: 3.99%, puede variar)
+    // Si hay cuotas sin interés, se suma el recargo adicional al monto de comisión
+    const recargoMP = getRecargoCuotasMP(cuotas); // 0%, 5.20%, 7.60% o 13.50%
+    const comisionMPAdicional = pvConDescuento * recargoMP; // Monto adicional por cuotas
+    const comisionMPTotal = comisionBase + comisionMPAdicional; // Comisión total MP
     
-    const ivaMP = comisionBase * 0.21; // IVA sobre comisión MP (agregar)
+    // Tratamiento de IVA: La comisión MP completa (base + recargo) NO incluye IVA
+    comisionSinIva = comisionMPTotal; // MP sin IVA (se agrega después)
+    const ivaMP = comisionMPTotal * 0.21; // IVA 21% sobre comisión MP total
+    
+    // comisionExtra = Comisión TN (SÍ incluye IVA, desagregar IVA)
     comisionExtraSinIva = comisionExtra / 1.21; // TN sin IVA (desagregar)
     const ivaTN = comisionExtra - comisionExtraSinIva; // IVA incluido en TN
     iva = ivaMP + ivaTN; // IVA total
@@ -100,14 +133,14 @@ export function calcularVenta(
   }
   
   // 4. Calcular comisión total a guardar en DB (SIEMPRE sin IVA)
-  // Para TN+MP: comisionBase (MP sin IVA) + comisionExtraSinIva (TN sin IVA desagregado)
+  // Para TN+MP: comisionSinIva (MP base + recargo sin IVA) + comisionExtraSinIva (TN sin IVA desagregado)
   // Para ML: comisionBase sin IVA (ML / 1.21) + comisionExtra sin IVA
   // Para TN tradicional: comisionBase + comisionExtra (sin IVA)
   let comisionTotalSinIva = comisionBase + comisionExtra + tarifa.fijoPorOperacion
   
-  // Para TN+MP: comisionBase ya es sin IVA, pero comisionExtra tiene IVA que hay que quitar
+  // Para TN+MP: comisionSinIva ya incluye base + recargo, y comisionExtra tiene IVA que hay que quitar
   if (plataforma === "TN" && metodoPago === "MercadoPago") {
-    comisionTotalSinIva = comisionBase + comisionExtraSinIva + tarifa.fijoPorOperacion
+    comisionTotalSinIva = comisionSinIva + comisionExtraSinIva + tarifa.fijoPorOperacion
   }
   // Para ML, guardar solo la parte sin IVA (porque viene con IVA incluido)
   else if (plataforma === "ML") {

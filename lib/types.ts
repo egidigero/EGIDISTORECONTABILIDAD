@@ -2,7 +2,7 @@
 
 // Tipos para los enums
 export type Plataforma = "TN" | "ML" | "General" | "Directo"
-export type MetodoPago = "PagoNube" | "MercadoPago"
+export type MetodoPago = "PagoNube" | "MercadoPago" | "Transferencia"
 export type Condicion = "Transferencia" | "Cuotas sin interés" | "Normal"
 export type EstadoEnvio = "Pendiente" | "EnCamino" | "Entregado" | "Devuelto" | "Cancelado"
 export type TipoMovimiento = "Gasto" | "Ingreso"
@@ -80,6 +80,7 @@ export interface VentaForm {
   estadoEnvio: EstadoEnvio
   courier?: string
   externalOrderId?: string
+  cuotas?: number // Cantidad de cuotas sin interés (1, 2, 3, 6) para TN + MercadoPago
 }
 
 // Tipos con relaciones incluidas
@@ -100,6 +101,7 @@ export interface VentaConProducto {
   courier?: string;
   externalOrderId?: string;
   saleCode?: string;
+  cuotas?: number; // Cantidad de cuotas sin interés (1, 3, 6, 12) para TN + MercadoPago
   // Campos calculados
   comision?: number;
   iva?: number;

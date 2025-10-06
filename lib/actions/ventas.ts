@@ -71,6 +71,7 @@ export async function createVenta(data: VentaFormData) {
       ? (validatedData as any).comisionExtraManual 
       : undefined
     const iibbManualParaUsar = (validatedData as any).iibbManual || undefined
+    const cuotasParaUsar = (validatedData as any).cuotas || undefined
     const calculos = calcularVenta(
       pvBrutoConDescuento, // Usar el precio ya con descuento aplicado
       validatedData.cargoEnvioCosto,
@@ -81,6 +82,7 @@ export async function createVenta(data: VentaFormData) {
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
       iibbManualParaUsar, // Pasar IIBB manual para ML y TN+MP
       validatedData.metodoPago, // Pasar método de pago para detectar TN+MercadoPago
+      cuotasParaUsar, // Pasar cantidad de cuotas para TN+MercadoPago
     )
 
     // Generar código de venta único
@@ -98,6 +100,7 @@ export async function createVenta(data: VentaFormData) {
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
       saleCode,
+      cuotas: cuotasParaUsar || null, // Agregar cuotas (NULL si no aplica)
       createdAt: new Date(),
       updatedAt: new Date(),
     }
@@ -184,6 +187,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
       ? (validatedData as any).comisionExtraManual 
       : undefined
     const iibbManualParaUsar = (validatedData as any).iibbManual || undefined
+    const cuotasParaUsar = (validatedData as any).cuotas || undefined
     const calculos = calcularVenta(
       pvBrutoConDescuento, // Usar el precio ya con descuento aplicado
       validatedData.cargoEnvioCosto,
@@ -194,6 +198,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
       comisionExtraManualParaUsar, // Pasar comisión extra manual solo si está habilitada
       iibbManualParaUsar, // Pasar IIBB manual para ML y TN+MP
       validatedData.metodoPago, // Pasar método de pago para detectar TN+MercadoPago
+      cuotasParaUsar, // Pasar cantidad de cuotas para TN+MercadoPago
     )
 
     // Filtrar campos que no existen en la base de datos o que no deben incluirse en UPDATE  
@@ -206,6 +211,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
       ...ventaDataParaActualizar,
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
+      cuotas: cuotasParaUsar || null, // Agregar cuotas (NULL si no aplica)
       updatedAt: new Date(),
     }
     

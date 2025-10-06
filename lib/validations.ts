@@ -136,7 +136,7 @@ export const ventaSchema = z.object({
   plataforma: z.enum(["TN", "ML", "Directo"], {
     required_error: "Selecciona una plataforma",
   }),
-  metodoPago: z.enum(["PagoNube", "MercadoPago"], {
+  metodoPago: z.enum(["PagoNube", "MercadoPago", "Transferencia"], {
     required_error: "Selecciona un método de pago",
   }),
   condicion: z.enum(["Transferencia", "Cuotas sin interés", "Normal"], {
@@ -145,6 +145,7 @@ export const ventaSchema = z.object({
   productoId: z.string().min(1, "El producto es requerido"),
   pvBruto: z.number().min(0, "El precio de venta debe ser mayor a 0"),
   cargoEnvioCosto: z.number().min(0, "El cargo de envío debe ser mayor o igual a 0").default(0),
+  cuotas: z.number().int().min(1).max(6).optional(), // Cantidad de cuotas sin interés (1, 2, 3, 6) para TN + MercadoPago
   usarComisionManual: z.boolean().default(false),
   comisionManual: z.number().min(0, "La comisión manual debe ser mayor o igual a 0").optional(),
   comisionExtraManual: z.number().min(0, "La comisión extra manual debe ser mayor o igual a 0").optional(),

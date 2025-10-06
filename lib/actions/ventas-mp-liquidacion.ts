@@ -4,6 +4,92 @@ import { supabase } from "@/lib/supabase"
 import type { VentaConProducto } from "@/lib/types"
 
 /**
+ * Obtiene las ventas de Directo + Transferencia de una fecha específica
+ * Estas ventas van directo a MP Disponible (PV - IIBB - Envío)
+ */
+export async function getVentasTransferenciaPorFecha(fecha: string) {
+  try {
+    const { data: ventasTransferencia, error } = await supabase
+      .from('ventas')
+      .select(`
+        *,
+        producto:productos(*)
+      `)
+      .eq('plataforma', 'Directo')
+      .eq('metodoPago', 'Transferencia')
+      .eq('fecha', fecha)
+      .order('createdAt', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching ventas Directo+Transferencia by fecha:', error)
+      return []
+    }
+
+    return (ventasTransferencia || []) as VentaConProducto[]
+  } catch (error) {
+    console.error('Error in getVentasTransferenciaPorFecha:', error)
+    return []
+  }
+}
+
+/**
+ * Calcula el impacto en MP Disponible de las ventas con Directo + Transferencia
+ * Fórmula: PV - IIBB (sin restar envío, ya que el cliente paga el envío por separado)
+ */
+export async function calcularImpactoTransferencia(fecha: string) {
+  try {
+    const ventas = await getVentasTransferenciaPorFecha(fecha)
+    
+    let totalPVBruto = 0
+    let totalIIBB = 0
+    let totalEnvios = 0
+    let totalDisponible = 0
+    
+    const ventasDetalle = ventas.map(venta => {
+      const pvBruto = Number(venta.pvBruto || 0)
+      const iibb = Number(venta.iibb || 0)
+      const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
+      
+      // Monto que va a MP Disponible: PV - IIBB (sin restar envío)
+      const montoDisponible = pvBruto - iibb
+      
+      totalPVBruto += pvBruto
+      totalIIBB += iibb
+      totalEnvios += cargoEnvioCosto
+      totalDisponible += montoDisponible
+      
+      return {
+        ...venta,
+        montoDisponible: Math.round(montoDisponible * 100) / 100
+      }
+    })
+    
+    return {
+      ventas: ventasDetalle,
+      resumen: {
+        cantidadVentas: ventas.length,
+        totalPVBruto: Math.round(totalPVBruto * 100) / 100,
+        totalIIBB: Math.round(totalIIBB * 100) / 100,
+        totalEnvios: Math.round(totalEnvios * 100) / 100,
+        totalDisponible: Math.round(totalDisponible * 100) / 100
+      }
+    }
+  } catch (error) {
+    console.error('Error calculando impacto Transferencia:', error)
+    return {
+      ventas: [],
+      resumen: {
+        cantidadVentas: 0,
+        totalPVBruto: 0,
+        totalIIBB: 0,
+        totalEnvios: 0,
+        totalDisponible: 0
+      }
+    }
+  }
+}
+
+/**
  * Obtiene las ventas de ML y TN+MercadoPago de una fecha específica que contribuyen al monto "MP a Liquidar"
  */
 export async function getVentasMLPorFecha(fecha: string) {

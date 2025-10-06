@@ -219,7 +219,14 @@ export function TarifaForm({ tarifa, onSuccess }: TarifaFormProps) {
               <Label htmlFor="comisionPct">Comisión (%)</Label>
               <Input id="comisionPct" type="number" step="0.01" {...register("comisionPct", { valueAsNumber: true })} placeholder="3.50" />
               {errors.comisionPct && <p className="text-sm text-destructive">{errors.comisionPct.message}</p>}
-              {plataforma === "TN" && (
+              {plataforma === "TN" && metodoPago === "MercadoPago" && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  ⚡ <strong>% Base:</strong> Configurable (ej: 3.99%). Al crear una venta, el recargo por cuotas se suma al monto:
+                  <br />• Sin cuotas (1): +0% | 2 cuotas: +5.20% | 3 cuotas: +7.60% | 6 cuotas: +13.50%
+                  <br />• Ejemplo con 3.99% base y 6 cuotas: 3.99% + 13.50% = <strong>17.49% total</strong>
+                </p>
+              )}
+              {plataforma === "TN" && metodoPago !== "MercadoPago" && (
                 <p className="text-xs text-muted-foreground mt-1">IVA 21% e IIBB 0,3%.</p>
               )}
               {plataforma === "ML" && (

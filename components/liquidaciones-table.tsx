@@ -13,7 +13,7 @@ import { formatCurrency } from "@/lib/utils"
 import { type Liquidacion } from "@/lib/types"
 import { LiquidacionActions } from "@/components/liquidacion-actions"
 import { calcularDetalleVentasTN } from "@/lib/actions/ventas-tn-liquidacion"
-import { calcularDetalleVentasMP } from "@/lib/actions/ventas-mp-liquidacion"
+import { calcularDetalleVentasMP, calcularImpactoTransferencia } from "@/lib/actions/ventas-mp-liquidacion"
 
 interface MovimientosDetalle {
   fecha: Date
@@ -53,6 +53,17 @@ interface VentasMPDetalle {
   }
 }
 
+interface VentasTransferenciaDetalle {
+  ventas: any[]
+  resumen: {
+    cantidadVentas: number
+    totalPVBruto: number
+    totalIIBB: number
+    totalEnvios: number
+    totalDisponible: number
+  }
+}
+
 export function LiquidacionesTable() {
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +71,7 @@ export function LiquidacionesTable() {
   const [movimientosDetalle, setMovimientosDetalle] = useState<Record<string, MovimientosDetalle>>({})
   const [ventasTNDetalle, setVentasTNDetalle] = useState<Record<string, VentasTNDetalle>>({})
   const [ventasMPDetalle, setVentasMPDetalle] = useState<Record<string, VentasMPDetalle>>({})
+  const [ventasTransferenciaDetalle, setVentasTransferenciaDetalle] = useState<Record<string, VentasTransferenciaDetalle>>({})
   async function fetchJSON<T>(url: string): Promise<T> {
     const res = await fetch(url)
     if (!res.ok) throw new Error(`Request failed: ${res.status}`)
@@ -227,6 +239,21 @@ export function LiquidacionesTable() {
           }))
         } catch (error) {
           console.error("Error al cargar detalle ventas MP:", error)
+        }
+      }
+
+      // Cargar detalle de ventas Transferencia si no está cargado
+      if (!ventasTransferenciaDetalle[liquidacionId]) {
+        try {
+          const fechaStr = format(fecha, 'yyyy-MM-dd')
+          const detalleVentasTransferencia = await calcularImpactoTransferencia(fechaStr)
+          
+          setVentasTransferenciaDetalle(prev => ({
+            ...prev,
+            [liquidacionId]: detalleVentasTransferencia
+          }))
+        } catch (error) {
+          console.error("Error al cargar detalle ventas Transferencia:", error)
         }
       }
     }
@@ -615,6 +642,108 @@ export function LiquidacionesTable() {
                                     {ventasMPDetalle[liquidacion.id].ventas.length === 0 && (
                                       <div className="text-xs text-muted-foreground text-center py-2">
                                         No hay ventas ML este día
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Detalle de ventas Transferencia (Directo + Transferencia) que suman a "MP Disponible" */}
+                              {ventasTransferenciaDetalle[liquidacion.id] && (
+                                <div className="space-y-2">
+                                  <h4 className="font-medium text-sm">Ventas Transferencia Directa que suman a MP Disponible:</h4>
+                                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 text-xs">
+                                      <div>
+                                        <span className="font-medium text-blue-700">Ventas:</span>
+                                        <div className="font-semibold">{ventasTransferenciaDetalle[liquidacion.id].resumen.cantidadVentas}</div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-blue-700">PV Bruto:</span>
+                                        <div className="font-semibold">{formatCurrency(ventasTransferenciaDetalle[liquidacion.id].resumen.totalPVBruto)}</div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-red-700">IIBB (fees MP):</span>
+                                        <div className="font-semibold text-red-800">-{formatCurrency(ventasTransferenciaDetalle[liquidacion.id].resumen.totalIIBB)}</div>
+                                        <div className="text-xs text-muted-foreground mt-0.5">Envío: {formatCurrency(ventasTransferenciaDetalle[liquidacion.id].resumen.totalEnvios)} (cliente)</div>
+                                      </div>
+                                      <div>
+                                        <span className="font-medium text-blue-700">MP Disponible:</span>
+                                        <div className="font-semibold text-lg">{formatCurrency(ventasTransferenciaDetalle[liquidacion.id].resumen.totalDisponible)}</div>
+                                      </div>
+                                    </div>
+                                    
+                                    {ventasTransferenciaDetalle[liquidacion.id].ventas.length > 0 && (
+                                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                                        <div className="text-xs font-medium text-blue-700 mb-1">Detalle por venta:</div>
+                                        {ventasTransferenciaDetalle[liquidacion.id].ventas.map(venta => (
+                                          <div key={venta.id} className="text-xs bg-white p-3 rounded border border-blue-100">
+                                            {/* Nombre del comprador arriba */}
+                                            <div className="font-medium text-blue-700 mb-1.5">
+                                              👤 {venta.comprador || 'Comprador no especificado'}
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-start">
+                                              <div className="flex-1">
+                                                {/* Información del producto */}
+                                                <div>
+                                                  <div className="font-medium text-blue-700">
+                                                    📦 {venta.producto?.nombre || venta.producto?.modelo || 'Producto sin nombre'}
+                                                  </div>
+                                                  {venta.producto?.sku && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                      SKU: {venta.producto.sku}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                
+                                                {/* Detalles de la venta */}
+                                                <div className="text-muted-foreground mt-1 space-y-0.5">
+                                                  <div>📊 PV: {formatCurrency(venta.pvBruto)}</div>
+                                                  <div>💳 Método: Transferencia Directa</div>
+                                                  <div>🚚 Envío: {formatCurrency(venta.cargoEnvioCosto || 0)} (paga cliente)</div>
+                                                  {venta.tracking && (
+                                                    <div>📍 Tracking: {venta.tracking}</div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              
+                                              {/* Monto disponible destacado */}
+                                              <div className="text-right ml-4">
+                                                <div className="bg-blue-100 px-2 py-1 rounded">
+                                                  <div className="font-bold text-blue-700 text-sm">
+                                                    💰 {formatCurrency(venta.montoDisponible)}
+                                                  </div>
+                                                  <div className="text-xs text-blue-600">
+                                                    MP Disponible
+                                                  </div>
+                                                </div>
+                                                {/* Desglose */}
+                                                <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                                                  <div className="font-medium text-gray-700">Cálculo:</div>
+                                                  <div className="pl-2">
+                                                    <div>PV: {formatCurrency(Number(venta.pvBruto || 0))}</div>
+                                                    {venta.iibb && Number(venta.iibb) > 0 && (
+                                                      <div>- IIBB: {formatCurrency(Number(venta.iibb))}</div>
+                                                    )}
+                                                    <div className="border-t border-gray-300 mt-0.5 pt-0.5 font-medium text-blue-700">
+                                                      = {formatCurrency(venta.montoDisponible)}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground mt-1">
+                                                      (Envío no se resta, lo paga el cliente)
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    
+                                    {ventasTransferenciaDetalle[liquidacion.id].ventas.length === 0 && (
+                                      <div className="text-xs text-muted-foreground text-center py-2">
+                                        No hay ventas con Transferencia este día
                                       </div>
                                     )}
                                   </div>
