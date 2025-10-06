@@ -130,10 +130,12 @@ export async function calcularEERR(
 
     const { data: otrosGastosData, error: otrosGastosError } = await otrosGastosQuery;
     
-    // Para el cálculo del margen neto: solo gastos del negocio (excluir personales)
+    // Para el cálculo del margen neto: excluir gastos personales Y Pago de Importación
+    // Pago de Importación afecta liquidaciones pero NO aparece en EERR
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"];
+    const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"];
     const gastosNegocio = otrosGastosData 
-      ? otrosGastosData.filter(g => !categoriasPersonales.includes(g.categoria))
+      ? otrosGastosData.filter(g => !categoriasExcluirEERR.includes(g.categoria))
       : [];
     const otrosGastos = !otrosGastosError && gastosNegocio.length > 0
       ? Math.round(gastosNegocio.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100

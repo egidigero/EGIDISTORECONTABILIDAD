@@ -162,6 +162,10 @@ export async function createGastoIngreso(data: GastoIngresoFormData) {
       return { success: false, error: "Datos inválidos" }
     }
 
+    // Determinar si es gasto personal basado en la categoría
+    const categoriasPersonales = ['Gastos de Casa', 'Gastos de Geronimo', 'Gastos de Sergio']
+    const esPersonal = categoriasPersonales.includes(result.data.categoria)
+
     const { data: insertData, error } = await supabase
       .from('gastos_ingresos')
       .insert([{
@@ -172,6 +176,7 @@ export async function createGastoIngreso(data: GastoIngresoFormData) {
         descripcion: result.data.descripcion,
         montoARS: result.data.montoARS,
         canal: result.data.canal,
+        esPersonal: esPersonal,
         updatedAt: new Date().toISOString()
       }])
       .select()
@@ -214,6 +219,10 @@ export async function updateGastoIngreso(id: string, data: GastoIngresoFormData)
       .eq('id', id)
       .single()
 
+    // Determinar si es gasto personal basado en la categoría
+    const categoriasPersonales = ['Gastos de Casa', 'Gastos de Geronimo', 'Gastos de Sergio']
+    const esPersonal = categoriasPersonales.includes(result.data.categoria)
+
     const { data: updateData, error } = await supabase
       .from('gastos_ingresos')
       .update({
@@ -223,6 +232,7 @@ export async function updateGastoIngreso(id: string, data: GastoIngresoFormData)
         descripcion: result.data.descripcion,
         montoARS: result.data.montoARS,
         canal: result.data.canal,
+        esPersonal: esPersonal,
         updatedAt: new Date().toISOString()
       })
       .eq('id', id)

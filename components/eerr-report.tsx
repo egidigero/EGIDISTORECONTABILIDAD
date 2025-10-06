@@ -52,10 +52,16 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     'Gastos de Geronimo',
     'Gastos de Sergio',
   ];
+  
+  // Categorías de negocio que NO deben aparecer en EERR
   const categoriasNegocioExcluir = [
     'Gastos del negocio - ADS',
+    'Pago de Importación', // Afecta liquidaciones pero NO aparece en EERR
     // 'Gastos del negocio - Envios', // No excluir, se maneja abajo
   ];
+  
+  // Todas las categorías a excluir del EERR (personales + negocio excluidas)
+  const categoriasExcluirEERR = [...categoriasPersonales, ...categoriasNegocioExcluir];
 
   // Envíos pagados como gasto (solo Tienda Nube)
   const enviosPagadosGastoTN = Array.isArray(eerrData.detalleOtrosGastos)
@@ -186,11 +192,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           </CardHeader>
           <CardContent>
             {(() => {
-              // Calcular margen neto igual que en el detalle: solo gastos del negocio
+              // Calcular margen neto: excluir personales, ADS y Pago de Importación
               let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
                 ? eerrData.detalleOtrosGastos.filter((g: any) =>
-                    !categoriasPersonales.includes(g.categoria) &&
-                    g.categoria !== 'Gastos del negocio - ADS'
+                    !categoriasExcluirEERR.includes(g.categoria)
                   )
                 : [];
               
@@ -379,11 +384,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <h3 className="font-semibold text-lg mb-3 text-gray-700">💸 Otros Gastos del Negocio</h3>
                   <div className="space-y-2 bg-gray-50 p-3 rounded">
                     {(() => {
-                      // Gastos del negocio: todos menos personales y ADS
+                      // Gastos del negocio: excluir personales, ADS y Pago de Importación
                       let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) =>
-                            !categoriasPersonales.includes(g.categoria) &&
-                            g.categoria !== 'Gastos del negocio - ADS'
+                            !categoriasExcluirEERR.includes(g.categoria)
                           )
                         : [];
                       // De los gastos del negocio, separar los envíos TN
@@ -457,11 +461,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <h3 className="font-semibold text-lg mb-3 text-black">🧮 Margen Neto</h3>
                   <div className="space-y-2 bg-yellow-50 p-3 rounded">
                     {(() => {
-                      // Gastos del negocio: todos menos personales y ADS
+                      // Gastos del negocio: excluir personales, ADS y Pago de Importación
                       let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) =>
-                            !categoriasPersonales.includes(g.categoria) &&
-                            g.categoria !== 'Gastos del negocio - ADS'
+                            !categoriasExcluirEERR.includes(g.categoria)
                           )
                         : [];
                       // De los gastos del negocio, separar los envíos TN
@@ -520,11 +523,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <h3 className="font-semibold text-lg mb-3 text-black">💎 Margen Final después de Gastos Personales</h3>
                   <div className="space-y-2 bg-lime-50 p-3 rounded">
                     {(() => {
-                      // Gastos del negocio: todos menos personales y ADS
+                      // Gastos del negocio: excluir personales, ADS y Pago de Importación
                       let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) =>
-                            !categoriasPersonales.includes(g.categoria) &&
-                            g.categoria !== 'Gastos del negocio - ADS'
+                            !categoriasExcluirEERR.includes(g.categoria)
                           )
                         : [];
                       // De los gastos del negocio, separar los envíos TN
