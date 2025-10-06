@@ -362,13 +362,17 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ROASAnalysisChart
-            ingresosBrutos={eerrData.ingresosBrutos}
-            costoProductos={eerrData.costoProductos}
-            gastosOperativos={eerrData.gastos - eerrData.gastosADS}
-            gastosADS={eerrData.gastosADS}
-            cantidadVentas={resumenPeriodo.cantidadVentas}
-          />
+          {/* NOTA: Este componente no se usa - la versión activa está en eerr-report.tsx */}
+          {/* <ROASAnalysisChart
+            ingresosBrutos={eerrData.ventasTotales}
+            costoProductos={eerrData.costoProducto}
+            gastosOperativos={eerrData.totalCostosPlataforma}
+            gastosADS={0}
+            cantidadVentas={0}
+          /> */}
+          <p className="text-muted-foreground text-center py-8">
+            Este componente no está en uso. Ver eerr-report.tsx para la versión activa.
+          </p>
         </CardContent>
       </Card>
 
