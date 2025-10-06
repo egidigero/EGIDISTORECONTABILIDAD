@@ -217,8 +217,12 @@ export function GastoIngresoForm({ gastoIngreso, onSuccess, onCancel, isModal }:
                     <SelectItem value="Gastos del negocio - ADS">Gastos del negocio - ADS</SelectItem>
                     <SelectItem value="Gastos del negocio - Envios">Gastos del negocio - Envios</SelectItem>
                     <SelectItem value="Gastos del negocio - Envios devoluciones">Gastos del negocio - Envios devoluciones</SelectItem>
-                    <SelectItem value="Ingresos por intereses de MP">Ingresos por intereses de MP</SelectItem>
                     <SelectItem value="Otros gastos del negocio">Otros gastos del negocio</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Ingresos del Negocio</SelectLabel>
+                    <SelectItem value="Ingresos por intereses de MP">Ingresos por intereses de MP</SelectItem>
+                    <SelectItem value="Otros Ingresos">Otros Ingresos</SelectItem>
                   </SelectGroup>
                   <SelectGroup>
                     <SelectLabel>Gastos Personales</SelectLabel>

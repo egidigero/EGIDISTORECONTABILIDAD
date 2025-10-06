@@ -6,6 +6,7 @@ import { getDetalleVentas } from "@/lib/actions/getDetalleVentas"
 import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
+import { ROASAnalysisModal } from "@/components/roas-analysis-modal"
 import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Receipt } from "lucide-react"
 import type { Plataforma } from "@/lib/types"
 
@@ -68,8 +69,38 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   // Usar eerrData.envios, que representa los envíos de Tienda Nube en costos de plataforma
   const totalEnviosCostosPlataformaTN = typeof eerrData.envios === 'number' ? eerrData.envios : 0;
 
+  // Datos para el análisis de ROAS
+  // Usar detalleGastosIngresos si está disponible, sino eerrData.detalleOtrosGastos
+  const gastosIngresosData = detalleGastosIngresos && detalleGastosIngresos.length > 0 
+    ? detalleGastosIngresos 
+    : (Array.isArray(eerrData.detalleOtrosGastos) ? eerrData.detalleOtrosGastos : []);
+  
+  const gastosADS = gastosIngresosData
+    .filter((g: any) => g.categoria === 'Gastos del negocio - ADS')
+    .reduce((acc: number, g: any) => acc + Math.abs(g.montoARS || 0), 0);
+
+  console.log('EERR - Calculando gastos ADS:', {
+    gastosIngresosData: gastosIngresosData.length,
+    gastosADS,
+    detalleOtrosGastos: eerrData.detalleOtrosGastos?.length
+  });
+
+  const gastosOperativos = eerrData.totalCostosPlataforma;
+  const cantidadVentas = detalleVentas?.length || 0;
+
   return (
     <div className="space-y-6">
+      {/* Botón de análisis ROAS */}
+      <div className="flex justify-end">
+        <ROASAnalysisModal
+          ingresosBrutos={eerrData.ventasTotales}
+          costoProductos={eerrData.costoProducto}
+          gastosOperativos={gastosOperativos}
+          gastosADS={gastosADS}
+          cantidadVentas={cantidadVentas}
+        />
+      </div>
+
       {/* Tarjetas de resumen */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>

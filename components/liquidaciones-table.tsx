@@ -82,10 +82,12 @@ export function LiquidacionesTable() {
 
     items.forEach((item) => {
       if (item.tipo === "Ingreso") {
-        if (item.categoria === "Otros Ingresos" || item.esPersonal) {
+        // TODOS los ingresos (incluyendo "Otros Ingresos") afectan liquidaciones
+        totalIngresos += item.montoARS || 0
+        
+        // Separar "Otros Ingresos" solo para reporting
+        if (item.categoria === "Otros Ingresos") {
           totalOtrosIngresos += item.montoARS || 0
-        } else {
-          totalIngresos += item.montoARS || 0
         }
       } else if (item.tipo === "Gasto") {
         totalGastos += item.montoARS || 0
@@ -171,27 +173,26 @@ export function LiquidacionesTable() {
           const gastosPersonales = movimientos.filter(m => m.tipo === 'Gasto' && m.esPersonal)
           const todosLosGastos = movimientos.filter(m => m.tipo === 'Gasto') // TODOS los gastos
           
+          // Ingresos del negocio (incluyendo "Otros Ingresos")
           const ingresosEmpresariales = movimientos.filter(m => m.tipo === 'Ingreso' && !m.esPersonal)
-          const otrosIngresos = movimientos.filter(m => m.tipo === 'Ingreso' && m.esPersonal)
           
           const totalGastosEmpresariales = gastosEmpresariales.reduce((sum, g) => sum + g.montoARS, 0)
           const totalGastosPersonales = gastosPersonales.reduce((sum, g) => sum + g.montoARS, 0)
           const totalTodosGastos = todosLosGastos.reduce((sum, g) => sum + g.montoARS, 0)
           
           const totalIngresos = ingresosEmpresariales.reduce((sum, i) => sum + i.montoARS, 0)
-          const totalOtrosIngresos = otrosIngresos.reduce((sum, i) => sum + i.montoARS, 0)
           
           setMovimientosDetalle(prev => ({
             ...prev,
             [liquidacionId]: {
               fecha,
               gastos: todosLosGastos, // Mostrar TODOS los gastos
-              ingresos: ingresosEmpresariales,
+              ingresos: ingresosEmpresariales, // TODOS los ingresos del negocio
               totalGastos: totalTodosGastos, // Total de TODOS los gastos
-              totalIngresos,
+              totalIngresos, // TODOS los ingresos del negocio (incluye "Otros Ingresos")
               movimientoNeto: totalIngresos - totalTodosGastos, // Usar TODOS los gastos
               gastosPersonales: totalGastosPersonales,
-              otrosIngresos: totalOtrosIngresos
+              otrosIngresos: 0 // Ya no separamos "Otros Ingresos"
             }
           }))
         } catch (error) {

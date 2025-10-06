@@ -80,10 +80,12 @@ export async function calcularImpactoEnMPDisponible(fecha: string) {
     
     gastosIngresos.forEach(item => {
       if (item.tipo === 'Ingreso') {
-        if (item.categoria === 'Otros Ingresos' || item.esPersonal) {
+        // TODOS los ingresos (incluyendo "Otros Ingresos") afectan MP Disponible
+        totalIngresos += item.montoARS || 0
+        
+        // Separar "Otros Ingresos" solo para reporting
+        if (item.categoria === 'Otros Ingresos') {
           totalOtrosIngresos += item.montoARS || 0
-        } else {
-          totalIngresos += item.montoARS || 0
         }
       } else if (item.tipo === 'Gasto') {
         // TODOS los gastos afectan liquidaciones (empresariales Y personales)

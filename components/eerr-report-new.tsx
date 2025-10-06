@@ -6,6 +6,7 @@ import { getDetalleVentas } from "@/lib/actions/getDetalleVentas"
 import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
+import { ROASAnalysisChart } from "@/components/roas-analysis-chart"
 import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Receipt } from "lucide-react"
 import type { Plataforma } from "@/lib/types"
 
@@ -349,6 +350,25 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
             {/* Resultado Final removido para evitar duplicidad y respetar el nuevo orden solicitado */}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Análisis de Marketing */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📊 Análisis de Marketing</CardTitle>
+          <CardDescription>
+            ROAS y CPA Break Even - Análisis de sensibilidad de performance
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ROASAnalysisChart
+            ingresosBrutos={eerrData.ingresosBrutos}
+            costoProductos={eerrData.costoProductos}
+            gastosOperativos={eerrData.gastos - eerrData.gastosADS}
+            gastosADS={eerrData.gastosADS}
+            cantidadVentas={resumenPeriodo.cantidadVentas}
+          />
         </CardContent>
       </Card>
 
