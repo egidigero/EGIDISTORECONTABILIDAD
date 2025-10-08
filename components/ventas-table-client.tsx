@@ -132,19 +132,25 @@ export const columns = [
 export function VentasTableClient({ ventas }: { ventas: VentaConProducto[] }) {
   const totales = ventas.reduce(
     (acc, venta) => {
+      const pvBruto = Number(venta.pvBruto || 0)
+      const cargoEnvio = Number(venta.cargoEnvioCosto || 0)
       const comisionBase = Number(venta.comision || 0)
       const iva = Number(venta.iva || 0)
       const iibb = Number(venta.iibb || 0)
+      const costoProducto = Number(venta.producto.costoUnitarioARS || 0)
       
-      // Comisión total = comisión base + IVA + IIBB (todos ahora vienen de la BD)
+      // Comisión total = comisión base + IVA + IIBB
       const comisionTotal = comisionBase + iva + iibb
       
+      // Margen real = PV Bruto - Comisiones - Envío - Costo Producto
+      const margen = pvBruto - comisionTotal - cargoEnvio - costoProducto
+      
       return {
-        pvBruto: acc.pvBruto + Number(venta.pvBruto),
-        cargoEnvio: acc.cargoEnvio + Number(venta.cargoEnvioCosto),
+        pvBruto: acc.pvBruto + pvBruto,
+        cargoEnvio: acc.cargoEnvio + cargoEnvio,
         comisiones: Number((acc.comisiones + comisionTotal).toFixed(2)),
-        costoUnitario: acc.costoUnitario + Number(venta.producto.costoUnitarioARS),
-        margen: acc.margen + Number(venta.ingresoMargen || 0),
+        costoUnitario: acc.costoUnitario + costoProducto,
+        margen: Number((acc.margen + margen).toFixed(2)),
       }
     },
     { pvBruto: 0, cargoEnvio: 0, comisiones: 0, costoUnitario: 0, margen: 0 },
