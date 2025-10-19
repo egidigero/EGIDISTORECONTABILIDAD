@@ -5,11 +5,7 @@ import { BarChart3 } from "lucide-react"
 import { EERRFilters } from "@/components/eerr-filters"
 import { EERRReport } from "@/components/eerr-report"
 
-export default function EERRPage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined }
-}) {
+export default function EERRPage({ searchParams }: { searchParams: any }) {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">

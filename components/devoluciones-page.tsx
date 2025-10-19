@@ -1,8 +1,19 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 
-// Dummy data for now
-const devoluciones = [];
+// Minimal type for the table rows (matches fields used in this component)
+type DevolucionRow = {
+  id: string
+  fecha?: string | null
+  estado?: string | null
+  motivo?: string | null
+  ventaId?: string | null
+  plataforma?: string | null
+  montoDevuelto?: number | null
+}
+
+// Dummy data for now (explicitly typed to avoid implicit any[])
+const devoluciones: DevolucionRow[] = [];
 
 export default function DevolucionesPage() {
   return (

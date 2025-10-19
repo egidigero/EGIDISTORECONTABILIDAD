@@ -177,13 +177,52 @@ export async function calcularEERR(
       margenFinalConPersonales = Math.round((margenNetoNegocio - gastosPersonales) * 100) / 100;
     }
 
+    // ==== Devoluciones: consultar resumen de devoluciones en el período y canal ====
+    let devolucionesQuery = supabase
+      .from('devoluciones_resumen')
+      .select('*')
+      .gte('fecha_reclamo', fechaDesde.toISOString())
+      .lte('fecha_reclamo', fechaHasta.toISOString())
+
+    if (canal && canal !== 'General') {
+      devolucionesQuery = devolucionesQuery.eq('plataforma', canal)
+    }
+
+    const { data: devolucionesData, error: devolucionesError } = await devolucionesQuery
+
+    const devoluciones = !devolucionesError && Array.isArray(devolucionesData) ? devolucionesData : []
+
+  // Calcular impacto: devolucionesTotal (monto neto que afectó ventas netas), perdida total (productos no recuperados)
+  const devolucionesTotal = Math.round((devoluciones.reduce((s: number, d: any) => s + Number(d.impacto_ventas_netas || 0), 0)) * 100) / 100
+  // Sumar la pérdida de producto persistida en la devolución (costo_producto_perdido) si existe
+  const devolucionesPerdidaTotal = Math.round((devoluciones.reduce((s: number, d: any) => s + Number(d.costo_producto_perdido || d.perdida_total || 0), 0)) * 100) / 100
+  // Sumar comisiones recuperadas (si la vista expone este campo o podemos derivarlo)
+  const devolucionesComisionesRecuperadas = Math.round((devoluciones.reduce((s: number, d: any) => s + Number(d.comisiones_recuperadas || 0), 0)) * 100) / 100
+  // Comisiones devueltas: column removed from devoluciones. TODO: derive returned commission from ventas or expose sale commission in the view.
+  const devolucionesComisionesTotal = 0
+    const devolucionesCount = devoluciones.length
+    const porcentajeDevolucionesSobreVentas = ventasDespuesDescuentos > 0 ? Math.round((devolucionesTotal / ventasDespuesDescuentos) * 10000) / 100 : 0
+    // Ajustar ventas y comisiones por devoluciones
+    const ventasDespuesDevoluciones = Math.round((ventasDespuesDescuentos - devolucionesTotal) * 100) / 100
+  const comisionesDevueltas = devolucionesComisionesTotal
+  const comisionesNetas = Math.round((ventasTotales.comisionesTotales - comisionesDevueltas) * 100) / 100
+
+    // Costos de plataforma ajustado (comisiones netas + envios totales)
+    const totalCostosPlataformaAjustado = Math.round((comisionesNetas + ventasTotales.enviosTotales) * 100) / 100
+
+    // Recalcular precioNeto y resultadoBruto tomando en cuenta devoluciones
+    const precioNetoAjustado = Math.round((ventasDespuesDevoluciones - totalCostosPlataformaAjustado) * 100) / 100
+    const resultadoBrutoAjustado = Math.round((ventasDespuesDevoluciones - ventasTotales.costoProducto) * 100) / 100
+
     return {
       ventasTotales: Math.round(ventasTotales.ventasTotales * 100) / 100,
       descuentos: Math.round(descuentos * 100) / 100,
-      ventasNetas: Math.round(ventasDespuesDescuentos * 100) / 100,
+      ventasNetas: ventasDespuesDevoluciones,
       costoProducto: Math.round(ventasTotales.costoProducto * 100) / 100,
-      resultadoBruto: Math.round(resultadoBruto * 100) / 100,
+      resultadoBruto: resultadoBrutoAjustado,
       comisiones: Math.round(ventasTotales.comisionesTotales * 100) / 100,
+      comisionesNetas: comisionesNetas,
+      comisionesDevueltas: comisionesDevueltas,
       comisionesBase: Math.round(ventasTotales.comisionesBase * 100) / 100,
       comisionesExtra: Math.round(ventasTotales.comisionesExtra * 100) / 100,
       ivaComisiones: Math.round(ventasTotales.ivaComisiones * 100) / 100,
@@ -191,17 +230,18 @@ export async function calcularEERR(
       envios: Math.round(ventasTotales.envios * 100) / 100, // Solo TN (para comparar con gastos)
       enviosTotales: Math.round(ventasTotales.enviosTotales * 100) / 100, // Todos (TN + ML) para costos plataforma
       iibb: Math.round(ventasTotales.iibbComisiones * 100) / 100,
-      totalCostosPlataforma: Math.round(totalCostosPlataforma * 100) / 100,
-      publicidad: Math.round(publicidad * 100) / 100,
-      roas: Math.round(roas * 100) / 100,
-      margenOperativo: Math.round(margenOperativo * 100) / 100,
+  totalCostosPlataforma: Math.round(totalCostosPlataforma * 100) / 100,
+  totalCostosPlataformaAjustado: totalCostosPlataformaAjustado,
+  publicidad: Math.round(publicidad * 100) / 100,
+  roas: Math.round(roas * 100) / 100,
+  margenOperativo: Math.round((resultadoBrutoAjustado - totalCostosPlataformaAjustado - publicidad) * 100) / 100,
       otrosGastos: Math.round(otrosGastos * 100) / 100,
       detalleOtrosGastos: otrosGastosData || [],
   otrosIngresos: Math.round(otrosIngresos * 100) / 100,
       detalleOtrosIngresos: otrosIngresosFiltrados || [],
       margenNetoNegocio: Math.round(margenNetoNegocio * 100) / 100,
       ventasBrutas: Math.round(ventasTotales.ventasTotales * 100) / 100,
-      precioNeto: Math.round(precioNeto * 100) / 100,
+  precioNeto: precioNetoAjustado,
       costoEnvio: Math.round(ventasTotales.envios * 100) / 100,
       margenBruto: Math.round(ventasTotales.margenBruto * 100) / 100,
       gastosCanal: Math.round(otrosGastos * 100) / 100,
@@ -209,6 +249,14 @@ export async function calcularEERR(
   resultadoOperativo: Math.round(margenOperativo * 100) / 100,
   gastosPersonales: Math.round(gastosPersonales * 100) / 100,
   margenFinalConPersonales: margenFinalConPersonales,
+    // Devoluciones
+      // Devoluciones
+      devolucionesTotal: devolucionesTotal,
+      devolucionesPerdidaTotal: devolucionesPerdidaTotal,
+      devolucionesComisionesTotal: devolucionesComisionesTotal,
+    devolucionesCount: devolucionesCount,
+    porcentajeDevolucionesSobreVentas: porcentajeDevolucionesSobreVentas,
+    detalleDevoluciones: devoluciones,
     };
   } catch (error) {
     console.error("Error al calcular EERR:", error);

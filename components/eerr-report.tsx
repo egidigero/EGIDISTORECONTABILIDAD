@@ -232,6 +232,21 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             })()}
           </CardContent>
         </Card>
+
+        {/* Control de Devoluciones */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Control de Devoluciones</CardTitle>
+            <Receipt className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-bold">{formatCurrency(eerrData.devolucionesTotal || 0)}</div>
+            <div className="text-xs text-muted-foreground">Devoluciones: {eerrData.devolucionesCount || 0}</div>
+            <div className="text-xs text-muted-foreground">Pérdida total: {formatCurrency(eerrData.devolucionesPerdidaTotal || 0)}</div>
+            <div className="text-xs text-muted-foreground">Comisiones devueltas: -{formatCurrency(eerrData.devolucionesComisionesTotal || eerrData.devolucionesComisionesTotal === 0 ? (eerrData.devolucionesComisionesTotal || 0) : 0)}</div>
+            <div className="text-xs text-muted-foreground">% sobre ventas: {eerrData.porcentajeDevolucionesSobreVentas?.toFixed(2) || '0.00'}%</div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Estado de Resultados detallado */}
@@ -319,17 +334,35 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       </>
                     )}
                     <div className="flex justify-between text-red-600 border-t pt-2">
-                      <span>= Comisiones Totales:</span>
+                      <span>= Comisiones Totales (brutas):</span>
                       <span className="font-medium">-{formatCurrency(eerrData.comisiones)}</span>
                     </div>
+                    {typeof eerrData.comisionesDevueltas !== 'undefined' && (
+                      <div className="flex justify-between text-red-600">
+                        <span>(-) Comisiones devueltas:</span>
+                        <span className="font-medium">-{formatCurrency(eerrData.comisionesDevueltas)}</span>
+                      </div>
+                    )}
+                    {typeof eerrData.comisionesNetas !== 'undefined' && (
+                      <div className="flex justify-between text-red-600 font-semibold">
+                        <span>= Comisiones Netas:</span>
+                        <span className="font-medium">-{formatCurrency(eerrData.comisionesNetas)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-red-600">
                       <span>(-) Envíos:</span>
                       <span className="font-medium">-{formatCurrency(eerrData.enviosTotales)}</span>
                     </div>
                     <div className="flex justify-between border-t pt-2 font-semibold text-red-600">
-                      <span>= Total Costos Plataforma:</span>
+                      <span>= Total Costos Plataforma (brutos):</span>
                       <span>-{formatCurrency(eerrData.totalCostosPlataforma)}</span>
                     </div>
+                    {typeof eerrData.totalCostosPlataformaAjustado !== 'undefined' && (
+                      <div className="flex justify-between border-t pt-2 font-semibold text-red-600">
+                        <span>= Total Costos Plataforma (ajustado por devoluciones):</span>
+                        <span>-{formatCurrency(eerrData.totalCostosPlataformaAjustado)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import NuevaDevolucionModalWrapper from "@/components/nueva-devolucion-modal-wrapper"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, RotateCcw, FileText } from "lucide-react"
@@ -26,12 +27,8 @@ export default async function DevolucionesPage() {
                   Ver Reportes
                 </Link>
               </Button>
-              <Button asChild>
-                <Link href="/devoluciones/nueva">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nueva Devolución
-                </Link>
-              </Button>
+              {/* Client wrapper for nueva devolucion modal */}
+              <NuevaDevolucionModalWrapper />
             </div>
           </div>
         </div>

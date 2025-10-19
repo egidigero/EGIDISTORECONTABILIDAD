@@ -2,7 +2,7 @@
 
 // Tipos para los enums
 export type Plataforma = "TN" | "ML" | "General" | "Directo"
-export type MetodoPago = "PagoNube" | "MercadoPago" | "Transferencia"
+export type MetodoPago = "PagoNube" | "MercadoPago" | "Transferencia" | "Efectivo"
 export type Condicion = "Transferencia" | "Cuotas sin interés" | "Normal"
 export type EstadoEnvio = "Pendiente" | "EnCamino" | "Entregado" | "Devuelto" | "Cancelado"
 export type TipoMovimiento = "Gasto" | "Ingreso"
@@ -162,6 +162,16 @@ export interface LiquidacionForm {
 export interface EERRData {
   detalleOtrosGastos?: any[]
   detalleOtrosIngresos?: any[]
+  // Devoluciones
+  devolucionesTotal?: number       // Impacto en ventas netas por devoluciones (monto reembolsado / impacto)
+  devolucionesPerdidaTotal?: number // Pérdida asociada a productos no recuperados / pérdida total
+  devolucionesCount?: number
+  porcentajeDevolucionesSobreVentas?: number
+  detalleDevoluciones?: any[]
+  devolucionesComisionesTotal?: number // total de comisiones que se devolvieron (para mostrar en EERR)
+  comisionesDevueltas?: number // alias usado en la UI
+  comisionesNetas?: number // comisiones después de descontar las devueltas
+  totalCostosPlataformaAjustado?: number // total costos plataforma ajustado por devoluciones
   // Ventas
   ventasTotales: number       // Ventas brutas
   descuentos: number          // Descuentos aplicados

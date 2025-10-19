@@ -164,3 +164,20 @@ export async function eliminarVentaDeLiquidacion(venta: VentaConProducto) {
     return { success: false, error: error instanceof Error ? error.message : 'Error desconocido' }
   }
 }
+
+/**
+ * Calcula el monto que una venta aporta (o aportó) a la liquidación.
+ * Este valor se usa para sumar/restar de los acumulados de liquidación (tn_a_liquidar / mp_a_liquidar).
+ */
+export async function calcularMontoVentaALiquidar(venta: VentaConProducto) {
+  const pvBruto = Number(venta.pvBruto || 0)
+  const comisionBase = Number(venta.comision || 0)
+  const iva = Number(venta.iva || 0)
+  const iibb = Number(venta.iibb || 0)
+  const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
+
+  // Para ML: PV - Comisión - IVA - IIBB - Envío
+  // Para TN: PV - Comisión - IVA - IIBB
+  const montoVentaALiquidar = pvBruto - comisionBase - iva - iibb - (venta.plataforma === 'ML' ? cargoEnvioCosto : 0)
+  return montoVentaALiquidar
+}

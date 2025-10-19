@@ -3,14 +3,14 @@
 import { revalidatePath } from "next/cache"
 import { supabase } from "@/lib/supabase"
 import { gastoIngresoSchema, type GastoIngresoFormData } from "@/lib/validations"
-import type { GastoIngresoFilters } from "@/lib/types"
+import type { GastoIngresoFilters, GastoIngreso } from "@/lib/types"
 
 // Función simple para generar ID único
 function generateUniqueId(): string {
   return `gi-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 }
 
-export async function getGastosIngresos(filters?: GastoIngresoFilters) {
+export async function getGastosIngresos(filters?: GastoIngresoFilters): Promise<GastoIngreso[]> {
   try {
     let query = supabase
       .from('gastos_ingresos')
@@ -42,7 +42,7 @@ export async function getGastosIngresos(filters?: GastoIngresoFilters) {
       return []
     }
 
-    return data || []
+  return (data || []) as GastoIngreso[]
   } catch (error) {
     console.error('Error in getGastosIngresos:', error)
     return []

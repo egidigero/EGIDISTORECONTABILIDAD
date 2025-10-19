@@ -57,13 +57,21 @@ export const devolucionSchema = z.object({
   productoNuevoId: z.string().optional(), // Solo si es cambio de producto
   
   // Fechas
-  fechaCompra: z.date({
-    required_error: "La fecha de compra es requerida",
-  }),
-  fechaReclamo: z.date({
-    required_error: "La fecha de reclamo es requerida",
-  }).default(new Date()),
-  fechaCompletada: z.date().optional(),
+  fechaCompra: z.preprocess((arg) => {
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    return arg
+  }, z.date({ required_error: "La fecha de compra es requerida" })),
+  fechaReclamo: z.preprocess((arg) => {
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    return arg
+  }, z.date({ required_error: "La fecha de reclamo es requerida" })).default(new Date()),
+  fechaCompletada: z.preprocess((arg) => {
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    return arg
+  }, z.date({ required_error: "La fecha completada es requerida" })).default(new Date()),
   
   // Información de contacto
   nombreContacto: z.string().min(1, "El nombre de contacto es requerido"),
@@ -88,8 +96,13 @@ export const devolucionSchema = z.object({
   
   // Costos de envío
   costoEnvioOriginal: z.number().min(0).default(0),
-  costoEnvioDevolucion: z.number().min(0).default(0),
+  // Al crear la devolución se solicita el costo de envío de devolución (puede ser 0 pero requerido)
+  costoEnvioDevolucion: z.number({ required_error: "El costo de envío de devolución es requerido" }).min(0, "El costo de envío debe ser mayor o igual a 0"),
   costoEnvioNuevo: z.number().min(0).default(0),
+
+  // Tracking / identificación
+  numeroSeguimiento: z.string().min(1, "El número de seguimiento es requerido"),
+  numeroDevolucion: z.string().optional(),
   
   // Resolución
   tipoResolucion: z.enum([
@@ -106,11 +119,31 @@ export const devolucionSchema = z.object({
   // Impacto financiero (auto-completados desde la venta)
   montoVentaOriginal: z.number().min(0).default(0),
   montoReembolsado: z.number().min(0).default(0),
+  // Comisión original de la venta (opcional, usada en cálculos/trazabilidad)
   comisionOriginal: z.number().min(0).default(0),
-  comisionDevuelta: z.number().min(0).default(0),
+  // commission fields removed from DB; calculations derived from ventas/liquidaciones
 })
 
 export type DevolucionFormData = z.infer<typeof devolucionSchema>
+
+// Exportar opciones para uso en componentes cliente (evitar leer internals de Zod)
+export const DEVOLUCION_ESTADOS = [
+  "Pendiente",
+  "Aceptada en camino",
+  "Entregada - Reembolso",
+  "Entregada - Cambio mismo producto",
+  "Entregada - Cambio otro producto",
+  "Entregada - Sin reembolso",
+  "Rechazada",
+] as const
+
+export const DEVOLUCION_TIPOS_RESOLUCION = [
+  "Reembolso",
+  "Cambio mismo producto",
+  "Cambio otro producto",
+  "Sin reembolso",
+] as const
+
 
 // Validaciones para Liquidación
 export const liquidacionSchema = z.object({

@@ -28,9 +28,14 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
           <div>
             <CardTitle className="text-lg">Productos</CardTitle>
             <CardDescription>Listado de productos en el sistema.</CardDescription>
-            <Button asChild variant="outline" size="sm" className="mt-2">
-              <a href="/">← Volver al menú principal</a>
-            </Button>
+            <div className="flex gap-2 mt-2">
+              <Button asChild variant="outline" size="sm">
+                <a href="/">← Volver al menú principal</a>
+              </Button>
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/stock">Stock y movimientos</Link>
+              </Button>
+            </div>
           </div>
           <Button size="sm" onClick={() => setShowModal(true)}>
             <Plus className="mr-2 h-4 w-4" /> Nuevo producto
