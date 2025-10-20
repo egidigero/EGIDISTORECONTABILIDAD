@@ -213,7 +213,7 @@ export async function createDevolucion(data: DevolucionFormData) {
             const gastoRes = await createGastoIngreso({
               fecha: new Date(fechaHoy),
               tipo: 'Gasto',
-              categoria: 'Gastos del negocio - Envíos devoluciones',
+              categoria: 'Gastos del negocio - Envios devoluciones',
               descripcion: `${descripcion} - devol ${created.id}`,
               montoARS: costoEnvio,
               canal: 'General'
@@ -428,7 +428,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
                       const gastoPayload = {
                         fecha: new Date(impactoFecha),
                         tipo: 'Gasto' as const,
-                        categoria: 'Gastos del negocio - Envíos devoluciones',
+                        categoria: 'Gastos del negocio - Envios devoluciones',
                         descripcion,
                         montoARS: ajusteHoy,
                         canal: canal as any

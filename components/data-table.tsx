@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight, Search } from "lucide-react"
 
 interface Column<T> {
   key: keyof T | string
-  header: string
+  header: React.ReactNode
   render?: (item: T) => React.ReactNode
   sortable?: boolean
 }
