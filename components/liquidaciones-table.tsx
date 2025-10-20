@@ -256,6 +256,27 @@ export function LiquidacionesTable() {
           console.error("Error al cargar detalle ventas Transferencia:", error)
         }
       }
+      // Cargar devoluciones que impactaron esta fecha
+      if (!movimientosDetalle[liquidacionId] || true) {
+        try {
+          const fechaStr = format(fecha, 'yyyy-MM-dd')
+          const res = await fetch(`/api/devoluciones/por-fecha?fecha=${encodeURIComponent(fechaStr)}`)
+          if (res.ok) {
+            const json = await res.json()
+            const devs = json?.data ?? []
+            // Añadir devoluciones al detalle de movimientos (se muestra separadamente)
+            setMovimientosDetalle(prev => ({
+              ...prev,
+              [liquidacionId]: {
+                ...(prev[liquidacionId] || { fecha, gastos: [], ingresos: [], totalGastos: 0, totalIngresos: 0, movimientoNeto: 0, gastosPersonales: 0, otrosIngresos: 0 }),
+                devoluciones: devs
+              }
+            }))
+          }
+        } catch (err) {
+          console.error('Error cargando devoluciones por fecha', err)
+        }
+      }
     }
     
     setExpandedRows(newExpandedRows)
@@ -534,6 +555,28 @@ export function LiquidacionesTable() {
                                 </div>
                               )}
 
+                              {/* Devoluciones que impactaron la liquidación del día (inline) */}
+                              {detalle && (detalle as any).devoluciones && (detalle as any).devoluciones.length > 0 && (
+                                <div className="space-y-2">
+                                  <h4 className="font-medium text-sm">Devoluciones que impactaron esta liquidación:</h4>
+                                  <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                                    {(detalle as any).devoluciones.map((d: any) => (
+                                      <div key={d.id} className="p-2 rounded bg-white border border-yellow-100 text-xs mb-2">
+                                        <div className="font-medium">#{d.id_devolucion ?? d.numero_devolucion ?? d.id} • {d.tipo_resolucion ?? d.estado}</div>
+                                        <div className="text-xs text-muted-foreground">Reclamo: {d.fecha_reclamo ? new Date(d.fecha_reclamo).toLocaleDateString() : '-'} • Completada: {d.fecha_completada ? new Date(d.fecha_completada).toLocaleDateString() : '-'}</div>
+                                        <div className="text-xs mt-1">
+                                          {d.monto_reembolsado ? <div>Reembolso: {formatCurrency(d.monto_reembolsado)}</div> : null}
+                                          {d.monto_reembolsado ? (
+                                            <div>Reembolso: {formatCurrency(Number(d.monto_reembolsado || 0))}</div>
+                                          ) : null}
+                                          {d.costo_producto_perdido ? <div className="text-red-600">Producto perdido: {formatCurrency(d.costo_producto_perdido)}</div> : null}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Detalle de ventas MP (ML) que suman a "MP a Liquidar" */}
                               {ventasMPDetalle[liquidacion.id] && (
                                 <div className="space-y-2">
@@ -632,6 +675,27 @@ export function LiquidacionesTable() {
                                                     </div>
                                                   </div>
                                                 </div>
+                                                {/* Devoluciones relacionadas (si las hay) */}
+                                                {venta.devoluciones && venta.devoluciones.length > 0 && (
+                                                  <div className="mt-2 text-xs">
+                                                    <div className="font-medium text-gray-700">Devoluciones vinculadas:</div>
+                                                    <div className="space-y-1 mt-1">
+                                                      {venta.devoluciones.map((d: any) => (
+                                                        <div key={d.id} className="p-2 rounded bg-yellow-50 border border-yellow-100">
+                                                          <div className="font-medium">#{d.id_devolucion} • {d.tipo_resolucion}</div>
+                                                          <div className="text-xs text-muted-foreground">Reclamo: {d.fecha_reclamo ? new Date(d.fecha_reclamo).toLocaleDateString() : '-' } • Completada: {d.fecha_completada ? new Date(d.fecha_completada).toLocaleDateString() : '-'}</div>
+                                                          <div className="text-xs mt-1">
+                                                            {d.monto_reembolsado ? <div>Reembolso: {formatCurrency(d.monto_reembolsado)}</div> : null}
+                                                            {d.monto_reembolsado ? (
+                                                              <div>Reembolso: {formatCurrency(Number(d.monto_reembolsado || 0))}</div>
+                                                            ) : null}
+                                                            {d.costo_producto_perdido ? <div className="text-red-600">Producto perdido: {formatCurrency(d.costo_producto_perdido)}</div> : null}
+                                                          </div>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
                                               </div>
                                             </div>
                                           </div>
@@ -844,6 +908,27 @@ export function LiquidacionesTable() {
                                                     </div>
                                                   </div>
                                                 </div>
+                                                {/* Devoluciones relacionadas (si las hay) */}
+                                                {venta.devoluciones && venta.devoluciones.length > 0 && (
+                                                  <div className="mt-2 text-xs">
+                                                    <div className="font-medium text-gray-700">Devoluciones vinculadas:</div>
+                                                    <div className="space-y-1 mt-1">
+                                                      {venta.devoluciones.map((d: any) => (
+                                                        <div key={d.id} className="p-2 rounded bg-yellow-50 border border-yellow-100">
+                                                          <div className="font-medium">#{d.id_devolucion} • {d.tipo_resolucion}</div>
+                                                          <div className="text-xs text-muted-foreground">Reclamo: {d.fecha_reclamo ? new Date(d.fecha_reclamo).toLocaleDateString() : '-' } • Completada: {d.fecha_completada ? new Date(d.fecha_completada).toLocaleDateString() : '-'}</div>
+                                                          <div className="text-xs mt-1">
+                                                            {d.monto_reembolsado ? <div>Reembolso: {formatCurrency(d.monto_reembolsado)}</div> : null}
+                                                            {d.monto_reembolsado ? (
+                                                              <div>Reembolso: {formatCurrency(Number(d.monto_reembolsado || 0))}</div>
+                                                            ) : null}
+                                                            {d.costo_producto_perdido ? <div className="text-red-600">Producto perdido: {formatCurrency(d.costo_producto_perdido)}</div> : null}
+                                                          </div>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
                                               </div>
                                             </div>
                                           </div>

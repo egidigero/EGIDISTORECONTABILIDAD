@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { createDevolucion, updateDevolucion, buscarVentas } from "@/lib/actions/devoluciones"
-import { devolucionSchema, type DevolucionFormData, DEVOLUCION_ESTADOS, DEVOLUCION_TIPOS_RESOLUCION } from "@/lib/validations"
+import { devolucionSchemaWithRecoveryCheck as devolucionSchema, type DevolucionFormData, DEVOLUCION_ESTADOS, DEVOLUCION_TIPOS_RESOLUCION } from "@/lib/validations"
 import { Search } from "lucide-react"
 
 const plataformaOptions = [
@@ -58,6 +58,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
     fechaCompra: string | Date
     fechaReclamo: string | Date
     fechaCompletada: string | Date
+    productoRecuperable?: boolean
   }
 
 
@@ -105,6 +106,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
       costoProductoNuevo: devolucion?.costoProductoNuevo || 0,
       montoVentaOriginal: devolucion?.montoVentaOriginal || 0,
       montoReembolsado: devolucion?.montoReembolsado || 0,
+      productoRecuperable: typeof (devolucion as any)?.productoRecuperable !== 'undefined' ? (devolucion as any).productoRecuperable : typeof (devolucion as any)?.producto_recuperable !== 'undefined' ? (devolucion as any).producto_recuperable : true,
       // commission fields removed from DB; derive from venta when needed
       numeroSeguimiento: devolucion?.numeroSeguimiento || "",
       numeroDevolucion: devolucion?.numeroDevolucion || "",
@@ -195,6 +197,18 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
     // Auto-popular campos financieros desde la venta (no pedir manualmente)
     if (venta.costoProductoOriginal ?? venta._raw?.costoProducto) setValue("costoProductoOriginal", venta.costoProductoOriginal ?? venta._raw?.costoProducto ?? 0)
     if (venta.montoVentaOriginal ?? venta._raw?.montoTotal) setValue("montoVentaOriginal", venta.montoVentaOriginal ?? venta._raw?.montoTotal ?? venta.pvBruto ?? 0)
+    // Auto-popular costo de envío original desde la venta (varias posibles keys en _raw)
+    const envioCandidates = [
+      venta.costoEnvioOriginal,
+      venta._raw?.costoEnvio,
+      venta._raw?.costo_envio,
+      venta._raw?.cargoEnvioCosto,
+      venta._raw?.cargo_envio_costo,
+      venta._raw?.shippingCost,
+      venta._raw?.shipping_cost,
+    ]
+    const envioVal = envioCandidates.find((v) => typeof v === 'number' || (typeof v === 'string' && v !== '')) ?? 0
+    setValue("costoEnvioOriginal", Number(envioVal ?? 0))
   // commission is no longer stored on devoluciones; derive from venta when needed
   // También setear fecha de reclamo hoy por defecto cuando se selecciona la venta
   setValue("fechaReclamo", new Date().toISOString().split('T')[0])
@@ -406,6 +420,18 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                     </Select>
                     {errors.tipoResolucion && <p className="text-sm text-destructive">{errors.tipoResolucion.message}</p>}
                   </div>
+                </div>
+              )}
+
+              {/* Preguntar si se recupera el producto cuando se seleccionó alguna resolución */}
+              {Boolean(watch('tipoResolucion')) && (
+                <div className="mt-4 space-y-2">
+                  <Label>¿Se recupera el producto?</Label>
+                  <div className="flex items-center gap-3">
+                    <Switch checked={!!watch('productoRecuperable')} onCheckedChange={(checked) => setValue('productoRecuperable', checked)} />
+                    <span className="text-sm text-muted-foreground">Activado = Recuperable (no es pérdida). Desactivado = No recuperable (persistir costo producto como pérdida).</span>
+                  </div>
+                  {errors.productoRecuperable && <p className="text-sm text-destructive">{(errors.productoRecuperable as any).message}</p>}
                 </div>
               )}
 

@@ -46,6 +46,29 @@ export async function calcularDetalleVentasTN(fecha: string) {
     let totalIIBB = 0
     let totalALiquidar = 0
     
+    // Fetch devoluciones relacionadas a estas ventas y attach them server-side
+    let devolucionesMap: Record<string, any[]> = {}
+    try {
+      const ventaIds = ventas.map(v => v.id).filter(Boolean)
+      if (ventaIds.length > 0) {
+        const { data: devolucionesData, error: devolError } = await supabase
+          .from('devoluciones_resumen')
+          .select(`id, id_devolucion, venta_id, fecha_reclamo, fecha_completada, tipo_resolucion, producto_recuperable, costo_envio_original, costo_envio_devolucion, costo_envio_nuevo, total_costos_envio, costo_producto_perdido, gasto_creado_id, perdida_total, monto_reembolsado, impacto_ventas_netas`)
+          .in('venta_id', ventaIds)
+
+        if (!devolError && Array.isArray(devolucionesData)) {
+          devolucionesMap = devolucionesData.reduce((acc: Record<string, any[]>, d: any) => {
+            const key = String(d.venta_id)
+            acc[key] = acc[key] || []
+            acc[key].push(d)
+            return acc
+          }, {})
+        }
+      }
+    } catch (err) {
+      console.warn('No se pudieron obtener devoluciones para ventas TN (no crítico)', err)
+    }
+
     const ventasDetalle = ventas.map(venta => {
       const pvBruto = Number(venta.pvBruto || 0)
       const comision = Number(venta.comision || 0)
@@ -61,9 +84,19 @@ export async function calcularDetalleVentasTN(fecha: string) {
       totalIIBB += iibb
       totalALiquidar += montoALiquidar
       
+      // attach devoluciones array (if any)
+      const devols = devolucionesMap[String(venta.id)] || []
+
       return {
         ...venta,
-        montoALiquidar: Math.round(montoALiquidar * 100) / 100
+        montoALiquidar: Math.round(montoALiquidar * 100) / 100,
+        devoluciones: devols,
+        devolucionesResumen: {
+          envioTotal: Math.round((devols.reduce((s: number, d: any) => s + Number(d.total_costos_envio || 0), 0)) * 100) / 100,
+          // montoAplicadoTotal removed: use monto_reembolsado or impacto_ventas_netas where appropriate
+          montoAplicadoTotal: Math.round((devols.reduce((s: number, d: any) => s + Number(d.monto_reembolsado || d.impacto_ventas_netas || 0), 0)) * 100) / 100,
+          perdidaTotal: Math.round((devols.reduce((s: number, d: any) => s + Number(d.costo_producto_perdido || d.perdida_total || 0), 0)) * 100) / 100
+        }
       }
     })
     

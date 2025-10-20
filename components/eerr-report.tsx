@@ -94,6 +94,39 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const gastosOperativos = eerrData.totalCostosPlataforma;
   const cantidadVentas = detalleVentas?.length || 0;
 
+  // Calcular totales de devoluciones (usar mismas reglas que el bloque de detalle)
+  const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : [];
+  const totalCostoProducto = devols.length > 0
+    ? devols.reduce((acc: number, d: any) => {
+        const totalCostoProductosRow = Number(d.total_costo_productos ?? NaN)
+        const costoProductoPerdido = Number(d.costo_producto_perdido ?? NaN)
+        const perdidaTotal = Number(d.perdida_total ?? NaN)
+        const totalCostosEnvioRow = Number(d.total_costos_envio ?? ((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0)))
+
+        if (!Number.isNaN(totalCostoProductosRow)) return acc + totalCostoProductosRow
+        if (!Number.isNaN(costoProductoPerdido) && costoProductoPerdido > 0) return acc + costoProductoPerdido
+        if (!Number.isNaN(perdidaTotal) && perdidaTotal > 0 && totalCostosEnvioRow > 0) {
+          const derived = Math.max(0, Math.round((perdidaTotal - totalCostosEnvioRow) * 100) / 100)
+          return acc + derived
+        }
+        return acc + 0
+      }, 0)
+    : (eerrData.devolucionesPerdidaTotal || 0);
+
+  const totalCostosEnvio = devols.length > 0
+    ? devols.reduce((acc: number, d: any) => {
+        const totalEnvioRow = Number(d.total_costos_envio ?? NaN)
+        if (!Number.isNaN(totalEnvioRow)) return acc + totalEnvioRow
+        return acc + Number((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0))
+      }, 0)
+    : (eerrData.devolucionesEnviosTotal || 0);
+
+  const totalPerdidaDevoluciones = Math.round((totalCostoProducto + totalCostosEnvio) * 100) / 100;
+
+  // Margen operativo: recalcular base y ajustar por devoluciones para mostrar coherente con el detalle
+  const margenOperativoBaseCalc = (eerrData.resultadoBruto ?? 0) - (eerrData.totalCostosPlataforma ?? 0) - (eerrData.publicidad ?? 0)
+  const margenOperativoAjustadoCalc = Math.round((margenOperativoBaseCalc - totalPerdidaDevoluciones) * 100) / 100
+
   return (
     <div className="space-y-6">
       {/* Botón de análisis ROAS */}
@@ -169,17 +202,15 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div
-              className={`text-2xl font-bold ${eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}`}
-            >
-              {formatCurrency(eerrData.margenOperativo)}
-            </div>
+              <div className={`text-2xl font-bold ${margenOperativoAjustadoCalc >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {formatCurrency(margenOperativoAjustadoCalc)}
+              </div>
             <div className="flex flex-wrap gap-1 mt-2">
               <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                {eerrData.ventasNetas > 0 ? ((eerrData.margenOperativo / eerrData.ventasNetas) * 100).toFixed(1) : 0}% s/Ventas
+                {eerrData.ventasNetas > 0 ? ((margenOperativoAjustadoCalc / eerrData.ventasNetas) * 100).toFixed(1) : 0}% s/Ventas
               </Badge>
               <Badge variant="outline" className="text-xs px-2 py-0.5">
-                {eerrData.costoProducto > 0 ? ((eerrData.margenOperativo / eerrData.costoProducto) * 100).toFixed(1) : 0}% s/Costo
+                {eerrData.costoProducto > 0 ? ((margenOperativoAjustadoCalc / eerrData.costoProducto) * 100).toFixed(1) : 0}% s/Costo
               </Badge>
             </div>
           </CardContent>
@@ -209,14 +240,12 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
               const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
               const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
               
-              // Margen Neto = Margen Operativo - Otros Gastos Negocio + Otros Ingresos
-              const margenNeto = eerrData.margenOperativo - totalNegocio + eerrData.otrosIngresos;
-              
+              // Margen Neto = Margen Operativo (ajustado por devoluciones) - Otros Gastos Negocio + Otros Ingresos
+              const margenNeto = margenOperativoAjustadoCalc - totalNegocio + eerrData.otrosIngresos;
+
               return (
                 <>
-                  <div
-                    className={`text-2xl font-bold ${margenNeto >= 0 ? "text-green-600" : "text-red-600"}`}
-                  >
+                  <div className={`text-2xl font-bold mt-2 ${margenNeto >= 0 ? "text-green-600" : "text-red-600"}`}>
                     {formatCurrency(margenNeto)}
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
@@ -233,20 +262,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           </CardContent>
         </Card>
 
-        {/* Control de Devoluciones */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Control de Devoluciones</CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">{formatCurrency(eerrData.devolucionesTotal || 0)}</div>
-            <div className="text-xs text-muted-foreground">Devoluciones: {eerrData.devolucionesCount || 0}</div>
-            <div className="text-xs text-muted-foreground">Pérdida total: {formatCurrency(eerrData.devolucionesPerdidaTotal || 0)}</div>
-            <div className="text-xs text-muted-foreground">Comisiones devueltas: -{formatCurrency(eerrData.devolucionesComisionesTotal || eerrData.devolucionesComisionesTotal === 0 ? (eerrData.devolucionesComisionesTotal || 0) : 0)}</div>
-            <div className="text-xs text-muted-foreground">% sobre ventas: {eerrData.porcentajeDevolucionesSobreVentas?.toFixed(2) || '0.00'}%</div>
-          </CardContent>
-        </Card>
+        {/* Control de Devoluciones removed per request */}
       </div>
 
       {/* Estado de Resultados detallado */}
@@ -270,6 +286,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       <span>Ventas Totales:</span>
                       <span className="font-medium">{formatCurrency(eerrData.ventasTotales)}</span>
                     </div>
+                    {/* Las ventas reembolsadas se excluyen del cálculo de ventas; no restamos PV aquí */}
                     <div className="flex justify-between text-red-600">
                       <span>(-) Descuentos:</span>
                       <span className="font-medium">-{formatCurrency(eerrData.descuentos)}</span>
@@ -333,16 +350,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                         </div>
                       </>
                     )}
-                    <div className="flex justify-between text-red-600 border-t pt-2">
-                      <span>= Comisiones Totales (brutas):</span>
-                      <span className="font-medium">-{formatCurrency(eerrData.comisiones)}</span>
-                    </div>
-                    {typeof eerrData.comisionesDevueltas !== 'undefined' && (
-                      <div className="flex justify-between text-red-600">
-                        <span>(-) Comisiones devueltas:</span>
-                        <span className="font-medium">-{formatCurrency(eerrData.comisionesDevueltas)}</span>
-                      </div>
-                    )}
+                    {/* Comisiones Totales (brutas) removed from view per request */}
                     {typeof eerrData.comisionesNetas !== 'undefined' && (
                       <div className="flex justify-between text-red-600 font-semibold">
                         <span>= Comisiones Netas:</span>
@@ -357,12 +365,64 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       <span>= Total Costos Plataforma (brutos):</span>
                       <span>-{formatCurrency(eerrData.totalCostosPlataforma)}</span>
                     </div>
-                    {typeof eerrData.totalCostosPlataformaAjustado !== 'undefined' && (
-                      <div className="flex justify-between border-t pt-2 font-semibold text-red-600">
-                        <span>= Total Costos Plataforma (ajustado por devoluciones):</span>
-                        <span>-{formatCurrency(eerrData.totalCostosPlataformaAjustado)}</span>
-                      </div>
-                    )}
+                    {/* Ajuste por devoluciones removido de la vista principal */}
+                  </div>
+                </div>
+
+                {/* Devoluciones: detalle por concepto (antes de Otros Gastos del Negocio) */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg mb-3 text-rose-700">📉 Devoluciones (detalle)</h3>
+                  <div className="space-y-2 bg-rose-50 p-3 rounded">
+                    {(() => {
+                      const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : [];
+                      // Fallbacks: si no hay detalle individual, usar agregados ya calculados en eerrData
+                      // Prefer DB aggregates when available. Compute per-row values conservatively to avoid double-counting:
+                      // - Shipping: use total_costos_envio if present, else sum envio fields
+                      // - Product: use total_costo_productos if present, else costo_producto_perdido if present,
+                      //   else as last resort derive (perdida_total - total_costos_envio) when that makes sense.
+                      const totalCostoProducto = devols.length > 0
+                        ? devols.reduce((acc: number, d: any) => {
+                            const totalCostoProductosRow = Number(d.total_costo_productos ?? NaN)
+                            const costoProductoPerdido = Number(d.costo_producto_perdido ?? NaN)
+                            const perdidaTotal = Number(d.perdida_total ?? NaN)
+                            const totalCostosEnvioRow = Number(d.total_costos_envio ?? ((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0)))
+
+                            if (!Number.isNaN(totalCostoProductosRow)) return acc + totalCostoProductosRow
+                            if (!Number.isNaN(costoProductoPerdido) && costoProductoPerdido > 0) return acc + costoProductoPerdido
+                            // Last resort: derive product portion from perdida_total minus envio only if perdida_total looks like a sum
+                            if (!Number.isNaN(perdidaTotal) && perdidaTotal > 0 && totalCostosEnvioRow > 0) {
+                              const derived = Math.max(0, Math.round((perdidaTotal - totalCostosEnvioRow) * 100) / 100)
+                              return acc + derived
+                            }
+                            return acc + 0
+                          }, 0)
+                        : (eerrData.devolucionesPerdidaTotal || 0);
+
+                      const totalCostosEnvio = devols.length > 0
+                        ? devols.reduce((acc: number, d: any) => {
+                            const totalEnvioRow = Number(d.total_costos_envio ?? NaN)
+                            if (!Number.isNaN(totalEnvioRow)) return acc + totalEnvioRow
+                            return acc + Number((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0))
+                          }, 0)
+                        : (eerrData.devolucionesEnviosTotal || 0);
+                      const totalPerdida = Math.round((totalCostoProducto + totalCostosEnvio) * 100) / 100;
+                      return (
+                        <>
+                          <div className="flex justify-between font-semibold">
+                            <span>Total Pérdida por Devoluciones:</span>
+                            <span className="text-red-600">-{formatCurrency(totalPerdida)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm text-gray-700">
+                            <span>• Costo de productos:</span>
+                            <span>{formatCurrency(totalCostoProducto)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm text-gray-700">
+                            <span>• Costo de envíos:</span>
+                            <span>{formatCurrency(totalCostosEnvio)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -377,9 +437,15 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       <span>(-) Costos Plataforma:</span>
                       <span className="font-medium">-{formatCurrency(eerrData.totalCostosPlataforma)}</span>
                     </div>
-                    <div className="flex justify-between border-t pt-2 font-semibold text-teal-700">
-                      <span>= Resultado Parcial:</span>
-                      <span>{formatCurrency(eerrData.resultadoBruto - eerrData.totalCostosPlataforma)}</span>
+                    <div className="border-t pt-2 space-y-2">
+                      <div className="flex justify-between text-sm text-gray-700">
+                        <span>(-) Pérdidas por Devoluciones:</span>
+                        <span className="font-medium text-red-600">-{formatCurrency(totalPerdidaDevoluciones)}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold text-teal-700">
+                        <span>= Resultado Parcial (ajustado por devoluciones):</span>
+                        <span>{formatCurrency((eerrData.resultadoBruto - eerrData.totalCostosPlataforma) - totalPerdidaDevoluciones)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -407,7 +473,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <div className="space-y-2 bg-blue-50 p-3 rounded">
                     <div className="flex justify-between font-bold">
                       <span>Margen Operativo:</span>
-                      <span className={eerrData.margenOperativo >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(eerrData.margenOperativo)}</span>
+                      <span className={margenOperativoAjustadoCalc >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenOperativoAjustadoCalc)}</span>
                     </div>
                   </div>
                 </div>
@@ -510,7 +576,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
                       // Total final de otros gastos del negocio incluye la diferencia de envíos
                       const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
-                      const margenNeto = eerrData.margenOperativo - totalNegocio + eerrData.otrosIngresos;
+                      // Use the adjusted margen operativo (already subtracts devoluciones) so the detailed
+                      // Margen Neto matches the cards and reflects the devoluciones deduction.
+                      const margenNeto = margenOperativoAjustadoCalc - totalNegocio + eerrData.otrosIngresos;
                       return <div className="flex justify-between text-black font-bold text-lg">
                         <span>Margen Neto:</span>
                         <span className={margenNeto >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenNeto)}</span>
@@ -576,7 +644,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                         ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
                         : [];
                       const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
-                      const margenNeto = eerrData.margenOperativo - totalNegocio + eerrData.otrosIngresos;
+                      // Use the adjusted margen operativo (already subtracts devoluciones) so Margen Final is consistent
+                      const margenNeto = margenOperativoAjustadoCalc - totalNegocio + eerrData.otrosIngresos;
                       const margenFinal = margenNeto - totalPersonales;
                       return <div className="flex justify-between text-black font-bold text-lg">
                         <span>Margen Final:</span>

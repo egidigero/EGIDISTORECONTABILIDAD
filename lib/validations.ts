@@ -51,7 +51,7 @@ export const gastoIngresoSchema = z.object({
 export type GastoIngresoFormData = z.infer<typeof gastoIngresoSchema>
 
 // Validaciones para Devolución
-export const devolucionSchema = z.object({
+export const devolucionSchemaBase = z.object({
   // Relaciones
   ventaId: z.string().min(1, "Selecciona una venta"),
   productoNuevoId: z.string().optional(), // Solo si es cambio de producto
@@ -115,6 +115,8 @@ export const devolucionSchema = z.object({
   // Costos de productos (auto-completados desde la venta)
   costoProductoOriginal: z.number().min(0).default(0),
   costoProductoNuevo: z.number().min(0).default(0),
+  // Indica si el producto es recuperable (si se puede recibir de vuelta)
+  productoRecuperable: z.boolean().optional(),
   
   // Impacto financiero (auto-completados desde la venta)
   montoVentaOriginal: z.number().min(0).default(0),
@@ -124,7 +126,21 @@ export const devolucionSchema = z.object({
   // commission fields removed from DB; calculations derived from ventas/liquidaciones
 })
 
-export type DevolucionFormData = z.infer<typeof devolucionSchema>
+// Expose a stable alias for the base schema (ZodObject) so server code can call .partial()
+export const devolucionSchema = devolucionSchemaBase
+
+// Require productoRecuperable when the resolution is Reembolso
+export const devolucionSchemaWithRecoveryCheck = devolucionSchemaBase.superRefine((val, ctx) => {
+  // Si se eligió cualquier resolución (es decir, el usuario avanzó la decisión),
+  // requerimos explícitamente indicar si el producto es recuperable o no.
+  if (typeof val.tipoResolucion !== 'undefined' && val.tipoResolucion !== null) {
+    if (typeof val.productoRecuperable === 'undefined') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Debes indicar si el producto es recuperable cuando elegís una resolución', path: ['productoRecuperable'] })
+    }
+  }
+})
+
+export type DevolucionFormData = z.infer<typeof devolucionSchemaBase>
 
 // Exportar opciones para uso en componentes cliente (evitar leer internals de Zod)
 export const DEVOLUCION_ESTADOS = [

@@ -169,9 +169,11 @@ export interface EERRData {
   porcentajeDevolucionesSobreVentas?: number
   detalleDevoluciones?: any[]
   devolucionesComisionesTotal?: number // total de comisiones que se devolvieron (para mostrar en EERR)
+  devolucionesComisionesRecuperadas?: number // comisiones efectivamente recuperadas (comision + IVA + IIBB) por devoluciones reembolsadas
   comisionesDevueltas?: number // alias usado en la UI
   comisionesNetas?: number // comisiones después de descontar las devueltas
   totalCostosPlataformaAjustado?: number // total costos plataforma ajustado por devoluciones
+  devolucionesEnviosTotal?: number
   // Ventas
   ventasTotales: number       // Ventas brutas
   descuentos: number          // Descuentos aplicados

@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Banknote } from "lucide-react"
 import { LiquidacionesTable } from "@/components/liquidaciones-table"
 import { ProcesarLiquidacionModal } from "@/components/procesar-liquidacion-modal"
+// Devoluciones ahora se muestran inline dentro del detalle de cada liquidación
 
 export default async function LiquidacionesPage() {
   return (

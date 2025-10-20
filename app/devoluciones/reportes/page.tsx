@@ -1,5 +1,6 @@
 import { getEstadisticasDevoluciones } from "@/lib/actions/devoluciones"
 import { DevolucionesReporte } from "@/components/devoluciones-reporte"
+import DevolucionesReportesClientWrapper from './client-wrapper'
 import { Button } from "@/components/ui/button"
 import { FileText, ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic"
 
 export default async function DevolucionesReportesPage() {
   const estadisticas = await getEstadisticasDevoluciones()
+  // Note: provide initial stats to client wrapper for hydration
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
@@ -28,8 +30,18 @@ export default async function DevolucionesReportesPage() {
         </p>
       </div>
 
-      {estadisticas.total === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+      <div>
+        {/* Client-side filter will update the child report via fetch */}
+        <div className="mb-6">
+          {/* The filter is a client component; use a dynamic import to keep page server-friendly */}
+          <div id="devoluciones-filtro-placeholder">
+            {/* hydrate the client filter on the client side */}
+            {/* We render the filter via a client-only wrapper below */}
+          </div>
+        </div>
+
+        {estadisticas.total === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <div className="rounded-full bg-muted p-4">
             <FileText className="h-12 w-12 text-muted-foreground" />
           </div>
@@ -47,8 +59,11 @@ export default async function DevolucionesReportesPage() {
           </Button>
         </div>
       ) : (
-        <DevolucionesReporte estadisticas={estadisticas} />
+        <>
+          <DevolucionesReportesClientWrapper initial={estadisticas} />
+        </>
       )}
+      </div>
     </div>
   )
 }

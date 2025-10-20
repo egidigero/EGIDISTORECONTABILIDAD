@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { supabase } from "@/lib/supabase"
-import { devolucionSchema, type DevolucionFormData, type GastoIngresoFormData } from "@/lib/validations"
+import { devolucionSchema, devolucionSchemaBase, devolucionSchemaWithRecoveryCheck, type DevolucionFormData, type GastoIngresoFormData } from "@/lib/validations"
 import { eliminarVentaDeLiquidacion } from "@/lib/actions/actualizar-liquidacion"
 import { recalcularLiquidacionesEnCascada } from "@/lib/actions/recalcular-liquidaciones"
 
@@ -43,6 +43,59 @@ function toSnakeCase(obj: any): any {
   return out
 }
 
+// Helper: convert snake_case keys from DB to camelCase expected by our Zod schemas
+function toCamelCase(obj: any): any {
+  if (obj === null || obj === undefined) return obj
+  if (obj instanceof Date) return obj
+  if (Array.isArray(obj)) return obj.map(toCamelCase)
+  if (typeof obj !== 'object') return obj
+  const out: any = {}
+  for (const key of Object.keys(obj)) {
+    const val = (obj as any)[key]
+    const camel = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+    out[camel] = toCamelCase(val)
+  }
+  return out
+}
+
+// Helper: recursively remove null values to avoid Zod rejecting null (Zod allows undefined for optional fields)
+function stripNulls(obj: any): any {
+  if (obj === null || obj === undefined) return obj
+  if (Array.isArray(obj)) return obj.map(stripNulls)
+  if (typeof obj !== 'object') return obj
+  const out: any = {}
+  for (const key of Object.keys(obj)) {
+    const val = (obj as any)[key]
+    if (val === null) continue
+    out[key] = stripNulls(val)
+  }
+  return out
+}
+
+// Normalize common DB date-like objects to string or Date so Zod preprocess can handle them
+function normalizeDateLike(val: any): any {
+  if (val === null || val === undefined) return val
+  if (val instanceof Date) return val
+  if (typeof val === 'string') return val
+  if (typeof val === 'object') {
+    // Firestore-like timestamp
+    if (typeof val.toDate === 'function') {
+      try { return val.toDate() } catch {}
+    }
+    // Numeric seconds (e.g., { seconds: 169 })
+    if (typeof val.seconds === 'number') return new Date(val.seconds * 1000)
+    // Common wrappers
+    if (typeof val.value === 'string') return val.value
+    if (typeof val.iso === 'string') return val.iso
+    if (typeof val.toISOString === 'function') {
+      try { return new Date(val.toISOString()) } catch {}
+    }
+    // Fallback: stringify (Zod will try to parse string)
+    try { return JSON.stringify(val) } catch { return String(val) }
+  }
+  return val
+}
+
 // Helper: Obtener datos de la venta para auto-completar
 async function obtenerDatosVenta(ventaId: string) {
   try {
@@ -57,16 +110,52 @@ async function obtenerDatosVenta(ventaId: string) {
     if (error) throw error
     if (!venta) throw new Error("Venta no encontrada")
 
-    // Auto-completar costos desde la venta original
+    // Auto-completar costos desde la venta original.
+    // Los nombres de columnas pueden variar entre esquemas (snake_case o camelCase),
+    // por eso intentamos varias alternativas.
+    const costoProductoCandidates = [
+      (venta as any).costoProducto,
+      (venta as any).costo_producto,
+      (venta as any).costoUnitarioARS,
+      (venta as any).costo_unitario_ars,
+      (venta as any).costo || null
+    ]
+    const costoEnvioCandidates = [
+      (venta as any).costoEnvio,
+      (venta as any).costo_envio,
+      (venta as any).cargoEnvioCosto,
+      (venta as any).cargo_envio_costo,
+      (venta as any).shippingCost,
+      (venta as any).shipping_cost,
+      0
+    ]
+    const montoVentaCandidates = [
+      (venta as any).montoTotal,
+      (venta as any).monto_total,
+      (venta as any).pvBruto,
+      (venta as any).pv_bruto,
+      (venta as any).total
+    ]
+
+    const pickFirstNumber = (arr: any[]) => {
+      for (const v of arr) {
+        if (typeof v === 'number' && !Number.isNaN(v)) return v
+        if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v)
+      }
+      return 0
+    }
+
     return {
-      costoProductoOriginal: venta.costoProducto || 0,
-      costoEnvioOriginal: venta.costoEnvio || 0,
-      montoVentaOriginal: venta.montoTotal || 0,
+      costoProductoOriginal: pickFirstNumber(costoProductoCandidates),
+      costoEnvioOriginal: pickFirstNumber(costoEnvioCandidates),
+      montoVentaOriginal: pickFirstNumber(montoVentaCandidates),
       // commission removed from devoluciones; derive from venta when necessary
-      plataforma: venta.plataforma,
-      productoId: venta.productoId,
-      comprador: venta.comprador,
-      fechaCompra: venta.fecha
+      plataforma: (venta as any).plataforma,
+  productoId: ((venta as any).productoId ?? (venta as any).producto_id) || null,
+      comprador: (venta as any).comprador ?? (venta as any).buyer_name ?? (venta as any).cliente ?? null,
+      fechaCompra: (venta as any).fecha ?? (venta as any).fecha_compra ?? (venta as any).created_at ?? null,
+      saleCode: (venta as any).saleCode ?? (venta as any).sale_code ?? null,
+      externalOrderId: (venta as any).externalOrderId ?? (venta as any).external_order_id ?? null
     }
   } catch (error) {
     console.error("Error al obtener datos de venta:", error)
@@ -152,13 +241,18 @@ export async function createDevolucion(data: DevolucionFormData) {
   plataforma: (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN',
       estado: devolucionCompleta.estado ?? 'Pendiente',
       tipo_resolucion: devolucionCompleta.tipoResolucion ?? null,
-  // Persistir costo de producto SOLO si no es provisional
-  costo_producto_original: isProvisional ? 0 : Number(devolucionCompleta.costoProductoOriginal ?? 0),
+  // Persistir costo de producto ORIGINAL siempre (para trazabilidad),
+  // pero no persistir como pérdida hasta la finalización.
+  costo_producto_original: Number(devolucionCompleta.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0),
+  // El costo de producto nuevo y la bandera de recuperabilidad solo se aplican
+  // cuando la devolución se finaliza (o se proveen explícitamente).
   costo_producto_nuevo: isProvisional ? 0 : Number(devolucionCompleta.costoProductoNuevo ?? 0),
   producto_recuperable: isProvisional ? false : Boolean((devolucionCompleta as any).productoRecuperable ?? false),
       costo_envio_original: Number(devolucionCompleta.costoEnvioOriginal ?? 0),
       costo_envio_devolucion: Number(devolucionCompleta.costoEnvioDevolucion ?? 0),
-      costo_envio_nuevo: Number(devolucionCompleta.costoEnvioNuevo ?? 0),
+  costo_envio_nuevo: Number(devolucionCompleta.costoEnvioNuevo ?? 0),
+  // total_costos_envio is a GENERATED column in the DB (calculated from the three envio columns).
+  // Do not attempt to insert/update it explicitly; the DB computes it automatically.
       monto_venta_original: Number(devolucionCompleta.montoVentaOriginal ?? 0),
       // No persistir montoReembolsado en informes provisionales
       monto_reembolsado: isProvisional ? 0 : Number(devolucionCompleta.montoReembolsado ?? 0),
@@ -220,12 +314,8 @@ export async function createDevolucion(data: DevolucionFormData) {
             })
 
             if (gastoRes && gastoRes.success) {
-              // Persistir en la devolución el monto aplicado hoy para auditoría (solo envío vuelta)
-              try {
-                await supabase.from('devoluciones').update({ monto_aplicado_liquidacion: costoEnvio }).eq('id', created.id)
-              } catch (auditErr) {
-                console.warn('No se pudo persistir monto_aplicado_liquidacion en creación (no crítico)', auditErr)
-              }
+              // Nota: ya no persistimos `monto_aplicado_liquidacion` en la fila de devoluciones.
+              // El ajuste contable queda reflejado mediante el registro en `gastos_ingresos` (gasto creado arriba).
 
               // Intentar persistir también el id del gasto creado para idempotencia futura
               try {
@@ -241,6 +331,13 @@ export async function createDevolucion(data: DevolucionFormData) {
               revalidatePath('/liquidaciones')
               revalidatePath('/eerr')
               revalidatePath('/ventas')
+              // Además ejecutar recálculo en cascada para asegurar consistencia
+              try {
+                const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                await recalcularLiquidacionesEnCascada(fechaHoy)
+              } catch (rcErr) {
+                console.warn('No se pudo ejecutar recálculo en cascada tras crear devolución (no crítico)', rcErr)
+              }
             } else {
               console.error('No se pudo crear gasto_ingreso para devolución (creación):', gastoRes?.error)
             }
@@ -268,9 +365,11 @@ export async function createDevolucion(data: DevolucionFormData) {
 }
 
 // Actualizar devolución
-export async function updateDevolucion(id: string, data: DevolucionFormData) {
+export async function updateDevolucion(id: string, data: Partial<DevolucionFormData> | DevolucionFormData) {
   try {
-    const validatedData = devolucionSchema.parse(data)
+    // Allow partial payloads on update: parse partial first to enforce types on provided fields,
+    // then merge with existing DB row and validate the merged object with the full schema.
+  const parsedPartial = devolucionSchemaBase.partial().parse(data)
 
     // Obtener registro existente para hacer un update tipo "merge"
     const { data: existing, error: fetchError } = await supabase
@@ -282,28 +381,121 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
     if (fetchError) throw fetchError
     if (!existing) throw new Error('Devolución no encontrada')
 
-    // Auto-completar campos originales desde la venta si hace falta
-    let datosVenta = null
-    if (validatedData.ventaId) {
-      datosVenta = await obtenerDatosVenta(validatedData.ventaId)
+    // -------------------------
+    // Early path: if the update converts the devolución a Reembolso,
+    // and the venta was PagoNube, we must subtract the monto que se liquidó
+    // durante la venta de 'tn_a_liquidar' de la liquidación de HOY.
+  // This is intentionally minimal and idempotent: we previously persisted monto_aplicado_liquidacion
+  // for audit/idempotence. We no longer write that column — accounting impacts are recorded via gastos_ingresos.
+    // y actualicemos la devolución con los campos parciales enviados.
+    // -------------------------
+    try {
+      const prevTipoCandidate = (existing as any).tipoResolucion ?? (existing as any).tipo_resolucion ?? null
+      const newTipoCandidate = (parsedPartial as any).tipoResolucion ?? (parsedPartial as any).tipo_resolucion ?? (parsedPartial as any).estado ?? null
+      const wasReembolsoBefore = !!(prevTipoCandidate === 'Reembolso' || (typeof (existing as any).estado === 'string' && String((existing as any).estado).includes('Reembolso')))
+      const willBeReembolsoNow = !!(newTipoCandidate === 'Reembolso' || (typeof (parsedPartial as any).estado === 'string' && String((parsedPartial as any).estado).includes('Reembolso')))
+
+      if (willBeReembolsoNow && !wasReembolsoBefore) {
+        // Fetch venta to know metodoPago and calculate monto a liquidar
+        const ventaIdToUse = (parsedPartial as any).ventaId ?? (existing as any).venta_id
+        if (ventaIdToUse) {
+          const { data: venta, error: ventaErr } = await supabase.from('ventas').select('*').eq('id', ventaIdToUse).single()
+          if (!ventaErr && venta) {
+            // calcular monto a liquidar para la venta (usa la función compartida)
+            try {
+              const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
+              const montoVentaLiquidado = await calcularMontoVentaALiquidar(venta as any)
+              const newMonto = Number((parsedPartial as any).montoReembolsado ?? (parsedPartial as any).monto_reembolsado ?? montoVentaLiquidado ?? 0)
+              // Use monto_reembolsado as the persisted source of truth for previous applied amount (fallback to 0)
+              const prevApplied = Number((existing as any).monto_reembolsado ?? (existing as any).monto_reembolsado ?? 0)
+              const delta = newMonto - prevApplied
+              if (delta !== 0 && (venta as any).metodoPago === 'PagoNube') {
+                const fechaHoyActual = new Date().toISOString().split('T')[0]
+                const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
+                if (!liqErr && liq) {
+                  const currentTn = Number(liq.tn_a_liquidar ?? 0)
+                  const nuevoTn = Math.max(0, currentTn - delta)
+                  await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
+                  // Persistir el monto aplicado en la devolución para idempotencia
+                  // Do NOT persist monto_aplicado_liquidacion here. Persist monto_reembolsado (if provided) was handled below.
+                  // Actualizar la devolución con los campos parciales enviados
+                  await supabase.from('devoluciones').update(toSnakeCase(parsedPartial)).eq('id', id)
+
+                  // Asegurar además la persistencia explícita del desglose de envíos
+                  try {
+                    const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                    const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                    const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                    await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
+                  } catch (envErrEarly) {
+                    console.warn('No se pudo persistir desglose de envíos en flujo temprano de Reembolso (no crítico)', envErrEarly)
+                  }
+                  // Además de aplicar el delta directamente, ejecutar la recálculo en cascada
+                  // para asegurar consistencia global y que vistas/otros cálculos se actualicen.
+                  try {
+                    const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                    await recalcularLiquidacionesEnCascada(fechaHoyActual)
+                  } catch (rcErr) {
+                    console.warn('No se pudo ejecutar recálculo en cascada tras Reembolso temprano (no crítico)', rcErr)
+                  }
+
+                  revalidatePath('/liquidaciones')
+                  revalidatePath('/eerr')
+                  revalidatePath('/ventas')
+                  return { success: true, data: parsedPartial }
+                } else {
+                  console.warn('No se encontró liquidación de HOY para ajustar tn_a_liquidar (no crítico)', liqErr)
+                }
+              }
+            } catch (calcErr) {
+              console.warn('No se pudo calcular montoVentaLiquidado para Reembolso (no crítico)', calcErr)
+            }
+          } else {
+            console.warn('No se encontró venta para aplicar Reembolso temprano (no crítico)', ventaErr)
+          }
+        }
+      }
+    } catch (earlyErr) {
+      console.warn('Error en flujo temprano de Reembolso (no crítico)', earlyErr)
     }
 
-    const merged = {
-      // mantener los valores actuales y sobreescribir con los campos validados
-      ...existing,
-      ...validatedData,
-      // asegurar que los campos originales se completen si vienen vacíos
-      costoProductoOriginal: validatedData.costoProductoOriginal ?? existing.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0,
-      costoEnvioOriginal: validatedData.costoEnvioOriginal ?? existing.costoEnvioOriginal ?? datosVenta?.costoEnvioOriginal ?? 0,
-      montoVentaOriginal: validatedData.montoVentaOriginal ?? existing.montoVentaOriginal ?? datosVenta?.montoVentaOriginal ?? 0,
-      // commission removed: not persisted on devoluciones
-      nombreContacto: validatedData.nombreContacto ?? existing.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto,
-      fechaCompra: validatedData.fechaCompra ?? existing.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra,
+    // Auto-completar campos originales desde la venta si hace falta
+    let datosVenta = null
+    if (parsedPartial.ventaId) {
+      datosVenta = await obtenerDatosVenta(parsedPartial.ventaId)
     }
+
+    // Normalize existing DB row (snake_case) to camelCase expected by Zod
+    const existingCamel = toCamelCase(existing)
+
+    const mergedPre = {
+      // mantener los valores actuales y sobreescribir con los campos provistos
+      ...existingCamel,
+      ...parsedPartial,
+      // asegurar que los campos originales se completen si vienen vacíos
+  costoProductoOriginal: parsedPartial.costoProductoOriginal ?? existing.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0,
+  costoEnvioOriginal: parsedPartial.costoEnvioOriginal ?? existing.costoEnvioOriginal ?? datosVenta?.costoEnvioOriginal ?? 0,
+  montoVentaOriginal: parsedPartial.montoVentaOriginal ?? existing.montoVentaOriginal ?? datosVenta?.montoVentaOriginal ?? 0,
+  // commission removed: not persisted on devoluciones
+  nombreContacto: parsedPartial.nombreContacto ?? existing.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto,
+  fechaCompra: parsedPartial.fechaCompra ?? existing.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra,
+    }
+
+    // Clean nulls and validate only provided/merged fields for update (allow partial)
+    let mergedClean = stripNulls(mergedPre)
+    // Normalize date-like objects to Date/string so Zod preprocess can handle them
+    if (mergedClean && typeof mergedClean === 'object') {
+      mergedClean.fechaCompra = normalizeDateLike(mergedClean.fechaCompra)
+      mergedClean.fechaReclamo = normalizeDateLike(mergedClean.fechaReclamo)
+      mergedClean.fechaCompletada = normalizeDateLike(mergedClean.fechaCompletada)
+    }
+  const validatedMergedPartial = devolucionSchemaBase.partial().parse(mergedClean)
+  // Alias for backward-compatible references below
+  const merged: any = validatedMergedPartial as any
 
     const { data: updated, error } = await supabase
       .from('devoluciones')
-      .update(toSnakeCase(merged))
+      .update(toSnakeCase(validatedMergedPartial))
       .eq('id', id)
       .select()
       .single()
@@ -318,8 +510,8 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
     // Aplicar ajustes contables SOLO cuando la devolución se finaliza (etapa final)
     // Se distinguen dos casos: Reembolso y Cambio. Create() NO aplica ajustes.
     try {
-      const prevTipo = existing.tipoResolucion ?? existing.tipo_resolucion ?? null
-      const newTipo = merged.tipoResolucion ?? merged.tipo_resolucion ?? null
+  const prevTipo = (existing as any).tipoResolucion ?? (existing as any).tipo_resolucion ?? null
+  const newTipo = merged.tipoResolucion ?? (merged as any).tipo_resolucion ?? null
       const prevEstado = existing.estado ?? null
       const newEstado = merged.estado ?? null
 
@@ -330,7 +522,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
       if (isFinalNow) {
         // SERVER-SIDE GUARD: require fechaCompletada when finalizing; the client already enforces this but
         // validate on the server as well to avoid surprises from direct API calls.
-        const fechaCompletadaProvided = !!(merged.fechaCompletada || merged.fecha_completada)
+  const fechaCompletadaProvided = !!(merged.fechaCompletada || (merged as any).fecha_completada)
         if (!fechaCompletadaProvided) {
           console.warn('Finalización sin fechaCompletada detectada; cancelando ajustes contables')
           // We intentionally don't throw to avoid breaking the update, but we don't apply accounting.
@@ -346,6 +538,17 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
         if (!venta || ventaError) {
           console.warn('No se encontró venta para aplicar ajuste de devolución (update)', ventaError)
         } else {
+          // Persistir siempre el desglose de envíos al finalizar la devolución
+          // para que la columna generada `perdida_total` incluya envío ida + vuelta.
+          try {
+            const envioOriginalFromVenta = (venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? null
+            const envioOriginal = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? (datosVenta as any)?.costoEnvioOriginal ?? envioOriginalFromVenta ?? 0)
+            const envioVuelta = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? (datosVenta as any)?.costoEnvioDevolucion ?? 0)
+            const envioNuevo = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+            await supabase.from('devoluciones').update({ costo_envio_original: envioOriginal, costo_envio_devolucion: envioVuelta, costo_envio_nuevo: envioNuevo }).eq('id', updated?.id ?? (merged as any).id)
+          } catch (envPersistErr) {
+            console.warn('No se pudo persistir desglose de envíos al finalizar (no crítico)', envPersistErr)
+          }
           // Si es Reembolso -> aplicar monto reembolsado hoy (o diferencia)
           const becameReembolso = (newTipo === 'Reembolso' || (typeof newEstado === 'string' && String(newEstado).includes('Reembolso')))
           const wasReembolso = (prevTipo === 'Reembolso' || (typeof prevEstado === 'string' && String(prevEstado).includes('Reembolso')))
@@ -362,7 +565,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
             newMonto = montoVentaLiquidado
             // Persistir el monto calculado como montoReembolsado para trazabilidad
             try {
-              await supabase.from('devoluciones').update({ montoReembolsado: newMonto }).eq('id', merged.id)
+              await supabase.from('devoluciones').update({ montoReembolsado: newMonto }).eq('id', id)
             } catch (err) {
               console.warn('No se pudo persistir montoReembolsado calculado en devolución (no crítico)', err)
             }
@@ -398,6 +601,17 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
           }
 
           if (ajusteHoy !== 0) {
+                // Ensure we persist envio breakdown and total on finalization
+                try {
+                  const envioOriginal = Number(merged.costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                  const envioVuelta = Number(merged.costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                  const envioNuevo = Number(merged.costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  const envioTotal = envioOriginal + envioVuelta + envioNuevo
+                  await supabase.from('devoluciones').update({ costo_envio_original: envioOriginal, costo_envio_devolucion: envioVuelta, costo_envio_nuevo: envioNuevo }).eq('id', updated?.id ?? (merged as any).id)
+                } catch (envErr) {
+                  console.warn('No se pudo persistir desglose de envíos en devoluciones (no crítico)', envErr)
+                }
+
                 // Use merged.fechaCompletada as accounting date if provided
                 const fechaHoy = (merged.fechaCompletada && new Date(merged.fechaCompletada).toISOString().split('T')[0]) || new Date().toISOString().split('T')[0]
             const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
@@ -422,7 +636,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
                       const metodoPago = venta.metodoPago || venta.metodo || null
                       const canal = metodoPago === 'MercadoPago' ? 'ML' : metodoPago === 'PagoNube' ? 'TN' : 'General'
                       const ventaRef = (venta as any)?.saleCode ?? (venta as any)?.externalOrderId ?? venta.id
-                      const descripcion = `Ajuste devolución - venta ${ventaRef} - devol ${merged.id}`
+                      const descripcion = `Ajuste devolución - venta ${ventaRef} - devol ${updated?.id ?? (merged as any).id ?? 'unknown'}`
 
                       // Build payload
                       const gastoPayload = {
@@ -438,7 +652,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
 
                       // Try persisted gasto_creado_id first (existing DB column may or may not exist)
                       try {
-                        const gastoIdPersistido = merged.gasto_creado_id || (existing as any).gasto_creado_id || null
+                        const gastoIdPersistido = (merged as any).gasto_creado_id || (existing as any).gasto_creado_id || null
                         if (gastoIdPersistido) {
                           const existingGasto = await getGastoIngresoById(gastoIdPersistido)
                           if (existingGasto) {
@@ -456,7 +670,7 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
                           const { data: found } = await supabase
                             .from('gastos_ingresos')
                             .select('*')
-                            .ilike('descripcion', `%devol ${merged.id}%`)
+                            .ilike('descripcion', `%devol ${updated?.id ?? (merged as any).id ?? ''}%`)
                             .limit(1)
                             .single()
 
@@ -472,12 +686,39 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
                         }
                       }
 
-                      // Persistir monto_aplicado_liquidacion e intentar persistir gasto_creado_id para idempotencia futura
-                      if (gastoActual) {
+                          // Persist only gasto_creado_id for idempotency; do not write monto_aplicado_liquidacion.
+                          if (gastoActual) {
+                            try {
+                              await supabase.from('devoluciones').update({ gasto_creado_id: gastoActual.id ?? gastoActual }).eq('id', updated?.id ?? (merged as any).id)
+                            } catch (auditErr) {
+                              console.warn('No se pudo persistir gasto_creado_id en devoluciones (no crítico)', auditErr)
+                            }
+
+                        // Si la venta fue por Pago Nube, ajustar TN a liquidar EN HOY
                         try {
-                          await supabase.from('devoluciones').update({ monto_aplicado_liquidacion: ajusteHoy, gasto_creado_id: gastoActual.id ?? gastoActual }).eq('id', merged.id)
-                        } catch (auditErr) {
-                          console.warn('No se pudo persistir auditoría (monto_aplicado_liquidacion/gasto_creado_id) en devoluciones (no crítico)', auditErr)
+                          // Use previously stored monto_reembolsado as the baseline for delta calculation
+                          const prevApplied = Number((existing as any).monto_reembolsado ?? 0)
+                          const deltaToApply = Number(ajusteHoy) - prevApplied
+                          if (deltaToApply !== 0 && (venta as any)?.metodoPago === 'PagoNube') {
+                            // Aplicar la diferencia en la liquidación de HOY (no la fecha de impacto contable)
+                            const fechaHoyActual = new Date().toISOString().split('T')[0]
+                            const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
+                            if (!liqErr && liq) {
+                              const currentTn = Number(liq.tn_a_liquidar ?? 0)
+                              const nuevoTn = Math.max(0, currentTn - deltaToApply)
+                              try {
+                                await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
+                                // Recalcular en cascada para propagar efectos
+                                await recalcularLiquidacionesEnCascada(fechaHoyActual)
+                              } catch (tnErr) {
+                                console.warn('No se pudo ajustar tn_a_liquidar en liquidación HOY (no crítico)', tnErr)
+                              }
+                            } else {
+                              console.warn('No se pudo obtener liquidación de HOY para ajustar tn_a_liquidar (no crítico)', liqErr)
+                            }
+                          }
+                        } catch (tnApplyErr) {
+                          console.warn('Error aplicando ajuste TN a liquidar para Pago Nube (no crítico)', tnApplyErr)
                         }
 
                         revalidatePath('/liquidaciones')
@@ -491,13 +732,18 @@ export async function updateDevolucion(id: string, data: DevolucionFormData) {
                     // persistir el costo del producto como pérdida en la devolución (solo ahora).
                     try {
                       const fueFinalizada = isFinalNow
-                      const productoRecuperableFlag = (merged.productoRecuperable ?? (merged as any).producto_recuperable)
-                      const costoProducto = Number(merged.costoProductoOriginal ?? merged.costo_producto_original ?? 0)
+                      const productoRecuperableFlag = (merged as any).productoRecuperable ?? (merged as any).producto_recuperable ?? (existing as any).producto_recuperable
+                      const costoProducto = Number(merged.costoProductoOriginal ?? (merged as any).costo_producto_original ?? 0)
                       if (fueFinalizada && productoRecuperableFlag === false && costoProducto > 0) {
                         // Persistir costo de producto como pérdida (columna costo_producto_perdido o update directo)
                         // La migración DB debería tener una columna que permita almacenar este valor; si no existe, el try/catch evita fallos.
                         try {
-                          await supabase.from('devoluciones').update({ costo_producto_perdido: costoProducto }).eq('id', merged.id)
+                // Persistir pérdida como suma del costo del producto + envíos (ida + vuelta + nuevo)
+                const envioOriginalVal = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                const envioVueltaVal = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                const envioNuevoVal = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                const perdidaCalculada = Number(costoProducto) + envioOriginalVal + envioVueltaVal + envioNuevoVal
+                await supabase.from('devoluciones').update({ costo_producto_perdido: perdidaCalculada }).eq('id', updated?.id ?? (merged as any).id)
                           // Revalidar EERR para que la pérdida aparezca en reportes
                           revalidatePath('/eerr')
                         } catch (lossErr) {
@@ -541,7 +787,25 @@ export async function deleteDevolucion(id: string) {
 
     if (error) throw error
 
+    // After deleting a devolución we must recalculate liquidaciones for the
+    // date that was impacted by that devolución. Prefer `fecha_completada` (si
+    // existía), luego `created_at` y como fallback usar hoy.
+    try {
+      const fechaImpactRaw = (deleted as any)?.fecha_completada ?? (deleted as any)?.created_at ?? null
+      const fechaImpact = fechaImpactRaw ? new Date(fechaImpactRaw).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+      try {
+        const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+        await recalcularLiquidacionesEnCascada(fechaImpact)
+      } catch (rcErr) {
+        console.warn('No se pudo ejecutar recálculo en cascada tras eliminar devolución (no crítico)', rcErr)
+      }
+    } catch (dateErr) {
+      console.warn('No se pudo determinar fecha de impacto tras eliminar devolución (no crítico)', dateErr)
+    }
+
     revalidatePath("/devoluciones")
+    revalidatePath('/liquidaciones')
+    revalidatePath('/eerr')
     return { success: true, data: deleted }
   } catch (error) {
     console.error("Error al eliminar devolución:", error)
@@ -698,6 +962,24 @@ export async function getEstadisticasDevoluciones(fechaInicio?: string, fechaFin
       ? perdidaTotal / devolucionesConPerdida.length
       : 0
 
+    // Obtener conteo de ventas en el rango proporcionado (si aplica) para mostrar % devoluciones sobre ventas
+    let totalVentas = 0
+    try {
+      // Preferir filtrar por 'fecha' en ventas; si falla, caer a 'created_at'
+      let ventasQuery: any = supabase.from('ventas').select('id', { count: 'exact', head: true })
+      if (fechaInicio) {
+        try { ventasQuery = ventasQuery.gte('fecha', fechaInicio) } catch { ventasQuery = ventasQuery.gte('created_at', fechaInicio) }
+      }
+      if (fechaFin) {
+        try { ventasQuery = ventasQuery.lte('fecha', fechaFin) } catch { ventasQuery = ventasQuery.lte('created_at', fechaFin) }
+      }
+      const ventasResp = await ventasQuery
+      totalVentas = Number(ventasResp?.count ?? 0)
+    } catch (errVentas) {
+      console.warn('No se pudo obtener conteo de ventas para estadisticas de devoluciones (no crítico)', errVentas)
+      totalVentas = 0
+    }
+
     return {
       total,
       porEstado,
@@ -708,7 +990,8 @@ export async function getEstadisticasDevoluciones(fechaInicio?: string, fechaFin
       topMotivos,
       perdidaPromedio,
       devolucionesConPerdida: devolucionesConPerdida.length,
-      data: devoluciones || []
+      data: devoluciones || [],
+      totalVentas
     }
   } catch (error) {
     console.error("Error al obtener estadísticas:", error)

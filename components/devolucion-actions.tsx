@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
-import { deleteDevolucion } from "@/lib/actions/devoluciones"
+import { deleteDevolucion, getDevolucionById } from "@/lib/actions/devoluciones"
 import { updateDevolucion } from "@/lib/actions/devoluciones"
 import { useRouter } from "next/navigation"
 import { toast } from "@/hooks/use-toast"
@@ -35,6 +35,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showAdvance, setShowAdvance] = useState(false)
   const [advanceType, setAdvanceType] = useState<string>("")
+  const [productoRecuperable, setProductoRecuperable] = useState<boolean | null>(null)
+  const [fetchedDevolucion, setFetchedDevolucion] = useState<any | null>(null)
+  const [loadingDevolucion, setLoadingDevolucion] = useState(false)
+  const [costoEnvioOriginalLocal, setCostoEnvioOriginalLocal] = useState<number | null>(null)
+  const [costoEnvioDevolucionLocal, setCostoEnvioDevolucionLocal] = useState<number | null>(null)
+  const [costoProductoOriginalLocal, setCostoProductoOriginalLocal] = useState<number | null>(null)
   const [isAdvancing, setIsAdvancing] = useState(false)
   const router = useRouter()
 
@@ -52,6 +58,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
       payload.fechaCompletada = new Date()
+  // Incluir indicador de recuperabilidad si el usuario lo indicó
+  if (productoRecuperable !== null) payload.productoRecuperable = productoRecuperable
+  // Incluir desglose de envíos y costo de producto si los tenemos localmente
+  if (typeof costoEnvioOriginalLocal === 'number') payload.costoEnvioOriginal = Number(costoEnvioOriginalLocal)
+  if (typeof costoEnvioDevolucionLocal === 'number') payload.costoEnvioDevolucion = Number(costoEnvioDevolucionLocal)
+  if (typeof costoProductoOriginalLocal === 'number') payload.costoProductoOriginal = Number(costoProductoOriginalLocal)
       const result = await updateDevolucion(devolucion.id, payload)
       if (result.success) {
         toast({ title: 'Devolución actualizada', description: 'Se registró la resolución.' })
@@ -63,6 +75,26 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       toast({ title: 'Error', description: 'Ocurrió un error al aplicar la resolución.', variant: 'destructive' })
     } finally {
       setIsAdvancing(false)
+    }
+  }
+
+  // Fetch devolucion details when opening the advance modal
+  async function loadDevolucion() {
+    if (!devolucion?.id) return
+    setLoadingDevolucion(true)
+    try {
+      const d = await getDevolucionById(devolucion.id)
+      setFetchedDevolucion(d)
+      // Prefill local cost fields
+      setCostoEnvioOriginalLocal(Number(d?.costo_envio_original ?? d?.costoEnvioOriginal ?? 0))
+      setCostoEnvioDevolucionLocal(Number(d?.costo_envio_devolucion ?? d?.costoEnvioDevolucion ?? 0))
+      setCostoProductoOriginalLocal(Number(d?.costo_producto_original ?? d?.costoProductoOriginal ?? 0))
+      // Prefill recoverable flag
+      setProductoRecuperable(typeof d?.producto_recuperable !== 'undefined' ? Boolean(d.producto_recuperable) : null)
+    } catch (err) {
+      console.warn('No se pudo obtener devolución para el modal de avance', err)
+    } finally {
+      setLoadingDevolucion(false)
     }
   }
 
@@ -155,6 +187,34 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               <option value="Cambio otro producto">Cambio otro producto</option>
               <option value="Sin reembolso">Sin reembolso</option>
             </select>
+            {/* Preguntar si se recupera el producto cuando se eligió una resolución */}
+            {advanceType !== '' && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">¿Se recupera el producto?</label>
+                <div className="flex items-center gap-3">
+                  <input id="recuperable" type="checkbox" checked={productoRecuperable === true} onChange={(e) => setProductoRecuperable(e.target.checked)} />
+                  <span className="text-sm text-muted-foreground">Marcar si el producto será recuperado (si no, se registrará como pérdida).</span>
+                </div>
+              </div>
+            )}
+
+            {/* Mostrar costos de envío y costo del producto (pueden editarse antes de confirmar) */}
+            {fetchedDevolucion && (
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-sm font-medium">Costo envío ida (ARS)</label>
+                  <input type="number" className="w-full border rounded p-2" value={costoEnvioOriginalLocal ?? 0} onChange={(e) => setCostoEnvioOriginalLocal(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Costo envío vuelta (ARS)</label>
+                  <input type="number" className="w-full border rounded p-2" value={costoEnvioDevolucionLocal ?? 0} onChange={(e) => setCostoEnvioDevolucionLocal(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Costo producto (ARS)</label>
+                  <input type="number" className="w-full border rounded p-2" value={costoProductoOriginalLocal ?? 0} onChange={(e) => setCostoProductoOriginalLocal(Number(e.target.value))} />
+                </div>
+              </div>
+            )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowAdvance(false)}>Cancelar</AlertDialogCancel>

@@ -23,6 +23,8 @@ interface DevolucionesReporteProps {
     topMotivos?: Array<{ motivo: string; count: number }>
     perdidaPromedio?: number
     devolucionesConPerdida?: number
+    // totalVentas viene del servidor cuando se solicita el conteo de ventas en el rango
+    totalVentas?: number
     data: any[]
   }
 }
@@ -53,7 +55,14 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     .filter(([estado]) => estado.startsWith("Entregada"))
     .reduce((sum, [, count]) => sum + count, 0)
 
-  const totalReembolsos = estadisticas.porEstado["Entregada - Reembolso"] || 0
+  // Prefer counting reembolsos por monto_aplicado_liquidacion cuando esté disponible
+  const montoTotalReembolsos = estadisticas.data.reduce((sum, d) => {
+    // d.monto_aplicado_liquidacion puede no existir en todos los rows; preferirlo sobre monto_reembolsado
+    const applied = Number(d.monto_aplicado_liquidacion ?? d.monto_reembolsado ?? 0)
+    return sum + applied
+  }, 0)
+
+  const totalReembolsos = estadisticas.data.filter(d => Number(d.monto_aplicado_liquidacion ?? d.monto_reembolsado ?? 0) > 0).length || (estadisticas.porEstado["Entregada - Reembolso"] || 0)
   const totalCambios = (estadisticas.porEstado["Entregada - Cambio mismo producto"] || 0) +
                        (estadisticas.porEstado["Entregada - Cambio otro producto"] || 0)
 
@@ -85,6 +94,9 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
             <div className="text-2xl font-bold">{estadisticas.total}</div>
             <p className="text-xs text-muted-foreground mt-1">
               {totalEntregadas} completadas
+              {typeof estadisticas.totalVentas === 'number' && estadisticas.totalVentas > 0 && (
+                <span className="ml-2">· {((estadisticas.total / estadisticas.totalVentas) * 100).toFixed(1)}% ventas</span>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -329,13 +341,13 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total:</span>
                   <span className="font-semibold">
-                    ${estadisticas.data.reduce((sum, d) => sum + (Number(d.monto_reembolsado) || 0), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    ${montoTotalReembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Cantidad:</span>
                   <span>
-                    {estadisticas.data.filter(d => Number(d.monto_reembolsado) > 0).length}
+                    {totalReembolsos}
                   </span>
                 </div>
               </div>

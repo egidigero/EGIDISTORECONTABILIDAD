@@ -58,6 +58,79 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
     const detalleVentasTN = await calcularDetalleVentasTN(fecha)
     const impactoVentasTN = detalleVentasTN.resumen.totalALiquidar
 
+  // 3d. Calcular impacto de devoluciones que aplicaron montos a liquidación en esta fecha
+  // Algunas devoluciones (p. ej. reembolsos PagoNube) restan directamente de TN a liquidar.
+  // En versiones anteriores registrábamos este ajuste en `monto_aplicado_liquidacion`; ahora
+  // se calcula a partir de `monto_reembolsado` o, si falta, se intenta computar desde la venta.
+  // Debemos incluir aquí el total de devoluciones aplicadas a la fecha en el cálculo.
+    let impactoDevolucionesTN = 0
+    try {
+  // Normalize incoming `fecha` to a date-only string (YYYY-MM-DD) so the
+  // range queries below work whether `fecha` is '2025-10-19' or
+  // '2025-10-19T00:00:00'. This prevents malformed ISO strings like
+  // '2025-10-19T00:00:00T00:00:00.000Z'.
+  const fechaDay = new Date(fecha).toISOString().split('T')[0]
+  const fechaInicio = `${fechaDay}T00:00:00.000Z`
+  const nextDay = new Date(new Date(fechaInicio).getTime() + 24 * 60 * 60 * 1000).toISOString()
+
+      // Obtener devoluciones que completaron en la fecha (por fecha_completada o created_at)
+      // y traer la venta para conocer metodoPago (solo PagoNube afecta TN a liquidar)
+      const { data: devols1, error: devErr1 } = await supabase
+        .from('devoluciones')
+        .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, venta:ventas(*)')
+        .gte('fecha_completada', fechaInicio)
+        .lt('fecha_completada', nextDay)
+
+      const { data: devols2, error: devErr2 } = await supabase
+        .from('devoluciones')
+        .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, venta:ventas(*)')
+        .gte('created_at', fechaInicio)
+        .lt('created_at', nextDay)
+        .neq('fecha_completada', null)
+
+      const allDevols = []
+      if (!devErr1 && Array.isArray(devols1)) allDevols.push(...devols1)
+      if (!devErr2 && Array.isArray(devols2)) allDevols.push(...devols2)
+
+      // Sum monto_reembolsado (or fallback computed amount) for PagoNube ventas
+      impactoDevolucionesTN = 0
+      for (const d of (allDevols || [])) {
+        try {
+          let monto = Number(d.monto_reembolsado ?? 0)
+          const tipo = d.tipo_resolucion ?? (d as any)?.tipo_resolucion ?? null
+          // PostgREST can return related rows as an array; normalize to a single object
+          let venta: any = (d as any)?.venta ?? null
+          if (Array.isArray(venta)) venta = venta[0] ?? null
+
+          // If there's no explicit monto_reembolsado, try to compute a fallback from the venta
+          if ((!monto || monto === 0) && tipo && String(tipo).includes('Reembolso')) {
+            if (venta) {
+              try {
+                const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
+                const calc = await calcularMontoVentaALiquidar(venta as any)
+                monto = Number(calc ?? d.monto_reembolsado ?? d.monto_venta_original ?? 0)
+              } catch (calcErr) {
+                monto = Number(d.monto_reembolsado ?? d.monto_venta_original ?? 0)
+              }
+            } else {
+              monto = Number(d.monto_reembolsado ?? d.monto_venta_original ?? 0)
+            }
+          }
+
+          // Only PagoNube devoluciones affect TN a liquidar
+          const metodo = venta?.metodoPago || (venta as any)?.metodo_pago || null
+          if (monto > 0 && metodo === 'PagoNube') impactoDevolucionesTN += monto
+        } catch (inner) {
+          // ignore per-row errors
+          console.warn('Error procesando devolución para impacto TN (no crítico)', inner)
+        }
+      }
+      impactoDevolucionesTN = Math.round(impactoDevolucionesTN * 100) / 100
+    } catch (err) {
+      console.warn('No se pudo calcular impactoDevolucionesTN (no crítico)', err)
+      impactoDevolucionesTN = 0
+    }
+
     // 3b. Calcular impacto de ventas ML del día (va a MP A Liquidar)
     const detalleVentasML = await calcularDetalleVentasMP(fecha)
     const impactoVentasML = detalleVentasML.resumen.totalALiquidar
@@ -82,8 +155,8 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       // MP A Liquidar = Base anterior + Ventas ML del día - MP liquidado hoy
       mp_a_liquidar: Math.round((valoresBase.mp_a_liquidar + impactoVentasML - mp_liquidado_hoy) * 100) / 100,
       
-      // TN A Liquidar = Base anterior + Ventas TN del día - TN liquidado hoy
-      tn_a_liquidar: Math.round((valoresBase.tn_a_liquidar + impactoVentasTN - tn_liquidado_hoy) * 100) / 100
+      // TN A Liquidar = Base anterior + Ventas TN del día - TN liquidado hoy - Devoluciones aplicadas a TN
+      tn_a_liquidar: Math.round((valoresBase.tn_a_liquidar + impactoVentasTN - tn_liquidado_hoy - impactoDevolucionesTN) * 100) / 100
     }
 
     // Calcular totales adicionales (también redondeados)
