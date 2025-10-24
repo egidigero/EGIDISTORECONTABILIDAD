@@ -17,9 +17,9 @@ export async function calcularEERR(
     // completamente del cálculo de ventas/comisiones/envíos del EERR.
     let devolucionesQueryForExclusion = supabase
       .from('devoluciones')
-      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma')
-      .gte('fecha_completada', fechaDesde.toISOString())
-      .lte('fecha_completada', fechaHasta.toISOString())
+      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma, fecha_compra')
+      .gte('fecha_compra', fechaDesde.toISOString())
+      .lte('fecha_compra', fechaHasta.toISOString())
 
     if (canal && canal !== 'General') {
       devolucionesQueryForExclusion = devolucionesQueryForExclusion.eq('plataforma', canal)

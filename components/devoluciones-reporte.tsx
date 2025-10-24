@@ -23,8 +23,7 @@ interface DevolucionesReporteProps {
     topMotivos?: Array<{ motivo: string; count: number }>
     perdidaPromedio?: number
     devolucionesConPerdida?: number
-    // totalVentas viene del servidor cuando se solicita el conteo de ventas en el rango
-    totalVentas?: number
+    totalVentas?: number // <-- aseguramos que el tipo lo incluya
     data: any[]
   }
 }
