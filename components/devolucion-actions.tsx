@@ -277,16 +277,18 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
-            {/* Preguntar estado de dinero en MP (solo para ML) */}
-            <div className="mt-4">
-              <label className="block text-sm font-medium mb-2">Estado del dinero en MP</label>
-              <select className="w-full border rounded p-2" value={mpEstado ?? "unknown"} onChange={(e) => setMpEstado(e.target.value === 'unknown' ? null : e.target.value)}>
-                <option value="unknown">No sé / No aplica</option>
-                <option value="a_liquidar">A liquidar en MP</option>
-                <option value="liquidado">Liquidado (dinero disponible en MP)</option>
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">Indica si el dinero de la venta ya estaba disponible en Mercado Pago o aún estaba en proceso de liquidación.</p>
-            </div>
+            {/* Preguntar estado de dinero en MP: solo mostrar cuando es Reembolso y la plataforma es ML/MercadoPago */}
+            {advanceType === 'Reembolso' && (fetchedDevolucion?.plataforma === 'ML' || (fetchedDevolucion as any)?.metodoPago === 'MercadoPago') && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Estado del dinero en MP</label>
+                <select className="w-full border rounded p-2" value={mpEstado ?? "unknown"} onChange={(e) => setMpEstado(e.target.value === 'unknown' ? null : e.target.value)}>
+                  <option value="unknown">No sé / No aplica</option>
+                  <option value="a_liquidar">A liquidar en MP</option>
+                  <option value="liquidado">Liquidado (dinero disponible en MP)</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">Indica si el dinero de la venta ya estaba disponible en Mercado Pago o aún estaba en proceso de liquidación.</p>
+              </div>
+            )}
 
             {/* Mostrar costos de envío y costo del producto (pueden editarse antes de confirmar) */}
             {fetchedDevolucion && (

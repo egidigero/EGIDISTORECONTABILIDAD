@@ -142,72 +142,84 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
   let impactoDevolucionesML_disponible = 0
   let impactoDevolucionesML_retenido = 0
   try {
-    const fechaDay = new Date(fecha).toISOString().split('T')[0]
-    const fechaInicio = `${fechaDay}T00:00:00.000Z`
-    const nextDay = new Date(new Date(fechaInicio).getTime() + 24 * 60 * 60 * 1000).toISOString()
+    // If we already have persisted deltas for this date, DO NOT run the legacy
+    // per-row logic that reads `devoluciones` and sums monto_reembolsado. Running
+    // both would double-count impacts for the same devolución (one from the
+    // normalized `devoluciones_deltas` and another from the legacy per-row scan).
+    if (!useDeltas) {
+      const fechaDay = new Date(fecha).toISOString().split('T')[0]
+      const fechaInicio = `${fechaDay}T00:00:00.000Z`
+      const nextDay = new Date(new Date(fechaInicio).getTime() + 24 * 60 * 60 * 1000).toISOString()
 
-    const { data: devols1, error: devErr1 } = await supabase
-      .from('devoluciones')
-      .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, mp_estado, mp_retenido, venta:ventas(*)')
-      .gte('fecha_completada', fechaInicio)
-      .lt('fecha_completada', nextDay)
+      const { data: devols1, error: devErr1 } = await supabase
+        .from('devoluciones')
+        .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, mp_estado, mp_retenido, venta:ventas(*)')
+        .gte('fecha_completada', fechaInicio)
+        .lt('fecha_completada', nextDay)
 
-    const { data: devols2, error: devErr2 } = await supabase
-      .from('devoluciones')
-      .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, mp_estado, mp_retenido, venta:ventas(*)')
-      .gte('created_at', fechaInicio)
-      .lt('created_at', nextDay)
-      .neq('fecha_completada', null)
+      const { data: devols2, error: devErr2 } = await supabase
+        .from('devoluciones')
+        .select('id, monto_reembolsado, monto_venta_original, tipo_resolucion, mp_estado, mp_retenido, venta:ventas(*)')
+        .gte('created_at', fechaInicio)
+        .lt('created_at', nextDay)
+        .neq('fecha_completada', null)
 
-    const allDevolsML: any[] = []
-    if (!devErr1 && Array.isArray(devols1)) allDevolsML.push(...devols1)
-    if (!devErr2 && Array.isArray(devols2)) allDevolsML.push(...devols2)
+      const allDevolsML: any[] = []
+      if (!devErr1 && Array.isArray(devols1)) allDevolsML.push(...devols1)
+      if (!devErr2 && Array.isArray(devols2)) allDevolsML.push(...devols2)
 
-    for (const d of allDevolsML) {
-      try {
-        let monto = Number(d.monto_reembolsado ?? 0)
-        const tipo = d.tipo_resolucion ?? (d as any)?.tipo_resolucion ?? null
-        let venta: any = (d as any)?.venta ?? null
-        if (Array.isArray(venta)) venta = venta[0] ?? null
+      for (const d of allDevolsML) {
+        try {
+          let monto = Number(d.monto_reembolsado ?? 0)
+          const tipo = d.tipo_resolucion ?? (d as any)?.tipo_resolucion ?? null
+          let venta: any = (d as any)?.venta ?? null
+          if (Array.isArray(venta)) venta = venta[0] ?? null
 
-        if ((!monto || monto === 0) && tipo && String(tipo).includes('Reembolso')) {
-          if (venta) {
-            try {
-              const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
-              const calc = await calcularMontoVentaALiquidar(venta as any)
-              monto = Number(calc ?? d.monto_reembolsado ?? d.monto_venta_original ?? 0)
-            } catch (calcErr) {
+          if ((!monto || monto === 0) && tipo && String(tipo).includes('Reembolso')) {
+            if (venta) {
+              try {
+                const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
+                const calc = await calcularMontoVentaALiquidar(venta as any)
+                monto = Number(calc ?? d.monto_reembolsado ?? d.monto_venta_original ?? 0)
+              } catch (calcErr) {
+                monto = Number(d.monto_reembolsado ?? d.monto_venta_original ?? 0)
+              }
+            } else {
               monto = Number(d.monto_reembolsado ?? d.monto_venta_original ?? 0)
             }
-          } else {
-            monto = Number(d.monto_reembolsado ?? d.monto_venta_original ?? 0)
           }
-        }
 
-        const metodo = venta?.metodoPago || (venta as any)?.metodo_pago || null
-        const plataforma = venta?.plataforma || null
-        // Only MercadoPago / ML devoluciones affect MP balances
-        if (monto > 0 && (metodo === 'MercadoPago' || plataforma === 'ML')) {
-          const mpEstado = (d as any).mp_estado ?? d.mp_estado ?? null
-          const mpRet = Boolean((d as any).mp_retenido ?? d.mp_retenido ?? false)
-          if (mpEstado === 'a_liquidar') {
-            impactoDevolucionesML_aLiquidar += monto
-          } else {
-            // default: treat as liquidado -> reduces disponible
-            impactoDevolucionesML_disponible += monto
+          const metodo = venta?.metodoPago || (venta as any)?.metodo_pago || null
+          const plataforma = venta?.plataforma || null
+          // Only MercadoPago / ML devoluciones affect MP balances
+          if (monto > 0 && (metodo === 'MercadoPago' || plataforma === 'ML')) {
+            const mpEstado = (d as any).mp_estado ?? d.mp_estado ?? null
+            const mpRet = Boolean((d as any).mp_retenido ?? d.mp_retenido ?? false)
+            if (mpEstado === 'a_liquidar') {
+              impactoDevolucionesML_aLiquidar += monto
+            } else {
+              // default: treat as liquidado -> reduces disponible
+              impactoDevolucionesML_disponible += monto
+            }
+            if (mpRet) {
+              impactoDevolucionesML_retenido += monto
+            }
           }
-          if (mpRet) {
-            impactoDevolucionesML_retenido += monto
-          }
+        } catch (inner) {
+          console.warn('Error procesando devolución ML para impacto MP (no crítico)', inner)
         }
-      } catch (inner) {
-        console.warn('Error procesando devolución ML para impacto MP (no crítico)', inner)
       }
-    }
 
-    impactoDevolucionesML_aLiquidar = Math.round(impactoDevolucionesML_aLiquidar * 100) / 100
-    impactoDevolucionesML_disponible = Math.round(impactoDevolucionesML_disponible * 100) / 100
-    impactoDevolucionesML_retenido = Math.round(impactoDevolucionesML_retenido * 100) / 100
+      impactoDevolucionesML_aLiquidar = Math.round(impactoDevolucionesML_aLiquidar * 100) / 100
+      impactoDevolucionesML_disponible = Math.round(impactoDevolucionesML_disponible * 100) / 100
+      impactoDevolucionesML_retenido = Math.round(impactoDevolucionesML_retenido * 100) / 100
+    } else {
+      // When using deltas the per-row legacy path is intentionally skipped to
+      // avoid double-counting. impacts will be applied from `sumsDelta` later.
+      impactoDevolucionesML_aLiquidar = 0
+      impactoDevolucionesML_disponible = 0
+      impactoDevolucionesML_retenido = 0
+    }
   } catch (err) {
     console.warn('No se pudo calcular impactoDevolucionesML (no crítico)', err)
     impactoDevolucionesML_aLiquidar = 0

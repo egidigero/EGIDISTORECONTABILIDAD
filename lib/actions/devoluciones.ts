@@ -494,6 +494,19 @@ export async function createDevolucion(data: DevolucionFormData) {
               // NOTE: shipping costs are persisted as gastos_ingresos and handled
               // separately; do NOT include envío in delta_mp_disponible here.
 
+              // Business rule: when creating a ML Reembolso / MP flow, also subtract
+              // the original envío of the venta from MP disponible so the
+              // liquidation reflects the real cash movement. The envío itself
+              // remains recorded as a gasto_ingreso for reporting purposes.
+              try {
+                const envioFromVenta = Number((datosVenta as any)?.costoEnvioOriginal ?? (datosVenta as any)?.costo_envio ?? (validatedData as any).costoEnvioOriginal ?? 0)
+                if (!Number.isNaN(envioFromVenta) && envioFromVenta > 0) {
+                  delta_mp_disponible += -envioFromVenta
+                }
+              } catch (envSubErr) {
+                // non-critical
+              }
+
               if (mpRetenerCreada) delta_mp_retenido += montoALiquidar
 
               // Persist into devoluciones_deltas (tipo 'reclamo' for creation when mpRetener)
@@ -688,6 +701,20 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     // NOTE: shipping costs are persisted as gastos_ingresos and handled
                     // separately; do NOT include envío in delta_mp_disponible here.
 
+                    // Business rule exception: when this is a Mercado Libre (ML) Reembolso
+                    // flow, subtract the original envío of the venta from MP disponible
+                    // so that the liquidation reflects the real cash movement. The
+                    // envío itself is still recorded as a gasto_ingreso for EERR.
+                    try {
+                      const envioOriginalFromVenta = Number((venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? (parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                      if (!Number.isNaN(envioOriginalFromVenta) && envioOriginalFromVenta > 0) {
+                        // Always subtract from disponible bucket
+                        delta_mp_disponible += -envioOriginalFromVenta
+                      }
+                    } catch (envEx) {
+                      // non-critical, continue
+                    }
+
                     // If user marked to retain money, add to mp_retenido (positive)
                     if (mpRetenerProvided) {
                       delta_mp_retenido += delta
@@ -823,6 +850,28 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   if (!liqErr && liq) {
                     const currentTn = Number(liq.tn_a_liquidar ?? 0)
                     const nuevoTn = Math.max(0, currentTn - delta)
+                    // Persist delta in devoluciones_deltas so recalculation can consume it later
+                    const impactoFecha = fechaHoyActual
+                    const deltaRow: any = {
+                      devolucion_id: id,
+                      tipo: (parsedPartial && (parsedPartial as any).fechaCompletada) ? 'completada' : 'manual',
+                      fecha_impacto: impactoFecha,
+                      delta_mp_disponible: 0,
+                      delta_mp_a_liquidar: 0,
+                      delta_mp_retenido: 0,
+                      // Store TN delta as NEGATIVE (amount to decrement in TN a liquidar).
+                      // This matches the convention used in migrations: delta_tn_a_liquidar = -monto_a_decrementar_en_tn_a_liquidar
+                      delta_tn_a_liquidar: Number(-(delta || 0))
+                    }
+                    try {
+                      const upsertResp = await supabase.from('devoluciones_deltas').upsert([deltaRow], { onConflict: 'devolucion_id,tipo' }).select().single()
+                      if (upsertResp && upsertResp.error) throw upsertResp.error
+                    } catch (upsertErr: any) {
+                      console.warn('No se pudo persistir delta_tn_a_liquidar en devoluciones_deltas (posible falta de migración), procediendo a actualizar liquidaciones directamente:', upsertErr)
+                      // Fallback: continue to update liquidaciones directamente
+                    }
+
+                    // Update liquidaciones tn_a_liquidar immediately (for UX) and persist devoluciones row
                     await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
                     await supabase.from('devoluciones').update(toSnakeCase(parsedPartial)).eq('id', id)
                     try {
