@@ -87,43 +87,20 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       const fechaInicio = `${fechaDay}T00:00:00.000Z`
       const nextDay = new Date(new Date(fechaInicio).getTime() + 24 * 60 * 60 * 1000).toISOString()
 
-      // Try to aggregate delta_* values for this date (fecha_impacto OR fecha_completada)
+      // Aggregate delta_* values for this date from the normalized table `devoluciones_deltas`.
       try {
-        console.log(`🔍 Ejecutando agregación de delta_* en devoluciones para fecha: ${fechaDay}`)
-        // Traer filas donde fecha_impacto == fechaDay y sumar en JS (evita problemas de PostgREST con 'sum(...)')
-        const { data: rowsImpact, error: rowsImpactErr } = await supabase
-          .from('devoluciones')
+        console.log(`🔍 Ejecutando agregación de delta_* en devoluciones_deltas para fecha: ${fechaDay}`)
+        const { data: rowsDeltas, error: rowsDeltasErr } = await supabase
+          .from('devoluciones_deltas')
           .select('delta_mp_disponible, delta_mp_a_liquidar, delta_mp_retenido, delta_tn_a_liquidar')
           .eq('fecha_impacto', fechaDay)
 
-        if (rowsImpactErr) {
-          console.warn('Error al obtener filas por fecha_impacto', rowsImpactErr)
+        if (rowsDeltasErr) {
+          console.warn('Error al obtener filas desde devoluciones_deltas', rowsDeltasErr)
         } else {
-          console.log('Filas fecha_impacto:', rowsImpact)
-          if (Array.isArray(rowsImpact) && rowsImpact.length > 0) {
-            for (const row of rowsImpact) {
-              sumsDelta.mp_disponible += Number((row as any).delta_mp_disponible ?? 0)
-              sumsDelta.mp_a_liquidar += Number((row as any).delta_mp_a_liquidar ?? 0)
-              sumsDelta.mp_retenido += Number((row as any).delta_mp_retenido ?? 0)
-              sumsDelta.tn_a_liquidar += Number((row as any).delta_tn_a_liquidar ?? 0)
-            }
-          }
-        }
-
-        // Also include rows that didn't set fecha_impacto but have fecha_completada within the day
-        const { data: rowsComp, error: rowsCompErr } = await supabase
-          .from('devoluciones')
-          .select('delta_mp_disponible, delta_mp_a_liquidar, delta_mp_retenido, delta_tn_a_liquidar, fecha_completada, fecha_impacto')
-          .is('fecha_impacto', null)
-          .gte('fecha_completada', fechaInicio)
-          .lt('fecha_completada', nextDay)
-
-        if (rowsCompErr) {
-          console.warn('Error al obtener filas por fecha_completada', rowsCompErr)
-        } else {
-          console.log('Filas fecha_completada (sin fecha_impacto):', rowsComp)
-          if (Array.isArray(rowsComp) && rowsComp.length > 0) {
-            for (const row of rowsComp) {
+          console.log('Filas devoluciones_deltas:', rowsDeltas)
+          if (Array.isArray(rowsDeltas) && rowsDeltas.length > 0) {
+            for (const row of rowsDeltas) {
               sumsDelta.mp_disponible += Number((row as any).delta_mp_disponible ?? 0)
               sumsDelta.mp_a_liquidar += Number((row as any).delta_mp_a_liquidar ?? 0)
               sumsDelta.mp_retenido += Number((row as any).delta_mp_retenido ?? 0)
@@ -140,7 +117,7 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
         }
         console.log('useDeltas =', useDeltas)
       } catch (sumErr) {
-        console.warn('No se pudieron agregar deltas de devoluciones (no crítico)', sumErr)
+        console.warn('No se pudieron agregar deltas de devoluciones_deltas (no crítico)', sumErr)
       }
 
       // If deltas are present, we will skip the old per-row logic and rely on these sums

@@ -449,7 +449,9 @@ export async function createDevolucion(data: DevolucionFormData) {
       const mpEstadoCreada = (validatedData as any).mpEstado ?? null
       const mpRetenerCreada = Boolean((validatedData as any).mpRetener ?? false)
 
-      if ((plataformaCreada === 'ML' || (datosVenta && (datosVenta as any).plataforma === 'ML')) && tipoResCreada === 'Reembolso' && montoReembolsadoCreada > 0) {
+  // If platform is ML and either the user marked MP to be retained at creation
+  // or the devolución is a Reembolso with an explicit monto > 0, persist deltas.
+  if ((plataformaCreada === 'ML' || (datosVenta && (datosVenta as any).plataforma === 'ML')) && (mpRetenerCreada || (tipoResCreada === 'Reembolso' && montoReembolsadoCreada > 0))) {
         // Use fechaReclamo as impact date for MP adjustments on creation
         const impactoFecha = (validatedData && (validatedData as any).fechaReclamo)
           ? new Date((validatedData as any).fechaReclamo).toISOString().split('T')[0]
@@ -459,40 +461,105 @@ export async function createDevolucion(data: DevolucionFormData) {
         const { data: liqHoy, error: liqErr } = await supabase.from('liquidaciones').select('*').eq('fecha', impactoFecha).single()
         if (!liqErr && liqHoy) {
           try {
-            let nuevoMpDisponible = Number(liqHoy.mp_disponible ?? 0)
-            let nuevoMpALiquidar = Number(liqHoy.mp_a_liquidar ?? 0)
-            let nuevoMpRetenido = Number((liqHoy as any).mp_retenido ?? 0)
-
-            // Default: assume money was liquidado unless mpEstado indicates otherwise
-            if (mpEstadoCreada === 'a_liquidar') {
-              nuevoMpALiquidar = Math.max(0, nuevoMpALiquidar - montoReembolsadoCreada)
-            } else {
-              // liquidado or unknown
-              nuevoMpDisponible = Math.max(0, nuevoMpDisponible - montoReembolsadoCreada)
-            }
-
-            if (mpRetenerCreada) {
-              // Try to increment mp_retenido if column exists; if not, just subtract from source
-              try {
-                nuevoMpRetenido = Number(nuevoMpRetenido) + Number(montoReembolsadoCreada)
-                await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar, mp_retenido: nuevoMpRetenido }).eq('fecha', impactoFecha)
-              } catch (uErr) {
-                console.warn('No se pudo actualizar mp_retenido (posible falta de columna), aplicando solo source decrement', uErr)
-                await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar }).eq('fecha', impactoFecha)
-              }
-            } else {
-              await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar }).eq('fecha', impactoFecha)
-            }
-
-                try {
-                  const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                  await recalcularLiquidacionesEnCascada(impactoFecha)
-                } catch (rcErr) {
-                  console.warn('No se pudo ejecutar recálculo en cascada tras ML creación (no crítico)', rcErr)
+            // Compute the amount to move: prefer the sale-derived "monto a liquidar"
+            let montoALiquidar = 0
+            try {
+              // Try to fetch the venta and compute monto a liquidar using shared util
+              if (validatedData && (validatedData as any).ventaId) {
+                const { data: ventaFull, error: ventaErr } = await supabase.from('ventas').select('*').eq('id', (validatedData as any).ventaId).single()
+                if (!ventaErr && ventaFull) {
+                  try {
+                    const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
+                    const computed = await calcularMontoVentaALiquidar(ventaFull as any)
+                    montoALiquidar = Number(computed ?? 0)
+                  } catch (calcErr) {
+                    console.warn('No se pudo calcular monto a liquidar desde venta en creación (fallback):', calcErr)
+                    montoALiquidar = Number(montoReembolsadoCreada ?? 0)
+                  }
+                } else {
+                  montoALiquidar = Number(montoReembolsadoCreada ?? 0)
                 }
-            revalidatePath('/liquidaciones')
-            revalidatePath('/eerr')
-            revalidatePath('/ventas')
+              } else {
+                montoALiquidar = Number(montoReembolsadoCreada ?? 0)
+              }
+
+              // Decide which MP bucket to reduce based on mpEstado (if provided)
+              let delta_mp_disponible = 0
+              let delta_mp_a_liquidar = 0
+              let delta_mp_retenido = 0
+
+              if (mpEstadoCreada === 'a_liquidar') delta_mp_a_liquidar += -montoALiquidar
+              else delta_mp_disponible += -montoALiquidar
+
+              // NOTE: shipping costs are persisted as gastos_ingresos and handled
+              // separately; do NOT include envío in delta_mp_disponible here.
+
+              if (mpRetenerCreada) delta_mp_retenido += montoALiquidar
+
+              // Persist into devoluciones_deltas (tipo 'reclamo' for creation when mpRetener)
+              const deltaRow: any = {
+                devolucion_id: created.id ?? created?.id ?? null,
+                tipo: mpRetenerCreada ? 'reclamo' : (validatedData && (validatedData as any).fechaCompletada ? 'completada' : 'manual'),
+                fecha_impacto: impactoFecha,
+                delta_mp_disponible: Number(delta_mp_disponible || 0),
+                delta_mp_a_liquidar: Number(delta_mp_a_liquidar || 0),
+                delta_mp_retenido: Number(delta_mp_retenido || 0),
+                delta_tn_a_liquidar: 0
+              }
+
+              try {
+                const upsertResp = await supabase.from('devoluciones_deltas').upsert([deltaRow], { onConflict: 'devolucion_id,tipo' }).select().single()
+                if (upsertResp.error) throw upsertResp.error
+              } catch (upsertErr: any) {
+                console.warn('No se pudo upsertar en devoluciones_deltas durante create (posible falta de migración), intentando fallback:', upsertErr)
+                try {
+                  const payloadDeltas: any = {
+                    fecha_impacto: impactoFecha,
+                    delta_mp_disponible: Number(delta_mp_disponible || 0),
+                    delta_mp_a_liquidar: Number(delta_mp_a_liquidar || 0),
+                    delta_mp_retenido: Number(delta_mp_retenido || 0),
+                    delta_tn_a_liquidar: 0
+                  }
+                  await supabase.from('devoluciones').update(payloadDeltas).eq('id', created.id)
+                } catch (oldUpdErr: any) {
+                  console.warn('Fallback a actualización de liquidaciones directo en create (no crítico):', oldUpdErr)
+                  try {
+                    // As last resort, update liquidaciones directly for the impactoFecha
+                    if (mpRetenerCreada) {
+                      // decrement source and increment retenido
+                      const { data: liqForImpact, error: liqErr2 } = await supabase.from('liquidaciones').select('*').eq('fecha', impactoFecha).single()
+                      if (!liqErr2 && liqForImpact) {
+                        const nuevoMpDisponible = Math.max(0, Number(liqForImpact.mp_disponible ?? 0) + (Number(delta_mp_disponible || 0)))
+                        const nuevoMpALiquidar = Math.max(0, Number(liqForImpact.mp_a_liquidar ?? 0) + (Number(delta_mp_a_liquidar || 0)))
+                        const nuevoMpRetenido = Math.max(0, Number(liqForImpact.mp_retenido ?? 0) + Number(delta_mp_retenido || 0))
+                        await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar, mp_retenido: nuevoMpRetenido }).eq('fecha', impactoFecha)
+                      }
+                    } else {
+                      const { data: liqForImpact, error: liqErr2 } = await supabase.from('liquidaciones').select('*').eq('fecha', impactoFecha).single()
+                      if (!liqErr2 && liqForImpact) {
+                        const nuevoMpDisponible = Math.max(0, Number(liqForImpact.mp_disponible ?? 0) + (Number(delta_mp_disponible || 0)))
+                        const nuevoMpALiquidar = Math.max(0, Number(liqForImpact.mp_a_liquidar ?? 0) + (Number(delta_mp_a_liquidar || 0)))
+                        await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar }).eq('fecha', impactoFecha)
+                      }
+                    }
+                  } catch (uErr) {
+                    console.warn('Fallback update liquidaciones falló en create (no crítico)', uErr)
+                  }
+                }
+              }
+
+              try {
+                const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                await recalcularLiquidacionesEnCascada(impactoFecha)
+              } catch (rcErr) {
+                console.warn('No se pudo ejecutar recálculo en cascada tras ML creación (no crítico)', rcErr)
+              }
+              revalidatePath('/liquidaciones')
+              revalidatePath('/eerr')
+              revalidatePath('/ventas')
+            } catch (errInner) {
+              console.warn('Error preparando/persistiendo deltas en creación ML (no crítico)', errInner)
+            }
           } catch (applyErr) {
             console.warn('Error aplicando ajuste ML en creación (no crítico)', applyErr)
           }
@@ -589,6 +656,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   const fechaHoy = (parsedPartial && (parsedPartial as any).fechaCompletada)
                     ? new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
                     : fechaHoyActual
+                  // If the user requested to move money to 'mp_retenido', prefer the
+                  // claim date (fechaReclamo) as the accounting impact date. Otherwise
+                  // use the fechaCompletada (fechaHoy) as before.
+                  const fechaReclamoProvided = (parsedPartial && (parsedPartial as any).fechaReclamo)
+                    ? new Date((parsedPartial as any).fechaReclamo).toISOString().split('T')[0]
+                    : null
+                  const impactoFechaForDeltas = mpRetenerProvided ? (fechaReclamoProvided ?? fechaHoy) : fechaHoy
                   const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
                   await asegurarLiquidacionParaFecha(fechaHoy)
                   const { data: liqHoy, error: liqErr } = await supabase.from('liquidaciones').select('*').eq('fecha', fechaHoy).single()
@@ -611,50 +685,63 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                       delta_mp_disponible += -delta
                     }
 
-                    // Additionally, always subtract the original shipping cost from MP disponible
-                    try {
-                      const envioOriginal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                      if (envioOriginal && envioOriginal > 0) {
-                        delta_mp_disponible += -envioOriginal
-                      }
-                    } catch (e) {
-                      // no-op
-                    }
+                    // NOTE: shipping costs are persisted as gastos_ingresos and handled
+                    // separately; do NOT include envío in delta_mp_disponible here.
 
                     // If user marked to retain money, add to mp_retenido (positive)
                     if (mpRetenerProvided) {
                       delta_mp_retenido += delta
                     }
 
-                    // Persist deltas and fecha_impacto on the devolución row so the recalculation
-                    // can consume them centrally.
+                    // Persist deltas into the normalized table `devoluciones_deltas` so we can
+                    // keep one row per impact event (reclamo/completada) instead of overwriting
+                    // a single set of delta_* columns on the `devoluciones` row.
                     try {
-                      const payloadDeltas: any = {
-                        fecha_impacto: fechaHoy,
+                      const deltaRow: any = {
+                        devolucion_id: id,
+                        tipo: mpRetenerProvided ? 'reclamo' : (parsedPartial && (parsedPartial as any).fechaCompletada ? 'completada' : 'manual'),
+                        fecha_impacto: impactoFechaForDeltas,
                         delta_mp_disponible: Number(delta_mp_disponible || 0),
                         delta_mp_a_liquidar: Number(delta_mp_a_liquidar || 0),
                         delta_mp_retenido: Number(delta_mp_retenido || 0),
                         delta_tn_a_liquidar: Number(delta_tn_a_liquidar || 0)
                       }
-                      // Try update directly; if columns missing, fallback to previous behavior (update liquidaciones)
+
+                      // Upsert into devoluciones_deltas using a unique constraint (devolucion_id, tipo).
+                      // If the DB doesn't have the new table (migration not applied), fall back to updating
+                      // the old columns on `devoluciones` or write directly to `liquidaciones`.
                       try {
-                        await supabase.from('devoluciones').update(payloadDeltas).eq('id', id)
-                      } catch (updDErr: any) {
-                        // If update fails due to missing columns, fall back to updating liquidaciones directly
-                        console.warn('No se pudo persistir deltas en devoluciones (fallback a update liquidaciones):', updDErr)
+                        // PostgREST client expects onConflict as a comma-separated string
+                        const upsertResp = await supabase.from('devoluciones_deltas').upsert([deltaRow], { onConflict: 'devolucion_id,tipo' }).select().single()
+                        if (upsertResp.error) throw upsertResp.error
+                      } catch (upsertErr: any) {
+                        console.warn('No se pudo upsertar en devoluciones_deltas (posible falta de migración), intentando fallback:', upsertErr)
+                        // Fallback to trying to update the devoluciones row (old behavior)
                         try {
-                          if (mpRetenerProvided) {
-                            nuevoMpRetenido = Number(nuevoMpRetenido) + Number(delta)
-                            await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar), mp_retenido: nuevoMpRetenido }).eq('fecha', fechaHoy)
-                          } else {
-                            await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar) }).eq('fecha', fechaHoy)
+                          const payloadDeltas: any = {
+                            fecha_impacto: impactoFechaForDeltas,
+                            delta_mp_disponible: Number(delta_mp_disponible || 0),
+                            delta_mp_a_liquidar: Number(delta_mp_a_liquidar || 0),
+                            delta_mp_retenido: Number(delta_mp_retenido || 0),
+                            delta_tn_a_liquidar: Number(delta_tn_a_liquidar || 0)
                           }
-                        } catch (uErr) {
-                          console.warn('Fallback update liquidaciones falló (no crítico)', uErr)
+                          await supabase.from('devoluciones').update(payloadDeltas).eq('id', id)
+                        } catch (oldUpdErr: any) {
+                          console.warn('Fallback a actualización de liquidaciones directo (no crítico):', oldUpdErr)
+                          try {
+                            if (mpRetenerProvided) {
+                              nuevoMpRetenido = Number(nuevoMpRetenido) + Number(delta)
+                              await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar), mp_retenido: nuevoMpRetenido }).eq('fecha', impactoFechaForDeltas)
+                            } else {
+                              await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar) }).eq('fecha', impactoFechaForDeltas)
+                            }
+                          } catch (uErr) {
+                            console.warn('Fallback update liquidaciones falló (no crítico)', uErr)
+                          }
                         }
                       }
                     } catch (errPersistD) {
-                      console.warn('No se pudo persistir deltas en devoluciones (no crítico)', errPersistD)
+                      console.warn('No se pudo persistir deltas en devoluciones_deltas ni fallback (no crítico)', errPersistD)
                     }
                   } else {
                     console.warn('No se encontró liquidación HOY para aplicar ajuste ML (no crítico)', liqErr)
@@ -669,9 +756,20 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   // Recompute the intended impact date here (use client-provided fechaCompletada
                   // when present, otherwise fall back to fechaHoyActual). We recompute because
                   // the earlier fechaHoy variable was scoped inside the previous try block.
-                  const fechaImpacto = (parsedPartial && (parsedPartial as any).fechaCompletada)
-                    ? new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
-                    : fechaHoyActual
+                  // For recalculation prefer the impactoFechaForDeltas when we moved
+                  // amounts to mp_retenido; otherwise preserve the previous behavior
+                  // (use fechaCompletada if provided, else fechaHoyActual).
+                  // Recompute the fechaImpacto for recalculation. If the client asked to move
+                  // money to mp_retenido and provided fechaReclamo, prefer that; otherwise
+                  // if fechaCompletada was provided use it; else use fechaHoyActual.
+                  let fechaImpacto = fechaHoyActual
+                  try {
+                    if (parsedPartial && (parsedPartial as any).mpRetener && (parsedPartial as any).fechaReclamo) {
+                      fechaImpacto = new Date((parsedPartial as any).fechaReclamo).toISOString().split('T')[0]
+                    } else if (parsedPartial && (parsedPartial as any).fechaCompletada) {
+                      fechaImpacto = new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
+                    }
+                  } catch (_) {}
                   await recalcularLiquidacionesEnCascada(fechaImpacto)
                 } catch (rcErr) {
                   console.warn('No se pudo ejecutar recálculo en cascada tras ML (no crítico)', rcErr)
@@ -1304,6 +1402,41 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                         // If this finalization is a Reembolso and this devolución was marked to
                         // move money to mp_retenido, decrement mp_retenido by the refunded amount
                         try {
+                          // Determine the original impact date for any mp_retenido adjustments.
+                          // Prefer the persisted `fecha_impacto` on the devolución row; if missing,
+                          // fall back to fecha_reclamo, then fecha_completada, then today.
+                          let impactoFecha = null
+                          try {
+                            // Prefer the normalized table 'devoluciones_deltas' (tipo='reclamo') if present
+                            const { data: deltaRow, error: deltaErr } = await supabase
+                              .from('devoluciones_deltas')
+                              .select('fecha_impacto')
+                              .eq('devolucion_id', updated?.id ?? (merged as any).id ?? id)
+                              .eq('tipo', 'reclamo')
+                              .order('created_at', { ascending: false })
+                              .limit(1)
+                              .single()
+                            if (!deltaErr && deltaRow && deltaRow.fecha_impacto) impactoFecha = deltaRow.fecha_impacto
+                          } catch (pfErr) {
+                            // ignore fetch errors and fall back to previous sources
+                          }
+                          if (!impactoFecha) {
+                            try {
+                              const { data: devRow } = await supabase
+                                .from('devoluciones')
+                                .select('fecha_reclamo, fecha_completada, created_at')
+                                .eq('id', updated?.id ?? (merged as any).id ?? id)
+                                .single()
+                              if (devRow) impactoFecha = devRow.fecha_reclamo ?? devRow.fecha_completada ?? devRow.created_at
+                            } catch (_) {
+                              // ignore
+                            }
+                          }
+                          if (!impactoFecha) impactoFecha = new Date().toISOString().split('T')[0]
+                          else {
+                            try { impactoFecha = new Date(impactoFecha).toISOString().split('T')[0] } catch { impactoFecha = String(impactoFecha) }
+                          }
+
                           const mpMarked = (merged as any).mpRetener ?? (merged as any).mp_retenido ?? (existing as any).mp_retenido ?? false
                           if (becameReembolso && mpMarked) {
                             try {

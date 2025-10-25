@@ -424,8 +424,9 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="fechaReclamo">Fecha de reclamo</Label>
-                  {/* Fecha de reclamo NO debe poder cambiarse */}
-                  <Input id="fechaReclamo" type="date" {...register("fechaReclamo", { valueAsDate: true })} disabled />
+                  {/* Allow editing fechaReclamo when creating a new devolución; keep locked on edit to avoid
+                      changing the original claim date for historical records. */}
+                  <Input id="fechaReclamo" type="date" {...register("fechaReclamo", { valueAsDate: true })} disabled={isEditing} />
                   {errors.fechaReclamo && <p className="text-sm text-destructive">{errors.fechaReclamo.message}</p>}
                 </div>
                 {isEditing && (
