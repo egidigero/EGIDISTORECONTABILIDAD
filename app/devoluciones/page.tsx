@@ -7,7 +7,16 @@ import { DevolucionesTable } from "@/components/devoluciones-table"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 
 export default async function DevolucionesPage() {
-  const devoluciones = await getDevoluciones()
+  let devoluciones: any[] = []
+  let loadError: string | null = null
+  try {
+    devoluciones = await getDevoluciones()
+  } catch (err: any) {
+    // Capturar el error para evitar que la página entera falle sin feedback
+    console.error('Error al cargar devoluciones en page.tsx:', err)
+    loadError = err?.message ?? String(err)
+    devoluciones = []
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,7 +56,15 @@ export default async function DevolucionesPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <DevolucionesTable devoluciones={devoluciones} />
+              {loadError ? (
+                <div className="p-4 text-sm text-destructive">
+                  <strong>Error al cargar devoluciones:</strong>
+                  <div className="mt-2">{loadError}</div>
+                  <div className="mt-2">Revisá la consola del servidor para más detalles.</div>
+                </div>
+              ) : (
+                <DevolucionesTable devoluciones={devoluciones} />
+              )}
             </CardContent>
           </Card>
         </div>

@@ -34,6 +34,10 @@ function toSnakeCase(obj: any): any {
     productoRecuperable: 'producto_recuperable',
     numeroSeguimiento: 'numero_seguimiento',
     numeroDevolucionGenerado: 'id_devolucion'
+  ,
+  // MP/ML flags persisted from the UI
+  mpEstado: 'mp_estado',
+  mpRetener: 'mp_retenido'
   }
   for (const key of Object.keys(obj)) {
     const val = (obj as any)[key]
@@ -172,7 +176,58 @@ export async function getDevoluciones() {
       .order('fecha_reclamo', { ascending: false })
     
     if (error) throw error
-    return data
+    // Debug: log number of rows and a sample row to help diagnose UI load issues
+    try {
+      console.debug('[getDevoluciones] rows=', Array.isArray(data) ? data.length : 0, 'sample=', Array.isArray(data) && data.length > 0 ? data[0] : null)
+    } catch (dbg) {
+      // ignore debug errors
+    }
+    // Normalize rows to camelCase so front-end receives stable keys
+    try {
+      return (data || []).map(d => {
+        const cam: any = toCamelCase(d)
+        // Provide compatibility aliases used by the UI
+        cam.numeroDevolucion = cam.numeroDevolucion ?? cam.idDevolucion ?? cam.id_devolucion ?? cam.id ?? undefined
+        cam.numeroSeguimiento = cam.numeroSeguimiento ?? cam.numero_seguimiento ?? undefined
+  // Normalize date fields to ISO strings so frontend can safely parse/display them
+        try {
+          const toIso = (v: any) => {
+            if (v === null || typeof v === 'undefined') return null
+            if (v instanceof Date) return v.toISOString()
+            if (typeof v === 'string') {
+              // Common Postgres format: 'YYYY-MM-DD HH:MM:SS' (no T, no Z)
+              // Normalize to ISO by replacing space with 'T' and appending 'Z'
+              const spaceDateMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(v)
+              const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(v)
+              let candidate = v
+              if (spaceDateMatch) candidate = v.replace(' ', 'T') + 'Z'
+              else if (dateOnlyMatch) candidate = v + 'T00:00:00Z'
+              const parsed = new Date(candidate)
+              return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+            }
+            // If it's another object, try the generic parser
+            const parsed = new Date(v as any)
+            return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+          }
+          cam.fechaCompra = toIso(cam.fechaCompra ?? cam.fecha_compra)
+          cam.fechaReclamo = toIso(cam.fechaReclamo ?? cam.fecha_reclamo)
+          cam.fechaCompletada = toIso(cam.fechaCompletada ?? cam.fecha_completada)
+        } catch (dateErr) {
+          // swallow — we'll leave original values if normalization fails
+        }
+        // Provide a single displayName that the UI can use to avoid showing duplicates
+        try {
+          cam.displayName = cam.comprador ?? cam.nombreContacto ?? cam.saleCode ?? null
+        } catch (e) {
+          cam.displayName = cam.comprador ?? cam.nombreContacto ?? null
+        }
+        return cam
+      })
+    } catch (normErr) {
+      // If normalization fails, still return raw data to avoid breaking callers
+      console.warn('getDevoluciones: normalization failed, returning raw rows', normErr)
+      return data
+    }
   } catch (error) {
     console.error("Error al obtener devoluciones:", error)
     throw new Error("Error al obtener devoluciones")
@@ -193,7 +248,9 @@ export async function createDevolucion(data: DevolucionFormData) {
       fechaCompra: (data as any).fechaCompra ?? datosVenta?.fechaCompra ?? ((data as any).fechaReclamo ? (data as any).fechaReclamo : new Date()),
     }
 
-    const validatedData = devolucionSchema.parse(provisional)
+  // Sanitize optional enum fields coming from the client: don't pass empty strings to Zod enums
+  if (provisional && (provisional as any).mpEstado === "") (provisional as any).mpEstado = undefined
+  const validatedData = devolucionSchema.parse(provisional)
 
     if (!datosVenta) {
       // Si no logramos obtener la venta, seguimos permitiendo crear el informe pero con menos autocompletado
@@ -235,6 +292,8 @@ export async function createDevolucion(data: DevolucionFormData) {
       fecha_completada: devolucionCompleta.fechaCompletada ?? null,
       nombre_contacto: devolucionCompleta.nombreContacto ?? null,
       telefono_contacto: devolucionCompleta.telefonoContacto ?? null,
+  // Persistir número de seguimiento si el cliente lo proveyó
+  numero_seguimiento: devolucionCompleta.numeroSeguimiento ?? null,
       motivo: devolucionCompleta.motivo,
   // plataforma is NOT NULL in the DB; if we couldn't fetch it from the venta or the form,
   // default to 'TN' (Tienda Nube) to avoid DB constraint violation. Adjust as needed.
@@ -257,32 +316,60 @@ export async function createDevolucion(data: DevolucionFormData) {
       // No persistir montoReembolsado en informes provisionales
       monto_reembolsado: isProvisional ? 0 : Number(devolucionCompleta.montoReembolsado ?? 0),
       observaciones: devolucionCompleta.observaciones ?? null,
+      // Persist MP-related choices if the client provided them (optional columns in DB)
+      mp_estado: (devolucionCompleta as any).mpEstado ?? null,
+      mp_retenido: (devolucionCompleta as any).mpRetener ? true : false,
     }
 
-    const { data: created, error } = await supabase
-      .from('devoluciones')
-      .insert([dbRow])
-      .select()
-      .single()
+    let created: any = null
+    try {
+      const resp = await supabase
+        .from('devoluciones')
+        .insert([dbRow])
+        .select()
+        .single()
+      if (resp.error) throw resp.error
+      created = resp.data
+    } catch (insErr: any) {
+      // PostgREST returns PGRST204 when a provided column is not found in the schema cache.
+      // This can happen if the DB hasn't been migrated to include mp_estado/mp_retenido.
+      // Detect that case and retry without those optional columns for backward compatibility.
+      try {
+        const msg = String(insErr?.message ?? insErr)
+        if (insErr?.code === 'PGRST204' || msg.includes("mp_estado") || msg.includes("mp_retenido")) {
+          const safeRow = { ...dbRow }
+          delete safeRow.mp_estado
+          delete safeRow.mp_retenido
+          const retry = await supabase.from('devoluciones').insert([safeRow]).select().single()
+          if (retry.error) throw retry.error
+          created = retry.data
+        } else {
+          throw insErr
+        }
+      } catch (finalErr) {
+        throw finalErr
+      }
+    }
 
-    if (error) throw error
-
-    // Aplicar ajuste contable inmediato para el costo de envío de devolución:
-    // El negocio requiere que al registrar el informe se reste el costo de envío
-    // de la disponibilidad de MercadoPago en la fecha de hoy.
+  // Aplicar ajuste contable inmediato para el costo de envío de devolución:
+  // El negocio requiere que al registrar el informe se reste el costo de envío
+  // de la disponibilidad de MercadoPago en la fecha indicada por `fechaReclamo`.
     try {
   // Solo aplicar en la liquidación de hoy el costo de envío de vuelta (devolución).
   // El costo de ida ya fue aplicado en su momento cuando se registró la venta.
   const costoEnvioDevolucion = Number(validatedData.costoEnvioDevolucion ?? 0)
   const costoEnvio = costoEnvioDevolucion
       if (costoEnvio && costoEnvio > 0) {
-        const fechaHoy = new Date().toISOString().split('T')[0]
+        // Use the claim date (fechaReclamo) as the accounting impact date; fallback to today
+        const impactoFecha = (validatedData && (validatedData as any).fechaReclamo)
+          ? new Date((validatedData as any).fechaReclamo).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0]
         const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
-        await asegurarLiquidacionParaFecha(fechaHoy)
+        await asegurarLiquidacionParaFecha(impactoFecha)
         const { data: liquidacionHoy, error: errorHoy } = await supabase
           .from('liquidaciones')
           .select('*')
-          .eq('fecha', fechaHoy)
+          .eq('fecha', impactoFecha)
           .single()
 
         if (!errorHoy && liquidacionHoy) {
@@ -305,13 +392,14 @@ export async function createDevolucion(data: DevolucionFormData) {
             const ventaRef = ventaRefCandidates.find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? 'sin-ref'
             const descripcion = `Costo de envío devolución ${ventaRef}`
             const gastoRes = await createGastoIngreso({
-              fecha: new Date(fechaHoy),
+              // Persist the gasto with the impact date (fechaReclamo)
+              fecha: new Date(impactoFecha),
               tipo: 'Gasto',
               categoria: 'Gastos del negocio - Envios devoluciones',
               descripcion: `${descripcion} - devol ${created.id}`,
               montoARS: costoEnvio,
               canal: 'General'
-            })
+            } as GastoIngresoFormData)
 
             if (gastoRes && gastoRes.success) {
               // Nota: ya no persistimos `monto_aplicado_liquidacion` en la fila de devoluciones.
@@ -328,16 +416,16 @@ export async function createDevolucion(data: DevolucionFormData) {
               }
 
               // createGastoIngreso ya se encarga de asegurar la liquidación y recalcular.
-              revalidatePath('/liquidaciones')
-              revalidatePath('/eerr')
-              revalidatePath('/ventas')
-              // Además ejecutar recálculo en cascada para asegurar consistencia
-              try {
-                const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                await recalcularLiquidacionesEnCascada(fechaHoy)
-              } catch (rcErr) {
-                console.warn('No se pudo ejecutar recálculo en cascada tras crear devolución (no crítico)', rcErr)
-              }
+                revalidatePath('/liquidaciones')
+                revalidatePath('/eerr')
+                revalidatePath('/ventas')
+                // Además ejecutar recálculo en cascada para asegurar consistencia en la fecha de impacto
+                try {
+                  const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                  await recalcularLiquidacionesEnCascada(impactoFecha)
+                } catch (rcErr) {
+                  console.warn('No se pudo ejecutar recálculo en cascada tras crear devolución (no crítico)', rcErr)
+                }
             } else {
               console.error('No se pudo crear gasto_ingreso para devolución (creación):', gastoRes?.error)
             }
@@ -350,6 +438,70 @@ export async function createDevolucion(data: DevolucionFormData) {
       }
     } catch (err) {
       console.error('Error aplicando ajuste contable al crear devolución (no crítico):', err)
+    }
+
+    // --- Lógica ML adicional en creación: si la devolución es ML y viene como Reembolso,
+    // aplicar ajuste en liquidaciones HOY según mpEstado/mpRetener (si el usuario lo indicó).
+    try {
+      const plataformaCreada = (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN'
+      const tipoResCreada = (validatedData as any).tipoResolucion ?? null
+      const montoReembolsadoCreada = Number((validatedData as any).montoReembolsado ?? 0)
+      const mpEstadoCreada = (validatedData as any).mpEstado ?? null
+      const mpRetenerCreada = Boolean((validatedData as any).mpRetener ?? false)
+
+      if ((plataformaCreada === 'ML' || (datosVenta && (datosVenta as any).plataforma === 'ML')) && tipoResCreada === 'Reembolso' && montoReembolsadoCreada > 0) {
+        // Use fechaReclamo as impact date for MP adjustments on creation
+        const impactoFecha = (validatedData && (validatedData as any).fechaReclamo)
+          ? new Date((validatedData as any).fechaReclamo).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0]
+        const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
+        await asegurarLiquidacionParaFecha(impactoFecha)
+        const { data: liqHoy, error: liqErr } = await supabase.from('liquidaciones').select('*').eq('fecha', impactoFecha).single()
+        if (!liqErr && liqHoy) {
+          try {
+            let nuevoMpDisponible = Number(liqHoy.mp_disponible ?? 0)
+            let nuevoMpALiquidar = Number(liqHoy.mp_a_liquidar ?? 0)
+            let nuevoMpRetenido = Number((liqHoy as any).mp_retenido ?? 0)
+
+            // Default: assume money was liquidado unless mpEstado indicates otherwise
+            if (mpEstadoCreada === 'a_liquidar') {
+              nuevoMpALiquidar = Math.max(0, nuevoMpALiquidar - montoReembolsadoCreada)
+            } else {
+              // liquidado or unknown
+              nuevoMpDisponible = Math.max(0, nuevoMpDisponible - montoReembolsadoCreada)
+            }
+
+            if (mpRetenerCreada) {
+              // Try to increment mp_retenido if column exists; if not, just subtract from source
+              try {
+                nuevoMpRetenido = Number(nuevoMpRetenido) + Number(montoReembolsadoCreada)
+                await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar, mp_retenido: nuevoMpRetenido }).eq('fecha', impactoFecha)
+              } catch (uErr) {
+                console.warn('No se pudo actualizar mp_retenido (posible falta de columna), aplicando solo source decrement', uErr)
+                await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar }).eq('fecha', impactoFecha)
+              }
+            } else {
+              await supabase.from('liquidaciones').update({ mp_disponible: nuevoMpDisponible, mp_a_liquidar: nuevoMpALiquidar }).eq('fecha', impactoFecha)
+            }
+
+                try {
+                  const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                  await recalcularLiquidacionesEnCascada(impactoFecha)
+                } catch (rcErr) {
+                  console.warn('No se pudo ejecutar recálculo en cascada tras ML creación (no crítico)', rcErr)
+                }
+            revalidatePath('/liquidaciones')
+            revalidatePath('/eerr')
+            revalidatePath('/ventas')
+          } catch (applyErr) {
+            console.warn('Error aplicando ajuste ML en creación (no crítico)', applyErr)
+          }
+        } else {
+          console.warn('No se encontró liquidación HOY para aplicar ajuste ML en creación', liqErr)
+        }
+      }
+    } catch (mlErr) {
+      console.warn('Error en flujo ML al crear devolución (no crítico)', mlErr)
     }
 
     // Creación ya aplicó (si correspondía) el ajuste de envío; devolver resultado
@@ -369,7 +521,10 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   try {
     // Allow partial payloads on update: parse partial first to enforce types on provided fields,
     // then merge with existing DB row and validate the merged object with the full schema.
-  const parsedPartial = devolucionSchemaBase.partial().parse(data)
+  // Sanitize incoming partial payload to avoid empty-string enum values causing Zod to fail
+  const _safePartial: any = { ...(data as any) }
+  if (_safePartial.mpEstado === "") _safePartial.mpEstado = undefined
+  const parsedPartial = devolucionSchemaBase.partial().parse(_safePartial)
 
     // Obtener registro existente para hacer un update tipo "merge"
     const { data: existing, error: fetchError } = await supabase
@@ -409,42 +564,190 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
               // Use monto_reembolsado as the persisted source of truth for previous applied amount (fallback to 0)
               const prevApplied = Number((existing as any).monto_reembolsado ?? (existing as any).monto_reembolsado ?? 0)
               const delta = newMonto - prevApplied
-              if (delta !== 0 && (venta as any).metodoPago === 'PagoNube') {
-                const fechaHoyActual = new Date().toISOString().split('T')[0]
-                const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
-                if (!liqErr && liq) {
-                  const currentTn = Number(liq.tn_a_liquidar ?? 0)
-                  const nuevoTn = Math.max(0, currentTn - delta)
-                  await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
-                  // Persistir el monto aplicado en la devolución para idempotencia
-                  // Do NOT persist monto_aplicado_liquidacion here. Persist monto_reembolsado (if provided) was handled below.
-                  // Actualizar la devolución con los campos parciales enviados
-                  await supabase.from('devoluciones').update(toSnakeCase(parsedPartial)).eq('id', id)
+              const plataforma = (venta as any).plataforma ?? null
+              const metodoPago = (venta as any).metodoPago ?? null
+              const fechaHoyActual = new Date().toISOString().split('T')[0]
+              // Lógica especial para Mercado Libre
+              if (plataforma === 'ML' || metodoPago === 'MercadoPago') {
+                // Use optional mpEstado/mpRetener provided by the client (advance modal or form)
+                const mpEstadoProvided = (parsedPartial as any).mpEstado ?? (parsedPartial as any).mp_estado ?? null
+                const mpRetenerProvided = Boolean((parsedPartial as any).mpRetener ?? (parsedPartial as any).mp_retener ?? false)
+                // Persist desglose de envíos si fue provisto
+                try {
+                  const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                  const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                  const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
+                } catch (envErrEarly) {
+                  console.warn('No se pudo persistir desglose de envíos en flujo ML (no crítico)', envErrEarly)
+                }
 
-                  // Asegurar además la persistencia explícita del desglose de envíos
-                  try {
-                    const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                    const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
-                    const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
-                    await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
-                  } catch (envErrEarly) {
-                    console.warn('No se pudo persistir desglose de envíos en flujo temprano de Reembolso (no crítico)', envErrEarly)
-                  }
-                  // Además de aplicar el delta directamente, ejecutar la recálculo en cascada
-                  // para asegurar consistencia global y que vistas/otros cálculos se actualicen.
-                  try {
-                    const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                    await recalcularLiquidacionesEnCascada(fechaHoyActual)
-                  } catch (rcErr) {
-                    console.warn('No se pudo ejecutar recálculo en cascada tras Reembolso temprano (no crítico)', rcErr)
-                  }
+                // Apply adjustments to the intended fecha de impacto (user-provided fechaCompletada) when available,
+                // otherwise fall back to today's date. This ensures fecha_impacto uses the date the user selected
+                // in the "Registrar avance" modal instead of always using today.
+                try {
+                  const fechaHoy = (parsedPartial && (parsedPartial as any).fechaCompletada)
+                    ? new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
+                    : fechaHoyActual
+                  const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
+                  await asegurarLiquidacionParaFecha(fechaHoy)
+                  const { data: liqHoy, error: liqErr } = await supabase.from('liquidaciones').select('*').eq('fecha', fechaHoy).single()
+                  if (!liqErr && liqHoy) {
+                    let nuevoMpDisponible = Number(liqHoy.mp_disponible ?? 0)
+                    let nuevoMpALiquidar = Number(liqHoy.mp_a_liquidar ?? 0)
+                    let nuevoMpRetenido = Number((liqHoy as any).mp_retenido ?? 0)
 
-                  revalidatePath('/liquidaciones')
-                  revalidatePath('/eerr')
-                  revalidatePath('/ventas')
+                    // Decide deltas to persist on la devolución instead of updating liquidaciones directly.
+                    // Compute delta buckets (negative values reduce buckets, positive values increase)
+                    let delta_mp_disponible = 0
+                    let delta_mp_a_liquidar = 0
+                    let delta_mp_retenido = 0
+                    let delta_tn_a_liquidar = 0
+
+                    // If the money was still 'a_liquidar', reduce that bucket; otherwise reduce disponible
+                    if (mpEstadoProvided === 'a_liquidar') {
+                      delta_mp_a_liquidar += -delta
+                    } else {
+                      delta_mp_disponible += -delta
+                    }
+
+                    // Additionally, always subtract the original shipping cost from MP disponible
+                    try {
+                      const envioOriginal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                      if (envioOriginal && envioOriginal > 0) {
+                        delta_mp_disponible += -envioOriginal
+                      }
+                    } catch (e) {
+                      // no-op
+                    }
+
+                    // If user marked to retain money, add to mp_retenido (positive)
+                    if (mpRetenerProvided) {
+                      delta_mp_retenido += delta
+                    }
+
+                    // Persist deltas and fecha_impacto on the devolución row so the recalculation
+                    // can consume them centrally.
+                    try {
+                      const payloadDeltas: any = {
+                        fecha_impacto: fechaHoy,
+                        delta_mp_disponible: Number(delta_mp_disponible || 0),
+                        delta_mp_a_liquidar: Number(delta_mp_a_liquidar || 0),
+                        delta_mp_retenido: Number(delta_mp_retenido || 0),
+                        delta_tn_a_liquidar: Number(delta_tn_a_liquidar || 0)
+                      }
+                      // Try update directly; if columns missing, fallback to previous behavior (update liquidaciones)
+                      try {
+                        await supabase.from('devoluciones').update(payloadDeltas).eq('id', id)
+                      } catch (updDErr: any) {
+                        // If update fails due to missing columns, fall back to updating liquidaciones directly
+                        console.warn('No se pudo persistir deltas en devoluciones (fallback a update liquidaciones):', updDErr)
+                        try {
+                          if (mpRetenerProvided) {
+                            nuevoMpRetenido = Number(nuevoMpRetenido) + Number(delta)
+                            await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar), mp_retenido: nuevoMpRetenido }).eq('fecha', fechaHoy)
+                          } else {
+                            await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar) }).eq('fecha', fechaHoy)
+                          }
+                        } catch (uErr) {
+                          console.warn('Fallback update liquidaciones falló (no crítico)', uErr)
+                        }
+                      }
+                    } catch (errPersistD) {
+                      console.warn('No se pudo persistir deltas en devoluciones (no crítico)', errPersistD)
+                    }
+                  } else {
+                    console.warn('No se encontró liquidación HOY para aplicar ajuste ML (no crítico)', liqErr)
+                  }
+                } catch (mlApplyErr) {
+                  console.warn('Error aplicando ajuste ML en update temprano (no crítico)', mlApplyErr)
+                }
+
+                // Recalculate in cascade and revalidate (the recalculation will now read the persisted deltas)
+                try {
+                  const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                  // Recompute the intended impact date here (use client-provided fechaCompletada
+                  // when present, otherwise fall back to fechaHoyActual). We recompute because
+                  // the earlier fechaHoy variable was scoped inside the previous try block.
+                  const fechaImpacto = (parsedPartial && (parsedPartial as any).fechaCompletada)
+                    ? new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
+                    : fechaHoyActual
+                  await recalcularLiquidacionesEnCascada(fechaImpacto)
+                } catch (rcErr) {
+                  console.warn('No se pudo ejecutar recálculo en cascada tras ML (no crítico)', rcErr)
+                }
+                revalidatePath('/liquidaciones')
+                revalidatePath('/eerr')
+                revalidatePath('/ventas')
+
+                // Persistar el cambio en la tabla `devoluciones` para que el estado/fecha
+                // y demás campos queden guardados. En algunas instalaciones la columna
+                // mp_retenido/mp_estado puede no existir, por eso aplicamos el mismo
+                // patrón de retry que en otros puntos del código.
+                try {
+                  let updatedRow: any = null
+                  try {
+                    // Normalize dates and ensure fecha_completada is an ISO string when present
+                    const payloadToPersist: any = toSnakeCase(parsedPartial)
+                    if (payloadToPersist && payloadToPersist.fecha_completada) {
+                      try { payloadToPersist.fecha_completada = new Date(payloadToPersist.fecha_completada).toISOString() } catch {}
+                    }
+                    const resp = await supabase.from('devoluciones').update(payloadToPersist).eq('id', id).select().single()
+                    if (resp.error) throw resp.error
+                    updatedRow = resp.data
+                  } catch (updErr: any) {
+                    const msg = String(updErr?.message ?? updErr)
+                    if (updErr?.code === 'PGRST204' || msg.includes('mp_estado') || msg.includes('mp_retenido')) {
+                      const safePayload: any = toSnakeCase(parsedPartial)
+                      if (safePayload && safePayload.fecha_completada) {
+                        try { safePayload.fecha_completada = new Date(safePayload.fecha_completada).toISOString() } catch {}
+                      }
+                      delete safePayload.mp_estado
+                      delete safePayload.mp_retenido
+                      const retry = await supabase.from('devoluciones').update(safePayload).eq('id', id).select().single()
+                      if (retry.error) throw retry.error
+                      updatedRow = retry.data
+                    } else {
+                      throw updErr
+                    }
+                  }
+                  revalidatePath('/devoluciones')
+                  return { success: true, data: updatedRow ?? parsedPartial }
+                } catch (persistErr) {
+                  console.warn('No se pudo persistir actualización de devolución tras ajuste ML (pero ajuste aplicado en liquidaciones):', persistErr)
+                  // Devolvemos éxito parcial para no bloquear la UX; el caller debe ver el aviso.
                   return { success: true, data: parsedPartial }
-                } else {
-                  console.warn('No se encontró liquidación de HOY para ajustar tn_a_liquidar (no crítico)', liqErr)
+                }
+              } else if (metodoPago === 'PagoNube') {
+                // Lógica original para Tienda Nube
+                if (delta !== 0) {
+                  const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
+                  if (!liqErr && liq) {
+                    const currentTn = Number(liq.tn_a_liquidar ?? 0)
+                    const nuevoTn = Math.max(0, currentTn - delta)
+                    await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
+                    await supabase.from('devoluciones').update(toSnakeCase(parsedPartial)).eq('id', id)
+                    try {
+                      const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                      const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                      const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                      await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
+                    } catch (envErrEarly) {
+                      console.warn('No se pudo persistir desglose de envíos en flujo temprano de Reembolso (no crítico)', envErrEarly)
+                    }
+                    try {
+                      const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                      await recalcularLiquidacionesEnCascada(fechaHoyActual)
+                    } catch (rcErr) {
+                      console.warn('No se pudo ejecutar recálculo en cascada tras Reembolso temprano (no crítico)', rcErr)
+                    }
+                    revalidatePath('/liquidaciones')
+                    revalidatePath('/eerr')
+                    revalidatePath('/ventas')
+                    return { success: true, data: parsedPartial }
+                  } else {
+                    console.warn('No se encontró liquidación de HOY para ajustar tn_a_liquidar (no crítico)', liqErr)
+                  }
                 }
               }
             } catch (calcErr) {
@@ -493,14 +796,147 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   // Alias for backward-compatible references below
   const merged: any = validatedMergedPartial as any
 
-    const { data: updated, error } = await supabase
-      .from('devoluciones')
-      .update(toSnakeCase(validatedMergedPartial))
-      .eq('id', id)
-      .select()
-      .single()
+    let updated: any = null
+    try {
+      const resp = await supabase
+        .from('devoluciones')
+        .update(toSnakeCase(validatedMergedPartial))
+        .eq('id', id)
+        .select()
+        .single()
+      if (resp.error) throw resp.error
+      updated = resp.data
+    } catch (updErr: any) {
+      try {
+        const msg = String(updErr?.message ?? updErr)
+        if (updErr?.code === 'PGRST204' || msg.includes("mp_estado") || msg.includes("mp_retenido")) {
+          const safePayload: any = toSnakeCase(validatedMergedPartial)
+          delete safePayload.mp_estado
+          delete safePayload.mp_retenido
+          const retry = await supabase.from('devoluciones').update(safePayload).eq('id', id).select().single()
+          if (retry.error) throw retry.error
+          updated = retry.data
+        } else {
+          throw updErr
+        }
+      } catch (finalUpdErr) {
+        throw finalUpdErr
+      }
+    }
 
-    if (error) throw error
+    // Si se agregó o modificó el costo de envío de devolución, crear/actualizar
+    // un registro en `gastos_ingresos` con fecha HOY para reflejar el gasto.
+    try {
+      const prevShipping = Number((existing as any).costo_envio_devolucion ?? 0)
+      // new shipping: priorizar lo provisto en parsedPartial o en el registro actualizado
+      const newShipping = Number((parsedPartial as any).costoEnvioDevolucion ?? (parsedPartial as any).costo_envio_devolucion ?? (updated as any)?.costo_envio_devolucion ?? 0)
+      if (!Number.isNaN(newShipping) && newShipping !== prevShipping) {
+        try {
+          const { createGastoIngreso, updateGastoIngreso, getGastoIngresoById } = await import('@/lib/actions/gastos-ingresos')
+          // Use merged.fechaCompletada as accounting date for the shipping gasto when available; fallback to today.
+          const fechaHoy = (merged && merged.fechaCompletada) ? new Date(merged.fechaCompletada).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+          const ventaRef = (updated as any)?.venta_id ?? (existing as any).venta_id ?? id
+          const descripcion = `Costo envío devolución - devol ${updated?.id ?? id} - venta ${ventaRef}`
+          const gastoPayload: GastoIngresoFormData = {
+            fecha: new Date(fechaHoy),
+            tipo: 'Gasto',
+            categoria: 'Gastos del negocio - Envios devoluciones',
+            descripcion,
+            montoARS: newShipping,
+            canal: 'General'
+          }
+
+          let gastoActual: any = null
+
+          // Intentar usar gasto_creado_id si existe para idempotencia
+          const gastoIdPersistido = (existing as any).gasto_creado_id ?? (updated as any)?.gasto_creado_id ?? null
+          if (gastoIdPersistido) {
+            try {
+              const existingG = await getGastoIngresoById(gastoIdPersistido)
+              if (existingG) {
+                const upd = await updateGastoIngreso(gastoIdPersistido, gastoPayload)
+                if (upd && (upd as any).success) gastoActual = (upd as any).data
+              }
+            } catch (idErr) {
+              console.warn('No se pudo usar gasto_creado_id para actualizar gasto (continuando):', idErr)
+            }
+          }
+
+          // Fallback: buscar por descripción que contenga 'devol <id>' y actualizar
+          if (!gastoActual) {
+            try {
+              const { data: found } = await supabase
+                .from('gastos_ingresos')
+                .select('*')
+                .ilike('descripcion', `%devol ${updated?.id ?? id}%`)
+                .limit(1)
+                .single()
+
+              if (found) {
+                const upd = await updateGastoIngreso(found.id, gastoPayload)
+                if (upd && (upd as any).success) gastoActual = (upd as any).data
+              } else {
+                const createdG = await createGastoIngreso(gastoPayload)
+                if (createdG && (createdG as any).success) gastoActual = (createdG as any).data
+              }
+            } catch (searchErr) {
+              console.warn('Error buscando/creando gasto por descripción (fallback):', searchErr)
+            }
+          }
+
+          if (gastoActual) {
+            try {
+              const gastoId = gastoActual.id ?? gastoActual
+              if (gastoId) {
+                await supabase.from('devoluciones').update({ gasto_creado_id: gastoId }).eq('id', updated?.id ?? id)
+              }
+            } catch (auditErr) {
+              console.warn('No se pudo persistir gasto_creado_id tras crear/actualizar gasto (no crítico)', auditErr)
+            }
+
+            // Revalidar rutas y recálculo para que el ajuste sea efectivo hoy
+            try {
+              const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+              await recalcularLiquidacionesEnCascada(fechaHoy)
+            } catch (rcErr) {
+              console.warn('No se pudo ejecutar recálculo en cascada tras crear/actualizar gasto de envío (no crítico)', rcErr)
+            }
+            revalidatePath('/liquidaciones')
+            revalidatePath('/eerr')
+            revalidatePath('/ventas')
+          }
+        } catch (innerErr) {
+          console.warn('Error creando/actualizando gasto de envío tras updateDevolucion (no crítico):', innerErr)
+        }
+      }
+    } catch (errShip) {
+      console.warn('Error evaluando cambio de costo_envio_devolucion (no crítico):', errShip)
+    }
+
+    // Fallback explicit persistence: ensure numero_devolucion and numero_seguimiento are stored
+    // Some DB schemas or PostgREST caches can ignore/rename fields; write them explicitly if provided.
+    try {
+      const explicitFields: any = {}
+      if (typeof (parsedPartial as any).numeroDevolucion !== 'undefined') explicitFields.id_devolucion = (parsedPartial as any).numeroDevolucion
+      if (typeof (parsedPartial as any).numeroSeguimiento !== 'undefined') explicitFields.numero_seguimiento = (parsedPartial as any).numeroSeguimiento
+      if (Object.keys(explicitFields).length > 0) {
+        try {
+          await supabase.from('devoluciones').update(explicitFields).eq('id', id)
+        } catch (expErr: any) {
+          const msg = String(expErr?.message ?? expErr)
+          if (expErr?.code === 'PGRST204' || msg.includes('mp_estado') || msg.includes('mp_retenido')) {
+            const safeExplicit = { ...explicitFields }
+            delete (safeExplicit as any).mp_estado
+            delete (safeExplicit as any).mp_retenido
+            await supabase.from('devoluciones').update(safeExplicit).eq('id', id)
+          } else {
+            throw expErr
+          }
+        }
+      }
+    } catch (persistNumErr) {
+      console.warn('No se pudo persistir explícitamente numeroDevolucion/numeroSeguimiento (no crítico):', persistNumErr)
+    }
 
     // Nota: aquí podríamos disparar lógica de cascada para stock/contabilidad
     // cuando haya cambios significativos (estado final, cambio de producto, etc.).
@@ -724,6 +1160,38 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                         revalidatePath('/liquidaciones')
                         revalidatePath('/eerr')
                         revalidatePath('/ventas')
+                        // If this finalization is a Reembolso and this devolución was marked to
+                        // move money to mp_retenido, decrement mp_retenido by the refunded amount
+                        try {
+                          const mpMarked = (merged as any).mpRetener ?? (merged as any).mp_retenido ?? (existing as any).mp_retenido ?? false
+                          if (becameReembolso && mpMarked) {
+                            try {
+                              const montoToRemove = Number(newMonto ?? 0)
+                              const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
+                              await asegurarLiquidacionParaFecha(impactoFecha)
+                              const { data: liqForImpact, error: liqForImpactErr } = await supabase.from('liquidaciones').select('*').eq('fecha', impactoFecha).single()
+                              if (!liqForImpactErr && liqForImpact) {
+                                const currentRet = Number((liqForImpact as any).mp_retenido ?? 0)
+                                const nuevoRet = Math.max(0, currentRet - montoToRemove)
+                                try {
+                                  await supabase.from('liquidaciones').update({ mp_retenido: nuevoRet }).eq('fecha', impactoFecha)
+                                  // Recalculate cascade to propagate totals
+                                  await recalcularLiquidacionesEnCascada(impactoFecha)
+                                  revalidatePath('/liquidaciones')
+                                  revalidatePath('/eerr')
+                                } catch (errRet) {
+                                  console.warn('No se pudo decrementar mp_retenido al finalizar Reembolso (no crítico)', errRet)
+                                }
+                              } else {
+                                console.warn('No se encontró liquidación para decrementar mp_retenido tras Reembolso (no crítico)', liqForImpactErr)
+                              }
+                            } catch (errInner) {
+                              console.warn('Error al procesar decremento de mp_retenido al finalizar Reembolso (no crítico)', errInner)
+                            }
+                          }
+                        } catch (errMpMark) {
+                          console.warn('Error verificando mpRetener en finalización (no crítico)', errMpMark)
+                        }
                       } else {
                         console.error('No se pudo crear/actualizar gasto_ingreso para devolución (update)')
                       }
@@ -764,6 +1232,14 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       }
     } catch (err) {
       console.error('Error aplicando ajuste contable tras actualizar devolución:', err)
+    }
+    // For debugging/consistency: fetch the latest row from DB and return it so the caller
+    // receives the persisted values (helps detect when certain columns were not actually written).
+    try {
+      const { data: refreshed, error: refreshErr } = await supabase.from('devoluciones').select('*').eq('id', id).single()
+      if (!refreshErr && refreshed) updated = refreshed
+    } catch (refreshFetchErr) {
+      console.warn('No se pudo refrescar devolución tras update (no crítico):', refreshFetchErr)
     }
     return { success: true, data: updated }
   } catch (error) {
@@ -823,7 +1299,39 @@ export async function getDevolucionById(id: string) {
       .single()
 
     if (error) throw error
-    return data
+    // Normalize to camelCase and provide compatibility aliases so UI can rely on the same keys
+    try {
+      const cam: any = toCamelCase(data)
+      cam.numeroDevolucion = cam.numeroDevolucion ?? cam.idDevolucion ?? cam.id_devolucion ?? cam.id ?? undefined
+      cam.numeroSeguimiento = cam.numeroSeguimiento ?? cam.numero_seguimiento ?? undefined
+      // Normalize date fields to ISO strings
+      const toIso = (v: any) => {
+        if (v === null || typeof v === 'undefined') return null
+        if (v instanceof Date) return v.toISOString()
+        if (typeof v === 'string') {
+          const spaceDateMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(v)
+          const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(v)
+          let candidate = v
+          if (spaceDateMatch) candidate = v.replace(' ', 'T') + 'Z'
+          else if (dateOnlyMatch) candidate = v + 'T00:00:00Z'
+          const parsed = new Date(candidate)
+          return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+        }
+        const parsed = new Date(v as any)
+        return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+      }
+      try {
+        cam.fechaCompra = toIso(cam.fechaCompra ?? cam.fecha_compra)
+        cam.fechaReclamo = toIso(cam.fechaReclamo ?? cam.fecha_reclamo)
+        cam.fechaCompletada = toIso(cam.fechaCompletada ?? cam.fecha_completada)
+      } catch (_) {}
+      // Single display name for UI
+      cam.displayName = cam.comprador ?? cam.nombreContacto ?? cam.saleCode ?? null
+      return cam
+    } catch (normErr) {
+      console.warn('getDevolucionById: normalization failed, returning raw row', normErr)
+      return data
+    }
   } catch (error) {
     console.error("Error al obtener devolución:", error)
     throw new Error("Error al obtener devolución")

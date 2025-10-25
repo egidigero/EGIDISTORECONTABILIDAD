@@ -131,6 +131,7 @@ export interface Liquidacion {
   // MERCADOPAGO
   mp_disponible: number;        // Dinero disponible en MP
   mp_a_liquidar: number;        // Dinero pendiente de liberar en MP
+  mp_retenido?: number;         // Dinero retenido (retenciones por devoluciones u otros)
   mp_liquidado_hoy: number;     // Lo que se liberó hoy en MP
   // TIENDA NUBE
   tn_a_liquidar: number;        // Dinero pendiente en TN

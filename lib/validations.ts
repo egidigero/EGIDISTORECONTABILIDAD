@@ -121,6 +121,10 @@ export const devolucionSchemaBase = z.object({
   // Impacto financiero (auto-completados desde la venta)
   montoVentaOriginal: z.number().min(0).default(0),
   montoReembolsado: z.number().min(0).default(0),
+  // Estado del dinero en Mercado Pago: 'a_liquidar' | 'liquidado'
+  mpEstado: z.enum(['a_liquidar', 'liquidado']).optional(),
+  // Indica si se debe mover el monto a retenido en Mercado Pago al procesar la devolución
+  mpRetener: z.boolean().optional(),
   // Comisión original de la venta (opcional, usada en cálculos/trazabilidad)
   comisionOriginal: z.number().min(0).default(0),
   // commission fields removed from DB; calculations derived from ventas/liquidaciones

@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { createDevolucion, updateDevolucion, buscarVentas } from "@/lib/actions/devoluciones"
-import { devolucionSchemaWithRecoveryCheck as devolucionSchema, type DevolucionFormData, DEVOLUCION_ESTADOS, DEVOLUCION_TIPOS_RESOLUCION } from "@/lib/validations"
+import { devolucionSchemaWithRecoveryCheck as devolucionSchema, type DevolucionFormData, DEVOLUCION_ESTADOS } from "@/lib/validations"
 import { Search } from "lucide-react"
 
 const plataformaOptions = [
@@ -67,6 +67,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<LocalDevolucionForm>({
     resolver: zodResolver(devolucionSchema) as unknown as Resolver<LocalDevolucionForm>,
@@ -92,26 +93,95 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
         const d = v instanceof Date ? v : new Date(v)
         return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
       })(),
-      nombreContacto: devolucion?.nombreContacto || "",
-      telefonoContacto: devolucion?.telefonoContacto || "",
-      estado: typeof devolucion?.estado === "string" && devolucion?.estado ? devolucion.estado : "Pendiente",
-      motivo: devolucion?.motivo || "",
-      observaciones: devolucion?.observaciones || "",
-  costoEnvioOriginal: devolucion?.costoEnvioOriginal || 0,
+    nombreContacto: (devolucion as any)?.nombreContacto ?? (devolucion as any)?.nombre_contacto ?? "",
+    telefonoContacto: (devolucion as any)?.telefonoContacto ?? (devolucion as any)?.telefono_contacto ?? "",
+    estado: typeof ((devolucion as any)?.estado ?? (devolucion as any)?.estado) === "string" && ((devolucion as any)?.estado ?? (devolucion as any)?.estado) ? ((devolucion as any)?.estado ?? (devolucion as any)?.estado) : "Pendiente",
+    motivo: (devolucion as any)?.motivo ?? (devolucion as any)?.motivo ?? "",
+    observaciones: (devolucion as any)?.observaciones ?? (devolucion as any)?.observaciones ?? "",
+  costoEnvioOriginal: Number((devolucion as any)?.costoEnvioOriginal ?? (devolucion as any)?.costo_envio_original ?? 0),
   // dejar undefined para que la validación requiera el valor en creación
-  costoEnvioDevolucion: devolucion?.costoEnvioDevolucion ?? undefined,
-      costoEnvioNuevo: devolucion?.costoEnvioNuevo || 0,
-      tipoResolucion: typeof devolucion?.tipoResolucion === "string" && devolucion?.tipoResolucion ? devolucion.tipoResolucion : undefined,
-      costoProductoOriginal: devolucion?.costoProductoOriginal || 0,
-      costoProductoNuevo: devolucion?.costoProductoNuevo || 0,
-      montoVentaOriginal: devolucion?.montoVentaOriginal || 0,
-      montoReembolsado: devolucion?.montoReembolsado || 0,
-      productoRecuperable: typeof (devolucion as any)?.productoRecuperable !== 'undefined' ? (devolucion as any).productoRecuperable : typeof (devolucion as any)?.producto_recuperable !== 'undefined' ? (devolucion as any).producto_recuperable : true,
+  costoEnvioDevolucion: typeof (devolucion as any)?.costoEnvioDevolucion !== 'undefined' ? (devolucion as any).costoEnvioDevolucion : (typeof (devolucion as any)?.costo_envio_devolucion !== 'undefined' ? (devolucion as any).costo_envio_devolucion : undefined),
+    costoEnvioNuevo: Number((devolucion as any)?.costoEnvioNuevo ?? (devolucion as any)?.costo_envio_nuevo ?? 0),
+  // tipoResolucion removed: resolution derived from `estado`
+  costoProductoOriginal: Number((devolucion as any)?.costoProductoOriginal ?? (devolucion as any)?.costo_producto_original ?? 0),
+  costoProductoNuevo: Number((devolucion as any)?.costoProductoNuevo ?? (devolucion as any)?.costo_producto_nuevo ?? 0),
+  montoVentaOriginal: Number((devolucion as any)?.montoVentaOriginal ?? (devolucion as any)?.monto_venta_original ?? (devolucion as any)?.montoVenta ?? 0),
+  montoReembolsado: Number((devolucion as any)?.montoReembolsado ?? (devolucion as any)?.monto_reembolsado ?? 0),
+  productoRecuperable: typeof (devolucion as any)?.productoRecuperable !== 'undefined' ? (devolucion as any).productoRecuperable : typeof (devolucion as any)?.producto_recuperable !== 'undefined' ? (devolucion as any).producto_recuperable : true,
       // commission fields removed from DB; derive from venta when needed
-      numeroSeguimiento: devolucion?.numeroSeguimiento || "",
-      numeroDevolucion: devolucion?.numeroDevolucion || "",
+  numeroSeguimiento: devolucion?.numeroSeguimiento || (devolucion as any)?.numero_seguimiento || "",
+  numeroDevolucion: devolucion?.numeroDevolucion ?? (devolucion as any)?.numero_devolucion ?? (devolucion as any)?.id_devolucion ?? "",
+      // MP-related defaults (may come from existing devolucion row or venta raw)
+  mpEstado: (devolucion as any)?.mpEstado ?? (devolucion as any)?.mp_estado ?? undefined,
+      mpRetener: (devolucion as any)?.mpRetener ?? (devolucion as any)?.mp_retenido ?? false,
     }
   })
+
+  // If a `devolucion` prop arrives after mount (e.g. when opening an edit modal),
+  // reset the form values so the form is properly prefilled (react-hook-form
+  // only uses defaultValues on the first render).
+  useEffect(() => {
+    if (!devolucion) return
+    try {
+      const v: any = devolucion
+      const toNumber = (x: any) => {
+        if (x === null || typeof x === 'undefined') return 0
+        if (typeof x === 'number') return x
+        if (typeof x === 'string') {
+          // Remove currency symbols, spaces and thousands separators, allow comma as decimal
+          const cleaned = String(x).replace(/\s/g, '').replace(/\$/g, '').replace(/\./g, '').replace(',', '.')
+          const n = Number(cleaned)
+          return Number.isNaN(n) ? 0 : n
+        }
+        const n = Number(x)
+        return Number.isNaN(n) ? 0 : n
+      }
+
+      const initial: any = {
+        ventaId: v.ventaId ?? v.venta_id ?? v.venta?.id ?? "",
+        productoNuevoId: v.productoNuevoId ?? v.producto_nuevo_id ?? undefined,
+        fechaCompra: (function(){
+          const val = v.fechaCompra ?? v.fecha_compra
+          if (!val) return new Date().toISOString().split('T')[0]
+          const d = val instanceof Date ? val : new Date(val)
+          return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
+        })(),
+        fechaReclamo: (function(){
+          const val = v.fechaReclamo ?? v.fecha_reclamo
+          if (!val) return new Date().toISOString().split('T')[0]
+          const d = val instanceof Date ? val : new Date(val)
+          return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
+        })(),
+        fechaCompletada: (function(){
+          const val = v.fechaCompletada ?? v.fecha_completada
+          if (!val) return new Date().toISOString().split('T')[0]
+          const d = val instanceof Date ? val : new Date(val)
+          return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
+        })(),
+        nombreContacto: v.nombreContacto ?? v.nombre_contacto ?? "",
+        telefonoContacto: v.telefonoContacto ?? v.telefono_contacto ?? "",
+        estado: (v.estado ?? v.estado) ?? "Pendiente",
+        motivo: v.motivo ?? v.motivo ?? "",
+        observaciones: v.observaciones ?? v.observaciones ?? "",
+  costoEnvioOriginal: toNumber(v.costoEnvioOriginal ?? v.costo_envio_original ?? 0),
+  costoEnvioDevolucion: typeof v.costoEnvioDevolucion !== 'undefined' ? toNumber(v.costoEnvioDevolucion) : (typeof v.costo_envio_devolucion !== 'undefined' ? toNumber(v.costo_envio_devolucion) : undefined),
+  costoEnvioNuevo: toNumber(v.costoEnvioNuevo ?? v.costo_envio_nuevo ?? 0),
+  // tipoResolucion removed: resolution derived from `estado`
+  costoProductoOriginal: toNumber(v.costoProductoOriginal ?? v.costo_producto_original ?? 0),
+  costoProductoNuevo: toNumber(v.costoProductoNuevo ?? v.costo_producto_nuevo ?? 0),
+  montoVentaOriginal: toNumber(v.montoVentaOriginal ?? v.monto_venta_original ?? v.montoVenta ?? 0),
+  montoReembolsado: toNumber(v.montoReembolsado ?? v.monto_reembolsado ?? 0),
+        productoRecuperable: typeof v.productoRecuperable !== 'undefined' ? v.productoRecuperable : typeof v.producto_recuperable !== 'undefined' ? v.producto_recuperable : true,
+  numeroSeguimiento: v.numeroSeguimiento ?? (v as any).numero_seguimiento ?? "",
+  numeroDevolucion: v.numeroDevolucion ?? (v as any).numero_devolucion ?? (v as any).id_devolucion ?? v.id ?? "",
+        mpEstado: v.mpEstado ?? v.mp_estado ?? undefined,
+        mpRetener: v.mpRetener ?? v.mp_retenido ?? false,
+      }
+      reset(initial)
+    } catch (e) {
+      // ignore reset errors
+    }
+  }, [devolucion, reset])
 
   // Auto-set dates on create: fechaReclamo = today; fechaCompra = venta.fecha or today
   useEffect(() => {
@@ -221,15 +291,22 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
       }
     } catch (e) {}
     setVentasBuscadas([])
+    // If venta raw contains MP flags, propagate to form defaults
+    try {
+      const raw = venta._raw || venta
+      if (raw.mp_estado || raw.mpEstado) setValue('mpEstado', raw.mp_estado ?? raw.mpEstado)
+      if (typeof (raw.mp_retenido) !== 'undefined' || typeof (raw.mpRetener) !== 'undefined') setValue('mpRetener', Boolean(raw.mp_retenido ?? raw.mpRetener))
+    } catch (e) {
+      // ignore
+    }
   }
 
   // Handler: onSubmit
   const internalOnSubmit = async (data: LocalDevolucionForm) => {
     setIsSubmittingLocal(true)
     try {
-      // Si el formulario indica una resolución final, exigir fechaCompletada
-      const tipoRes = data.tipoResolucion
-      const estadoFinal = tipoRes && (String(tipoRes).includes('Reembolso') || String(tipoRes).includes('Cambio'))
+      // Si el estado final indica reembolso/cambio, exigir fechaCompletada
+      const estadoFinal = data.estado && (String(data.estado).includes('Reembolso') || String(data.estado).includes('Cambio'))
       if (estadoFinal && (!data.fechaCompletada || String(data.fechaCompletada).trim() === '')) {
         toast({ title: 'Fecha requerida', description: 'Debes indicar la fecha contable de resolución antes de finalizar la devolución.', variant: 'destructive' })
         setIsSubmittingLocal(false)
@@ -341,12 +418,14 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="fechaCompra">Fecha de compra</Label>
-                  <Input id="fechaCompra" type="date" {...register("fechaCompra", { valueAsDate: true })} disabled={!isEditing} />
+                  {/* Fecha de compra NO debe poder cambiarse */}
+                  <Input id="fechaCompra" type="date" {...register("fechaCompra", { valueAsDate: true })} disabled />
                   {errors.fechaCompra && <p className="text-sm text-destructive">{errors.fechaCompra.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="fechaReclamo">Fecha de reclamo</Label>
-                  <Input id="fechaReclamo" type="date" {...register("fechaReclamo", { valueAsDate: true })} disabled={!isEditing} />
+                  {/* Fecha de reclamo NO debe poder cambiarse */}
+                  <Input id="fechaReclamo" type="date" {...register("fechaReclamo", { valueAsDate: true })} disabled />
                   {errors.fechaReclamo && <p className="text-sm text-destructive">{errors.fechaReclamo.message}</p>}
                 </div>
                 {isEditing && (
@@ -372,9 +451,22 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="numeroDevolucion">Número de devolución</Label>
-                  <Input id="numeroDevolucion" {...register("numeroDevolucion")} readOnly />
+                  {/* Permitimos editar el número de devolución manualmente si fuera necesario */}
+                  <Input id="numeroDevolucion" {...register("numeroDevolucion")} />
                 </div>
               </div>
+
+              {/* Campos específicos de Mercado Pago / Mercado Libre */}
+              {ventaSeleccionada && ((ventaSeleccionada._raw && (ventaSeleccionada._raw.plataforma === 'ML' || ventaSeleccionada._raw.metodoPago === 'MercadoPago')) || (ventaSeleccionada.plataforma === 'ML')) && (
+                <div className="mt-4 p-3 border rounded bg-muted">
+                  <div className="mt-2">
+                    <label className="inline-flex items-center">
+                      <input type="checkbox" className="mr-2" {...register('mpRetener')} />
+                      <span className="text-sm">Mover monto a dinero retenido en Mercado Pago</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -392,39 +484,18 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
               {isEditing && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="estado">Estado</Label>
-                    <Select value={watch("estado")} onValueChange={(value) => setValue("estado", value as any)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un estado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DEVOLUCION_ESTADOS.map((option) => (
-                          <SelectItem key={option} value={option}>{option}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.estado && <p className="text-sm text-destructive">{errors.estado.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tipoResolucion">Tipo de resolución</Label>
-                    <Select value={watch("tipoResolucion") ?? "__none"} onValueChange={(value) => setValue("tipoResolucion", value === "__none" ? undefined : (value as any))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona resolución" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none">Sin resolución</SelectItem>
-                        {DEVOLUCION_TIPOS_RESOLUCION.map((option) => (
-                          <SelectItem key={option} value={option}>{option}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.tipoResolucion && <p className="text-sm text-destructive">{errors.tipoResolucion.message}</p>}
-                  </div>
+                      <Label>Estado</Label>
+                      {/* Mostrar el estado pero no permitir cambiarlo desde este formulario */}
+                      <div className="px-3 py-2 border rounded bg-white">{watch("estado")}</div>
+                      {errors.estado && <p className="text-sm text-destructive">{errors.estado.message}</p>}
+                    </div>
+                    {/* tipoResolucion eliminado: la resolución se deriva del estado y de la lógica del backend */}
                 </div>
               )}
 
               {/* Preguntar si se recupera el producto cuando se seleccionó alguna resolución */}
-              {Boolean(watch('tipoResolucion')) && (
+              {/* Mostrar opción de producto recuperable cuando corresponde (editar / finalización) */}
+              {isEditing && (
                 <div className="mt-4 space-y-2">
                   <Label>¿Se recupera el producto?</Label>
                   <div className="flex items-center gap-3">
@@ -450,7 +521,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                   Solo se mostrará el 'dinero a liquidar' en el panel de Venta Seleccionada. */}
 
               {/* Selector de producto nuevo */}
-              {isEditing && (
+                  {isEditing && (
                 <div className="space-y-2">
                   <Label htmlFor="productoNuevoId">Producto nuevo (si corresponde)</Label>
                   <Select value={watch("productoNuevoId") ?? "__none"} onValueChange={(value) => setValue("productoNuevoId", value === "__none" ? undefined : value)}>
@@ -504,7 +575,19 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                     <div>
                       <span className="text-xs text-muted-foreground">Costo producto (si se pierde):</span>
                       <div className="text-lg font-bold">
-                        ${Number(watch("costoProductoOriginal") ?? 0).toLocaleString()}
+                        ${(() => {
+                          try {
+                            const costoProductoOriginal = Number(watch("costoProductoOriginal") ?? 0)
+                            const productoRecuperable = !!watch('productoRecuperable')
+                            const productoNuevoId = watch('productoNuevoId')
+                            // Si el producto fue cambiado por uno nuevo o se marca como recuperable,
+                            // no hay pérdida por costo de producto. En caso contrario, aplicar el costo original.
+                            const productLoss = (productoRecuperable || productoNuevoId) ? 0 : costoProductoOriginal
+                            return Number(productLoss || 0).toLocaleString()
+                          } catch (e) {
+                            return '0'
+                          }
+                        })()}
                       </div>
                     </div>
                   </div>

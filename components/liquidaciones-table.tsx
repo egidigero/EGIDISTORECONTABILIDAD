@@ -303,7 +303,7 @@ export function LiquidacionesTable() {
         <CardHeader>
           <CardTitle>Liquidaciones</CardTitle>
           <CardDescription>
-            Sistema de liquidaciones con flujo MP ? TN
+            Sistema de liquidaciones con flujo MP ↔ TN
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -326,7 +326,7 @@ export function LiquidacionesTable() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Liquidaciones - Flujo MP ? TN</CardTitle>
+        <CardTitle>Liquidaciones - Flujo MP ↔ TN</CardTitle>
         <CardDescription>
           Gestión de liquidaciones con MercadoPago y Tienda Nube
         </CardDescription>
@@ -339,11 +339,12 @@ export function LiquidacionesTable() {
                 <TableHead className="w-12"></TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>MP Disponible</TableHead>
+                <TableHead>MP Retenido</TableHead>
                 <TableHead>MP A Liquidar</TableHead>
                 <TableHead>MP Total</TableHead>
                 <TableHead>TN A Liquidar</TableHead>
                 <TableHead>Total Disponible</TableHead>
-                <TableHead>Movimiento D�a</TableHead>
+                <TableHead>Movimiento Día</TableHead>
                 <TableHead>Gastos/Ingresos</TableHead>
                 <TableHead className="w-24">Acciones</TableHead>
               </TableRow>
@@ -381,6 +382,11 @@ export function LiquidacionesTable() {
                         <TableCell>
                           <div className="text-green-600 font-medium">
                             {formatCurrency(liquidacion.mp_disponible)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-amber-700 font-medium">
+                            {formatCurrency((liquidacion as any).mp_retenido ?? 0)}
                           </div>
                         </TableCell>
                         <TableCell>

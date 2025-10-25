@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { DevolucionForm } from "@/components/devolucion-form"
 import { deleteDevolucion, getDevolucionById } from "@/lib/actions/devoluciones"
 import { updateDevolucion } from "@/lib/actions/devoluciones"
 import { useRouter } from "next/navigation"
@@ -34,8 +36,11 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showAdvance, setShowAdvance] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const [advanceType, setAdvanceType] = useState<string>("")
   const [productoRecuperable, setProductoRecuperable] = useState<boolean | null>(null)
+  const [mpEstado, setMpEstado] = useState<string | null>(null)
+  const [fechaCompletadaLocal, setFechaCompletadaLocal] = useState<string | null>(null)
   const [fetchedDevolucion, setFetchedDevolucion] = useState<any | null>(null)
   const [loadingDevolucion, setLoadingDevolucion] = useState(false)
   const [costoEnvioOriginalLocal, setCostoEnvioOriginalLocal] = useState<number | null>(null)
@@ -48,7 +53,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
     if (!advanceType) return
     setIsAdvancing(true)
     try {
-      const payload: any = { tipoResolucion: advanceType }
+  const payload: any = { tipoResolucion: advanceType }
       // marcar fecha completada y estado según tipo seleccionado
       const estadoMap: Record<string,string> = {
         'Reembolso': 'Entregada - Reembolso',
@@ -57,13 +62,27 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
         'Sin reembolso': 'Entregada - Sin reembolso'
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
-      payload.fechaCompletada = new Date()
+      // Use user-provided fechaCompletada when available (required for Reembolso), else default to now
+      if (fechaCompletadaLocal) {
+        payload.fechaCompletada = new Date(fechaCompletadaLocal)
+      } else {
+        payload.fechaCompletada = new Date()
+      }
   // Incluir indicador de recuperabilidad si el usuario lo indicó
   if (productoRecuperable !== null) payload.productoRecuperable = productoRecuperable
   // Incluir desglose de envíos y costo de producto si los tenemos localmente
-  if (typeof costoEnvioOriginalLocal === 'number') payload.costoEnvioOriginal = Number(costoEnvioOriginalLocal)
   if (typeof costoEnvioDevolucionLocal === 'number') payload.costoEnvioDevolucion = Number(costoEnvioDevolucionLocal)
   if (typeof costoProductoOriginalLocal === 'number') payload.costoProductoOriginal = Number(costoProductoOriginalLocal)
+  // Ensure we persist costoEnvioOriginal: take from fetchedDevolucion or leave absent
+  if (typeof costoEnvioOriginalLocal === 'number') {
+    payload.costoEnvioOriginal = Number(costoEnvioOriginalLocal)
+  } else if (fetchedDevolucion) {
+     // Take product cost automatically from fetched devolución/venta when not provided
+     payload.costoProductoOriginal = Number(fetchedDevolucion.costo_producto_original ?? fetchedDevolucion.costoProductoOriginal ?? 0)
+     payload.costoEnvioOriginal = Number(fetchedDevolucion.costo_envio_original ?? fetchedDevolucion.costoEnvioOriginal ?? 0)
+  }
+    // Incluir estado del dinero en Mercado Pago (si el usuario lo indicó)
+    if (mpEstado) payload.mpEstado = mpEstado
       const result = await updateDevolucion(devolucion.id, payload)
       if (result.success) {
         toast({ title: 'Devolución actualizada', description: 'Se registró la resolución.' })
@@ -91,12 +110,33 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       setCostoProductoOriginalLocal(Number(d?.costo_producto_original ?? d?.costoProductoOriginal ?? 0))
       // Prefill recoverable flag
       setProductoRecuperable(typeof d?.producto_recuperable !== 'undefined' ? Boolean(d.producto_recuperable) : null)
+      // Prefill fecha completada (as yyyy-mm-dd) if present
+      try {
+        const existingFecha = d?.fecha_completada ?? d?.fechaCompletada ?? null
+        if (existingFecha) {
+          const ds = new Date(existingFecha).toISOString().split('T')[0]
+          setFechaCompletadaLocal(ds)
+        } else {
+          // default to today (not mandatory until Reembolso selected)
+          const today = new Date().toISOString().split('T')[0]
+          setFechaCompletadaLocal(today)
+        }
+      } catch (e) {
+        // ignore
+      }
     } catch (err) {
       console.warn('No se pudo obtener devolución para el modal de avance', err)
     } finally {
       setLoadingDevolucion(false)
     }
   }
+
+  // Load data when modal opens to prefill fields
+  useEffect(() => {
+    if (showAdvance) {
+      loadDevolucion()
+    }
+  }, [showAdvance])
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -138,7 +178,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
           <DropdownMenuItem onClick={() => setShowAdvance(true)}>
             Registrar avance
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push(`/devoluciones/${devolucion.id}/editar`)}>
+          <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowEditDialog(true); }}>
             <Edit className="mr-2 h-4 w-4" />
             Editar
           </DropdownMenuItem>
@@ -171,6 +211,36 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
         </AlertDialogContent>
       </AlertDialog>
 
+        {/* Dialog para editar devolución en modal (en lugar de navegar a página aparte) */}
+        <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (open) loadDevolucion() }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Editar Devolución</DialogTitle>
+            </DialogHeader>
+            {/* Pass fetchedDevolucion as the prop expected by DevolucionForm */}
+            <div>
+              {loadingDevolucion ? (
+                <div className="p-6">Cargando...</div>
+              ) : (
+                <DevolucionForm devolucion={fetchedDevolucion} onSubmit={async (data: any) => {
+                try {
+                  const res = await updateDevolucion(devolucion.id, data)
+                  if (res.success) {
+                    toast({ title: 'Devolución actualizada', description: 'Cambios guardados.' })
+                    setShowEditDialog(false)
+                    router.refresh()
+                  } else {
+                    toast({ title: 'Error', description: res.error || 'No se pudo actualizar la devolución.', variant: 'destructive' })
+                  }
+                } catch (err) {
+                  toast({ title: 'Error', description: 'Ocurrió un error al actualizar la devolución.', variant: 'destructive' })
+                }
+              }} />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
       {/* Modal para registrar avance/resolución */}
       <AlertDialog open={showAdvance} onOpenChange={setShowAdvance}>
         <AlertDialogContent>
@@ -198,27 +268,41 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
+            {/* Si es Reembolso, pedir la fecha de impacto que se aplicará en liquidaciones */}
+            {advanceType === 'Reembolso' && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Fecha de impacto (aplica en liquidaciones)</label>
+                <input type="date" className="w-full border rounded p-2" value={fechaCompletadaLocal ?? ''} onChange={(e) => setFechaCompletadaLocal(e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">Elige la fecha en la que quieres que se apliquen los ajustes contables en las liquidaciones.</p>
+              </div>
+            )}
+
+            {/* Preguntar estado de dinero en MP (solo para ML) */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium mb-2">Estado del dinero en MP</label>
+              <select className="w-full border rounded p-2" value={mpEstado ?? "unknown"} onChange={(e) => setMpEstado(e.target.value === 'unknown' ? null : e.target.value)}>
+                <option value="unknown">No sé / No aplica</option>
+                <option value="a_liquidar">A liquidar en MP</option>
+                <option value="liquidado">Liquidado (dinero disponible en MP)</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">Indica si el dinero de la venta ya estaba disponible en Mercado Pago o aún estaba en proceso de liquidación.</p>
+            </div>
+
             {/* Mostrar costos de envío y costo del producto (pueden editarse antes de confirmar) */}
             {fetchedDevolucion && (
               <div className="mt-4 grid grid-cols-1 gap-3">
-                <div>
-                  <label className="block text-sm font-medium">Costo envío ida (ARS)</label>
-                  <input type="number" className="w-full border rounded p-2" value={costoEnvioOriginalLocal ?? 0} onChange={(e) => setCostoEnvioOriginalLocal(Number(e.target.value))} />
-                </div>
+                {/* No pedir costo envío ida: lo tomamos automáticamente desde la devolución/venta. */}
                 <div>
                   <label className="block text-sm font-medium">Costo envío vuelta (ARS)</label>
                   <input type="number" className="w-full border rounded p-2" value={costoEnvioDevolucionLocal ?? 0} onChange={(e) => setCostoEnvioDevolucionLocal(Number(e.target.value))} />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium">Costo producto (ARS)</label>
-                  <input type="number" className="w-full border rounded p-2" value={costoProductoOriginalLocal ?? 0} onChange={(e) => setCostoProductoOriginalLocal(Number(e.target.value))} />
-                </div>
+                {/* Costo de producto se toma automáticamente desde la venta/devolución; no mostrar input */}
               </div>
             )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowAdvance(false)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleAdvance} disabled={isAdvancing}>{isAdvancing ? 'Aplicando...' : 'Confirmar'}</AlertDialogAction>
+            <AlertDialogAction onClick={handleAdvance} disabled={isAdvancing || (advanceType === 'Reembolso' && !fechaCompletadaLocal)}>{isAdvancing ? 'Aplicando...' : 'Confirmar'}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
