@@ -786,18 +786,102 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
     let mergedClean = stripNulls(mergedPre)
-    // Normalize date-like objects to Date/string so Zod preprocess can handle them
+    // Normalize date-like objects to Date/string so Zod preprocess can handle them.
+    // Some deployments send objects (seconds/toDate), some send 'YYYY-MM-DD' strings
+    // or 'YYYY-MM-DD HH:MM:SS'. Ensure we coerce to a real Date instance when possible
+    // because Zod's preprocess expects either a Date or a parsable string.
     if (mergedClean && typeof mergedClean === 'object') {
       mergedClean.fechaCompra = normalizeDateLike(mergedClean.fechaCompra)
       mergedClean.fechaReclamo = normalizeDateLike(mergedClean.fechaReclamo)
       mergedClean.fechaCompletada = normalizeDateLike(mergedClean.fechaCompletada)
+
+      const ensureDateForZod = (v: any) => {
+        if (v === null || typeof v === 'undefined') return undefined
+        if (v instanceof Date) return v
+        // If v is a number treat as ms timestamp
+        if (typeof v === 'number') {
+          const d = new Date(v)
+          if (!isNaN(d.getTime())) return d
+          return undefined
+        }
+
+        // If it's a JSON-encoded value in a string, try to parse
+        if (typeof v === 'string') {
+          const trimmed = v.trim()
+          // Attempt JSON parse for quoted strings or objects
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+            try {
+              const parsed = JSON.parse(trimmed)
+              return ensureDateForZod(parsed)
+            } catch {}
+          }
+
+          // Normalize common DB formats to an ISO-parsable string
+          const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+          const spaceDateMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(trimmed)
+          let candidate = trimmed
+          if (dateOnlyMatch) candidate = trimmed + 'T00:00:00Z'
+          else if (spaceDateMatch) candidate = trimmed.replace(' ', 'T') + 'Z'
+
+          // Try multiple parse strategies, return Date or undefined
+          try {
+            const d = new Date(candidate)
+            if (!isNaN(d.getTime())) return d
+          } catch {}
+          try {
+            const d2 = new Date(trimmed)
+            if (!isNaN(d2.getTime())) return d2
+          } catch {}
+
+          // Attempt to extract YYYY-MM-DD if present
+          try {
+            const m = trimmed.match(/(\d{4}-\d{2}-\d{2})/)
+            if (m && m[1]) {
+              const d3 = new Date(m[1] + 'T00:00:00Z')
+              if (!isNaN(d3.getTime())) return d3
+            }
+          } catch {}
+
+          return undefined
+        }
+
+        if (typeof v === 'object') {
+          if (typeof v.seconds === 'number') return new Date(v.seconds * 1000)
+          if (typeof v.toDate === 'function') {
+            try { return v.toDate() } catch {}
+          }
+          if (typeof v.toISOString === 'function') {
+            try { return new Date(v.toISOString()) } catch {}
+          }
+          // If object has common keys
+          if (typeof v.value === 'string') return ensureDateForZod(v.value)
+          if (typeof v.iso === 'string') return ensureDateForZod(v.iso)
+        }
+        return undefined
+      }
+
+      mergedClean.fechaCompra = ensureDateForZod(mergedClean.fechaCompra)
+      mergedClean.fechaReclamo = ensureDateForZod(mergedClean.fechaReclamo)
+      mergedClean.fechaCompletada = ensureDateForZod(mergedClean.fechaCompletada)
     }
+
+    // Debug: log the normalized date values right before parsing so we can inspect invalid inputs
+    try {
+      console.debug('[updateDevolucion] pre-parse fechas types=', {
+        fechaCompra: { value: mergedClean?.fechaCompra, type: typeof mergedClean?.fechaCompra },
+        fechaReclamo: { value: mergedClean?.fechaReclamo, type: typeof mergedClean?.fechaReclamo },
+        fechaCompletada: { value: mergedClean?.fechaCompletada, type: typeof mergedClean?.fechaCompletada }
+      })
+    } catch (dbg) {}
+
   const validatedMergedPartial = devolucionSchemaBase.partial().parse(mergedClean)
   // Alias for backward-compatible references below
   const merged: any = validatedMergedPartial as any
 
     let updated: any = null
     try {
+      // Debug: log attempted update payload to help diagnose why updates fail
+      try { console.debug('[updateDevolucion] id=', id, 'payload=', toSnakeCase(validatedMergedPartial)) } catch (dbg) {}
       const resp = await supabase
         .from('devoluciones')
         .update(toSnakeCase(validatedMergedPartial))
@@ -807,18 +891,75 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       if (resp.error) throw resp.error
       updated = resp.data
     } catch (updErr: any) {
+      // Attempt a resilient retry: PostgREST can return PGRST204 when a column
+      // is missing in the DB schema cache. The message usually includes the
+      // missing column name (e.g. "Could not find the 'comision_original' column...").
+      // We'll retry removing any referenced columns from the payload and re-run
+      // the update a few times before giving up.
       try {
-        const msg = String(updErr?.message ?? updErr)
-        if (updErr?.code === 'PGRST204' || msg.includes("mp_estado") || msg.includes("mp_retenido")) {
-          const safePayload: any = toSnakeCase(validatedMergedPartial)
-          delete safePayload.mp_estado
-          delete safePayload.mp_retenido
-          const retry = await supabase.from('devoluciones').update(safePayload).eq('id', id).select().single()
-          if (retry.error) throw retry.error
-          updated = retry.data
-        } else {
-          throw updErr
+        console.warn('[updateDevolucion] update failed, attempting safe retry, error=', updErr?.message ?? updErr)
+        let msg = String(updErr?.message ?? updErr)
+        let safePayload: any = toSnakeCase(validatedMergedPartial)
+
+        // Always defensively remove mp fields if present (common optional columns)
+        delete safePayload.mp_estado
+        delete safePayload.mp_retenido
+
+        const maxAttempts = 5
+        let attempt = 0
+        let lastErr: any = updErr
+        while (attempt < maxAttempts) {
+          attempt += 1
+          try {
+            const retry = await supabase.from('devoluciones').update(safePayload).eq('id', id).select().single()
+            if (retry.error) throw retry.error
+            updated = retry.data
+            lastErr = null
+            break
+          } catch (e: any) {
+            lastErr = e
+            // Extract any quoted identifier(s) from the error message and remove them
+            const eMsg = String(e?.message ?? e)
+            const cols: string[] = []
+            try {
+              const re = /'([^']+)'/g
+              let m: RegExpExecArray | null
+              while ((m = re.exec(eMsg)) !== null) {
+                if (m[1]) cols.push(m[1])
+              }
+            } catch (xx) {}
+
+            // If we found column names, delete them from payload and retry
+            if (cols.length > 0) {
+              for (const c of cols) {
+                if (c in safePayload) {
+                  delete safePayload[c]
+                }
+              }
+              // continue the loop to retry
+              continue
+            }
+
+            // If no quoted columns found, as a last resort try removing any snake_case fields
+            // that look like optional extras (heuristic): comision_* , gasto_* , monto_*
+            const optionalPatterns = [/^comision_/, /^gasto_/, /^monto_/, /^mp_/, /^costo_/]
+            let removedAny = false
+            for (const key of Object.keys(safePayload)) {
+              for (const pat of optionalPatterns) {
+                if (pat.test(key)) {
+                  delete safePayload[key]
+                  removedAny = true
+                }
+              }
+            }
+            if (removedAny) continue
+
+            // No actionable change possible; break and rethrow
+            break
+          }
         }
+
+        if (lastErr) throw lastErr
       } catch (finalUpdErr) {
         throw finalUpdErr
       }

@@ -80,8 +80,8 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "venta",
       header: "Venta",
       render: (devolucion: any) => {
-        const ventaCode = getAlias(devolucion, ['venta_codigo', 'saleCode', 'sale_code', 'saleCode', 'externalOrderId', 'ventaId', 'venta_id'], 'N/A')
-        const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName'], 'Sin comprador')
+  const ventaCode = getAlias(devolucion, ['venta_codigo', 'saleCode', 'sale_code', 'externalOrderId', 'ventaId', 'venta_id'], 'N/A')
+  const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName', 'cliente', 'buyer'], 'Sin comprador')
         return (
           <div>
             <code className="text-xs bg-muted px-2 py-1 rounded">{ventaCode || 'N/A'}</code>
@@ -96,8 +96,8 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "producto",
       header: "Producto",
       render: (devolucion: any) => {
-        const modelo = getAlias(devolucion, ['producto_modelo', 'modelo', 'product_model', 'producto_model', 'producto', 'producto_modelo'], null)
-        const sku = getAlias(devolucion, ['producto_sku', 'sku', 'product_sku', 'producto_sku'], null)
+  const modelo = getAlias(devolucion, ['producto_nombre', 'producto_title', 'title', 'name', 'producto_modelo', 'modelo', 'product_model', 'producto_model', 'producto'], null)
+  const sku = getAlias(devolucion, ['producto_sku', 'sku', 'product_sku', 'codigo_sku', 'product_sku'], null)
         // Fallbacks: try nested venta/producto info if present
         const ventaProd = getAlias(devolucion, ['producto', 'producto_obj', 'productos', 'producto_ref'], null)
         let modeloFinal = modelo
