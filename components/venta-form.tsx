@@ -285,7 +285,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         // comision = Comisión MP base desde tarifa (ej: 3.99%, puede variar)
         // Si hay cuotas sin interés, se suma el recargo adicional al monto de comisión
         const cuotasValue = watch("cuotas") || 1
-        const recargoMP = cuotasValue === 2 ? 0.0520 : cuotasValue === 3 ? 0.0760 : cuotasValue === 6 ? 0.1350 : 0
+        const recargoMP = cuotasValue === 2 ? 0.0680 : cuotasValue === 3 ? 0.0980 : cuotasValue === 6 ? 0.1730 : 0
         const comisionMPAdicional = precioConDescuento * recargoMP // Monto adicional por cuotas
         const comisionMPTotal = comision + comisionMPAdicional // Comisión total MP
         
