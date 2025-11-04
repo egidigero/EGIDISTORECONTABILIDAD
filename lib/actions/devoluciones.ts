@@ -691,11 +691,23 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     let delta_mp_retenido = 0
                     let delta_tn_a_liquidar = 0
 
-                    // If the money was still 'a_liquidar', reduce that bucket; otherwise reduce disponible
-                    if (mpEstadoProvided === 'a_liquidar') {
-                      delta_mp_a_liquidar += -delta
+                    // CRITICAL: Check if money was ALREADY retained previously (existing.mp_retenido)
+                    const wasAlreadyRetained = Boolean((existing as any).mp_retenido ?? false)
+
+                    if (wasAlreadyRetained) {
+                      // Money was already in mp_retenido from a previous reclamo.
+                      // When finalizing Reembolso now, we only subtract shipping from disponible.
+                      // The monto will be released from mp_retenido in a later step.
+                      // DO NOT subtract the monto from disponible/a_liquidar again.
+                      console.log('[Reembolso con retención previa] Solo restando envío de MP Disponible')
                     } else {
-                      delta_mp_disponible += -delta
+                      // Money was NOT retained before: this is either first-time processing
+                      // or money is flowing directly. Subtract monto from the appropriate bucket.
+                      if (mpEstadoProvided === 'a_liquidar') {
+                        delta_mp_a_liquidar += -delta
+                      } else {
+                        delta_mp_disponible += -delta
+                      }
                     }
 
                     // NOTE: shipping costs are persisted as gastos_ingresos and handled
@@ -715,8 +727,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                       // non-critical, continue
                     }
 
-                    // If user marked to retain money, add to mp_retenido (positive)
-                    if (mpRetenerProvided) {
+                    // If user marked to retain money NOW (not previously), add to mp_retenido (positive)
+                    if (mpRetenerProvided && !wasAlreadyRetained) {
                       delta_mp_retenido += delta
                     }
 
