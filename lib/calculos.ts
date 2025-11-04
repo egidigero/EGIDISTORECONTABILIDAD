@@ -58,7 +58,7 @@ export function getRecargoCuotasMP(cuotas?: number): number {
   switch (cuotas) {
     case 2: return 0.0610;  // +6.10%
     case 3: return 0.0890;  // +8.90%
-    case 6: return 0ya .1570;  // +15.70%
+    case 6: return 0.1570;  // +15.70%
     default: return 0;
   }
 }
