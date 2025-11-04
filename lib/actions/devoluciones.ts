@@ -494,17 +494,19 @@ export async function createDevolucion(data: DevolucionFormData) {
               // NOTE: shipping costs are persisted as gastos_ingresos and handled
               // separately; do NOT include envío in delta_mp_disponible here.
 
-              // Business rule: when creating a ML Reembolso / MP flow, also subtract
-              // the original envío of the venta from MP disponible so the
-              // liquidation reflects the real cash movement. The envío itself
-              // remains recorded as a gasto_ingreso for reporting purposes.
-              try {
-                const envioFromVenta = Number((datosVenta as any)?.costoEnvioOriginal ?? (datosVenta as any)?.costo_envio ?? (validatedData as any).costoEnvioOriginal ?? 0)
-                if (!Number.isNaN(envioFromVenta) && envioFromVenta > 0) {
-                  delta_mp_disponible += -envioFromVenta
+              // CRITICAL: When creating with mpRetener (just retaining, NOT finalizing Reembolso),
+              // do NOT subtract the envío yet. The envío will be subtracted only when
+              // the devolución is finalized as Reembolso in updateDevolucion.
+              // Only subtract envío if this is a direct Reembolso creation (not just retention).
+              if (!mpRetenerCreada && tipoResCreada === 'Reembolso') {
+                try {
+                  const envioFromVenta = Number((datosVenta as any)?.costoEnvioOriginal ?? (datosVenta as any)?.costo_envio ?? (validatedData as any).costoEnvioOriginal ?? 0)
+                  if (!Number.isNaN(envioFromVenta) && envioFromVenta > 0) {
+                    delta_mp_disponible += -envioFromVenta
+                  }
+                } catch (envSubErr) {
+                  // non-critical
                 }
-              } catch (envSubErr) {
-                // non-critical
               }
 
               if (mpRetenerCreada) delta_mp_retenido += montoALiquidar
@@ -792,20 +794,23 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 // Recalculate in cascade and revalidate (the recalculation will now read the persisted deltas)
                 try {
                   const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                  // Recompute the intended impact date here (use client-provided fechaCompletada
-                  // when present, otherwise fall back to fechaHoyActual). We recompute because
-                  // the earlier fechaHoy variable was scoped inside the previous try block.
-                  // For recalculation prefer the impactoFechaForDeltas when we moved
-                  // amounts to mp_retenido; otherwise preserve the previous behavior
-                  // (use fechaCompletada if provided, else fechaHoyActual).
-                  // Recompute the fechaImpacto for recalculation. If the client asked to move
-                  // money to mp_retenido and provided fechaReclamo, prefer that; otherwise
-                  // if fechaCompletada was provided use it; else use fechaHoyActual.
+                  // CRITICAL: Recalculate from the EARLIEST date that has deltas to ensure
+                  // intermediate liquidaciones (between reclamo and completada) are correct.
+                  // If there was a previous reclamo with retention, use that date; otherwise
+                  // use the fechaCompletada (or fechaHoyActual as fallback).
                   let fechaImpacto = fechaHoyActual
                   try {
-                    if (parsedPartial && (parsedPartial as any).mpRetener && (parsedPartial as any).fechaReclamo) {
+                    // Priority 1: If there's an existing fechaReclamo, use that (earliest possible date)
+                    const fechaReclamoExisting = (existing as any).fecha_reclamo ?? (existing as any).fechaReclamo
+                    if (fechaReclamoExisting) {
+                      fechaImpacto = new Date(fechaReclamoExisting).toISOString().split('T')[0]
+                    }
+                    // Priority 2: If the user is NOW marking mpRetener and provided fechaReclamo, use that
+                    else if (parsedPartial && (parsedPartial as any).mpRetener && (parsedPartial as any).fechaReclamo) {
                       fechaImpacto = new Date((parsedPartial as any).fechaReclamo).toISOString().split('T')[0]
-                    } else if (parsedPartial && (parsedPartial as any).fechaCompletada) {
+                    }
+                    // Priority 3: Use fechaCompletada if provided
+                    else if (parsedPartial && (parsedPartial as any).fechaCompletada) {
                       fechaImpacto = new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
                     }
                   } catch (_) {}
