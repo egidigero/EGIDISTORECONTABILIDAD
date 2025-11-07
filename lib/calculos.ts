@@ -56,9 +56,9 @@ export function getRecargoCuotasMP(cuotas?: number): number {
   if (!cuotas || cuotas === 1) return 0; // Sin cuotas o pago de contado = 0% adicional
   
   switch (cuotas) {
-    case 2: return 0.0610;  // +6.10%
-    case 3: return 0.0890;  // +8.90%
-    case 6: return 0.1570;  // +15.70%
+    case 2: return 0.05;  // +6.10%
+    case 3: return 0.075;  // +8.90%
+    case 6: return 0.13;  // +15.70%
     default: return 0;
   }
 }
