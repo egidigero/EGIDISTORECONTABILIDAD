@@ -122,7 +122,9 @@ export function calcularVenta(
   } else if (plataforma === "TN") {
     // TN: IVA e IIBB se agregan sobre las comisiones
     iva = (comisionBase + comisionExtra) * 0.21; // 21% IVA sobre comisiones
-    iibb = (comisionBase + comisionExtra) * (tarifa.iibbPct || 0.03); // IIBB según tarifa o 3%
+    // IIBB: Calculado desde tarifa + manual (retención adicional)
+    const iibbCalculado = (comisionBase + comisionExtra) * (tarifa.iibbPct || 0.03);
+    iibb = iibbCalculado + (iibbManual || 0); // IIBB calculado + retención manual
   } else if (plataforma === "ML") {
     // ML: La comisión ya incluye IVA, necesitamos desglosarlo
     comisionSinIva = comisionBase / 1.21; // Comisión sin IVA

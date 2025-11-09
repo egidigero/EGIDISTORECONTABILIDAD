@@ -579,8 +579,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   )}
                 </div>
 
-                {/* IIBB Manual para Mercado Libre, TN + MercadoPago y Transferencia Directa */}
-                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago") || watchMetodoPago === "Transferencia") && (
+                {/* IIBB Manual para Mercado Libre, TN + MercadoPago, TN + PagoNube y Transferencia Directa */}
+                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && (watchMetodoPago === "MercadoPago" || watchMetodoPago === "PagoNube")) || watchMetodoPago === "Transferencia") && (
                   <div className="space-y-2">
                     <Label htmlFor="iibbManual">IIBB (ARS) *Manual*</Label>
                     <Input
@@ -595,7 +595,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         ? "Para Transferencia Directa, ingresá el IIBB que cobra Mercado Pago por la transferencia bancaria."
                         : watchPlataforma === "ML" 
                           ? "Para Mercado Libre, el IIBB debe ingresarse manualmente." 
-                          : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
+                          : watchMetodoPago === "PagoNube"
+                            ? "Para TN + PagoNube, ingresá la retención adicional de IIBB si corresponde (se suma al IIBB calculado de comisiones)."
+                            : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
                     </p>
                     {errors.iibbManual && (
                       <p className="text-sm text-destructive">{errors.iibbManual.message}</p>
@@ -909,8 +911,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </div>
                     )}
 
-                    {/* IIBB Manual (para ML, TN+MercadoPago y Transferencia) */}
-                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago") || watchMetodoPago === "Transferencia") && watchIibbManual && watchIibbManual > 0 && (
+                    {/* IIBB Manual (para ML, TN+MercadoPago, TN+PagoNube y Transferencia) */}
+                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && (watchMetodoPago === "MercadoPago" || watchMetodoPago === "PagoNube")) || watchMetodoPago === "Transferencia") && watchIibbManual && watchIibbManual > 0 && (
                       <div className="flex justify-between border-t pt-2 mt-2">
                         <span className="font-medium">IIBB (Manual):</span>
                         <span className="font-mono font-medium text-orange-600">${Number(watchIibbManual).toFixed(2)}</span>

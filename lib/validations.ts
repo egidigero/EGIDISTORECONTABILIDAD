@@ -202,7 +202,7 @@ export const ventaSchema = z.object({
   usarComisionManual: z.boolean().default(false),
   comisionManual: z.number().min(0, "La comisión manual debe ser mayor o igual a 0").optional(),
   comisionExtraManual: z.number().min(0, "La comisión extra manual debe ser mayor o igual a 0").optional(),
-  iibbManual: z.number().min(0, "El IIBB manual debe ser mayor o igual a 0").optional(), // Para ML
+  iibbManual: z.number().min(0, "El IIBB manual debe ser mayor o igual a 0").optional(), // Retención IIBB para ML, TN, PN y Transferencia
   trackingUrl: z.string().optional().or(z.literal("")).refine(
     (value) => !value || z.string().url().safeParse(value).success,
     "URL inválida"
