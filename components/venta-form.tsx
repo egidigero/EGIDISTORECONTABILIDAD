@@ -303,7 +303,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       } else if (plataforma === "TN") {
         // TN + PagoNube: IVA e IIBB se agregan sobre las comisiones
         iva = (comision + comisionExtra) * 0.21 // 21% IVA sobre comisiones
-        iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinámico desde tarifa
+        const iibbCalculado = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinámico desde tarifa
+        iibb = iibbCalculado + (iibbManual || 0) // IIBB total = calculado + manual
       } else if (plataforma === "ML") {
         // ML: La comisión ya incluye IVA, necesitamos desglosarlo
         comisionSinIva = comision / 1.21 // Comisión sin IVA
@@ -329,12 +330,12 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       
       // Calcular total de costos según plataforma
       // Para Transferencia: IIBB manual + envío (para calcular margen operativo correcto)
-      // Para TN tradicional: subtotales ya incluyen IVA e IIBB, solo sumar envío y fijo
+      // Para TN tradicional: subtotales ya incluyen IVA e IIBB calculado, sumar envío, fijo y IIBB manual adicional
       // Para TN+MP y ML: subtotales + envío + fijo + IIBB manual
       const totalCostosPlataforma = metodoPago === "Transferencia"
         ? iibb + envio // IIBB manual + envío (para margen operativo)
         : plataforma === "TN" && metodoPago !== "MercadoPago"
-          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0)
+          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envío + fijo + IIBB manual adicional
           : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
