@@ -579,8 +579,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   )}
                 </div>
 
-                {/* IIBB Manual para Mercado Libre, TN + MercadoPago, TN + PagoNube y Transferencia Directa */}
-                {(watchPlataforma === "ML" || (watchPlataforma === "TN" && (watchMetodoPago === "MercadoPago" || watchMetodoPago === "PagoNube")) || watchMetodoPago === "Transferencia") && (
+                {/* IIBB Manual para Mercado Libre, Tienda Nube (todos los métodos) y Transferencia Directa */}
+                {(watchPlataforma === "ML" || watchPlataforma === "TN" || watchMetodoPago === "Transferencia") && (
                   <div className="space-y-2">
                     <Label htmlFor="iibbManual">IIBB (ARS) *Manual*</Label>
                     <Input
@@ -911,8 +911,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </div>
                     )}
 
-                    {/* IIBB Manual (para ML, TN+MercadoPago, TN+PagoNube y Transferencia) */}
-                    {(watchPlataforma === "ML" || (watchPlataforma === "TN" && (watchMetodoPago === "MercadoPago" || watchMetodoPago === "PagoNube")) || watchMetodoPago === "Transferencia") && watchIibbManual && watchIibbManual > 0 && (
+                    {/* IIBB Manual (para ML, TN y Transferencia Directa) */}
+                    {(watchPlataforma === "ML" || watchPlataforma === "TN" || watchMetodoPago === "Transferencia") && watchIibbManual && watchIibbManual > 0 && (
                       <div className="flex justify-between border-t pt-2 mt-2">
                         <span className="font-medium">IIBB (Manual):</span>
                         <span className="font-mono font-medium text-orange-600">${Number(watchIibbManual).toFixed(2)}</span>
