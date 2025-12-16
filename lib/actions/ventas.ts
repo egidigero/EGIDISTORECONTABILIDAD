@@ -115,15 +115,22 @@ export async function createVenta(data: VentaFormData) {
 
     // Descontar stock del producto
     if (venta?.[0]) {
-      const { error: stockError } = await supabase
+      console.log("🔍 Actualizando stock del producto:", validatedData.productoId)
+      console.log("🔍 Stock actual:", producto.stockPropio)
+      console.log("🔍 Nuevo stock:", Math.max(0, Number(producto.stockPropio || 0) - 1))
+      
+      const { data: stockData, error: stockError } = await supabase
         .from("productos")
         .update({ 
           stockPropio: Math.max(0, Number(producto.stockPropio || 0) - 1)
         })
         .eq("id", validatedData.productoId)
+        .select()
       
       if (stockError) {
-        console.error("Error al actualizar stock:", stockError)
+        console.error("❌ Error al actualizar stock:", stockError)
+      } else {
+        console.log("✅ Stock actualizado correctamente:", stockData)
       }
     }
 
@@ -142,6 +149,7 @@ export async function createVenta(data: VentaFormData) {
 
     revalidatePath("/ventas")
     revalidatePath("/liquidaciones")
+    revalidatePath("/productos")
     return { success: true, data: venta?.[0] }
   } catch (error) {
     console.error("Error al crear venta:", error)
