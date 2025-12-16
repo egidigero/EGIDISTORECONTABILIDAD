@@ -13,6 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MoreHorizontal, Edit, Trash2, Calculator } from "lucide-react"
 import { deleteProducto, updateProducto } from "@/lib/actions/productos"
 import { getProductoById } from "@/lib/actions/productos"
@@ -20,6 +21,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "@/hooks/use-toast"
 import { ProductoForm } from "./producto-form"
 import { CalculadoraPrecios } from "./calculadora-precios"
+import { DataTable } from "./data-table"
 
 interface ProductoActionsProps {
   producto: {
@@ -31,14 +33,14 @@ interface ProductoActionsProps {
   onUpdate?: () => void
 }
 
-export function ProductoActions({ producto }: ProductoActionsProps) {
+export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProducto }: ProductoActionsProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showCalculadora, setShowCalculadora] = useState(false)
   const [editProducto, setEditProducto] = useState<any | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showMovimientos, setShowMovimientos] = useState(false)
   const router = useRouter()
-  const onUpdate = arguments[0].onUpdate
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -70,46 +72,80 @@ export function ProductoActions({ producto }: ProductoActionsProps) {
     }
   }
 
-  const handlePrecioCalculado = async (nuevoPrecio: number) => {
-    try {
-      // Obtener los datos completos del producto
-      const productoCompleto = await getProductoById(producto.id)
-      if (!productoCompleto) {
-        toast({
-          title: "Error",
-          description: "No se pudo obtener la información del producto",
-          variant: "destructive"
-        })
-        return
-      }
-
-      const result = await updateProducto(producto.id, {
-        ...productoCompleto,
-        precio_venta: nuevoPrecio
-      })
-      
-      if (result.success) {
-        toast({
-          title: "Precio actualizado",
-          description: `El precio de venta se actualizó a $${nuevoPrecio.toFixed(2)}`,
-        })
-        onUpdate?.()
-      } else {
-        toast({
-          title: "Error",
-          description: result.error || "No se pudo actualizar el precio",
-          variant: "destructive"
-        })
-      }
-    } catch (error) {
-      console.error("Error al actualizar precio:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el precio de venta",
-        variant: "destructive"
-      })
-    }
-  }
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon">
+            <MoreHorizontal className="w-4 h-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setShowEditModal(true)}>
+            <Edit className="w-4 h-4 mr-2" /> Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShowCalculadora(true)}>
+            <Calculator className="w-4 h-4 mr-2" /> Calculadora
+          </DropdownMenuItem>
+          {movimientos && (
+            <DropdownMenuItem onClick={() => setShowMovimientos(true)}>
+              📦 Movimientos
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => setShowDeleteDialog(true)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. ¿Seguro que querés eliminar este producto?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {showEditModal && (
+        <ProductoForm producto={editProducto || producto} onSuccess={() => {
+          setShowEditModal(false)
+          if (onUpdate) onUpdate()
+        }} />
+      )}
+      {showCalculadora && (
+        <CalculadoraPrecios producto={producto} onClose={() => setShowCalculadora(false)} />
+      )}
+      {/* Modal de movimientos */}
+      <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Movimientos de stock para {producto.modelo}</DialogTitle>
+          </DialogHeader>
+          <div style={{ maxHeight: 400, overflowY: "auto" }}>
+            <DataTable
+              data={movimientos?.filter(m => m.productoId === producto.id) || []}
+              columns={[
+                { key: "fecha", header: "Fecha", render: (m: any) => new Date(m.fecha).toLocaleString() },
+                { key: "tipo", header: "Tipo" },
+                { key: "cantidad", header: "Cantidad" },
+                { key: "depositoOrigen", header: "Depósito Origen" },
+                { key: "depositoDestino", header: "Depósito Destino" },
+                { key: "observaciones", header: "Obs." },
+              ]}
+              searchable={false}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 
   return (
     <>

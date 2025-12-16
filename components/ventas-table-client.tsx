@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
 import { EstadoEnvioBadge } from "@/components/estado-envio-badge"
 import { VentaActions } from "@/components/venta-actions"
+import { useEffect, useState } from "react"
+import { getVentas } from "@/lib/actions/ventas"
 import {
   Tooltip,
   TooltipContent,
@@ -129,7 +131,34 @@ export const columns = [
   },
 ]
 
-export function VentasTableClient({ ventas }: { ventas: VentaConProducto[] }) {
+interface VentasTableClientProps {
+  ventas?: VentaConProducto[]
+  productoId?: string
+}
+
+export function VentasTableClient({ ventas: ventasProp, productoId }: VentasTableClientProps) {
+  const [ventas, setVentas] = useState<VentaConProducto[]>(ventasProp || [])
+  const [loading, setLoading] = useState(!ventasProp)
+
+  useEffect(() => {
+    if (!ventasProp && productoId) {
+      setLoading(true)
+      getVentas().then((allVentas) => {
+        const filtered = allVentas.filter((v: any) => v.productoId === productoId)
+        setVentas(filtered)
+        setLoading(false)
+      }).catch(() => {
+        setLoading(false)
+      })
+    } else if (ventasProp) {
+      setVentas(ventasProp)
+    }
+  }, [ventasProp, productoId])
+
+  if (loading) {
+    return <div className="text-center py-4">Cargando ventas...</div>
+  }
+
   const totales = ventas.reduce(
     (acc, venta) => {
       const pvBruto = Number(venta.pvBruto || 0)

@@ -113,6 +113,20 @@ export async function createVenta(data: VentaFormData) {
       .select("*, producto:productos(*)")
     if (ventaError) return { success: false, error: ventaError.message }
 
+    // Descontar stock del producto
+    if (venta?.[0]) {
+      const { error: stockError } = await supabase
+        .from("productos")
+        .update({ 
+          stockPropio: Math.max(0, Number(producto.stockPropio || 0) - 1)
+        })
+        .eq("id", validatedData.productoId)
+      
+      if (stockError) {
+        console.error("Error al actualizar stock:", stockError)
+      }
+    }
+
     // Actualizar liquidación si la venta fue creada exitosamente
     if (venta?.[0]) {
       // Asegurar que existe liquidación para esa fecha antes de recalcular
@@ -274,6 +288,21 @@ export async function deleteVenta(id: string) {
 
     if (deleteError) {
       throw deleteError
+    }
+
+    // Restaurar stock del producto
+    const producto = venta.producto
+    if (producto) {
+      const { error: stockError } = await supabase
+        .from("productos")
+        .update({ 
+          stockPropio: Number(producto.stockPropio || 0) + 1
+        })
+        .eq("id", venta.productoId)
+      
+      if (stockError) {
+        console.error("Error al restaurar stock:", stockError)
+      }
     }
 
     // Recalcular liquidaciones desde la fecha de la venta eliminada

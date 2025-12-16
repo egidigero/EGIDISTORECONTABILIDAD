@@ -7,6 +7,8 @@ import type { Producto } from "@/lib/types"
 interface ProductosTableClientProps {
   productos: Producto[]
   onUpdate?: () => void
+  movimientos?: any[]
+  ventasPorProducto?: boolean
 }
 
 const columns = [
@@ -29,19 +31,20 @@ const columns = [
     render: (producto: any) => `$${Number(producto.precio_venta || 0).toLocaleString()}`,
   },
   {
-    key: "stockPropio",
-    header: "Stock propio",
+    key: "stockTotal",
+    header: "Stock Total",
     render: (producto: any) => {
-      const stock = producto.stockPropio;
-      return stock !== null && stock !== undefined ? Number(stock).toLocaleString() : "0";
+      const stockTotal = Number(producto.stockPropio || 0) + Number(producto.stockFull || 0);
+      return stockTotal.toLocaleString();
     },
   },
   {
-    key: "stockFull",
-    header: "Stock full",
+    key: "patrimonioProducto",
+    header: "Patrimonio",
     render: (producto: any) => {
-      const stock = producto.stockFull;
-      return stock !== null && stock !== undefined ? Number(stock).toLocaleString() : "0";
+      const stockTotal = Number(producto.stockPropio || 0) + Number(producto.stockFull || 0);
+      const patrimonio = Number(producto.costoUnitarioARS || 0) * stockTotal;
+      return `$${patrimonio.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     },
   },
   {
@@ -64,7 +67,17 @@ export function ProductosTableClient(props: ProductosTableClientProps) {
   // Usar el prop onUpdate directamente en el mapeo
   const customColumns = columns.map(col => {
     if (col.key === "acciones") {
-      return { ...col, render: (producto: any) => <ProductoActions producto={producto} onUpdate={props.onUpdate} /> };
+      return {
+        ...col,
+        render: (producto: any) => (
+          <ProductoActions
+            producto={producto}
+            onUpdate={props.onUpdate}
+            movimientos={props.movimientos}
+            ventasPorProducto={props.ventasPorProducto}
+          />
+        ),
+      };
     }
     return col;
   });

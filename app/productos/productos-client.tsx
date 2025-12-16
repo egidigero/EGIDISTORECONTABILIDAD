@@ -1,12 +1,17 @@
 "use client"
+
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus } from "lucide-react"
 import { ProductosTableClient } from "@/components/productos-table-client"
 import { NuevoProductoModal } from "@/components/nuevo-producto-modal"
+import { StockResumen } from "@/components/stock-resumen"
+import { consultarStock, consultarMovimientos } from "@/lib/stock-api"
+import { AnalisisVentas30Dias } from "@/components/analisis-ventas-30dias"
+import RotacionStock from "@/components/rotacion-stock"
 
 interface ProductosPageClientProps {
   initialProductos: any[]
@@ -21,6 +26,29 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
     router.refresh() // Revalidar página para actualizar datos
   }
 
+  const [stock, setStock] = useState<any[]>([])
+  const [movimientos, setMovimientos] = useState<any[]>([])
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await consultarStock()
+        setStock(s || [])
+        const m = await consultarMovimientos()
+        setMovimientos(m || [])
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(e)
+      }
+    })()
+  }, [])
+
+  // Calcular patrimonio total en stock (usando stock total: propio + full)
+  const patrimonioStock = initialProductos.reduce((total, p) => {
+    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    return total + (p.costoUnitarioARS * stockTotal)
+  }, 0)
+
   return (
     <div className="space-y-6">
       <Card>
@@ -32,20 +60,22 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
               <Button asChild variant="outline" size="sm">
                 <a href="/">← Volver al menú principal</a>
               </Button>
-              <Button asChild variant="secondary" size="sm">
-                <Link href="/stock">Stock y movimientos</Link>
-              </Button>
             </div>
           </div>
           <Button size="sm" onClick={() => setShowModal(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nuevo producto
+            <Plus className="w-4 h-4 mr-2" /> Nuevo producto
           </Button>
         </CardHeader>
         <CardContent>
-          <ProductosTableClient productos={initialProductos} onUpdate={() => router.refresh()} />
+          <div className="mb-4">
+            <StockResumen productos={initialProductos} />
+          </div>
+          <ProductosTableClient productos={initialProductos} onUpdate={router.refresh} movimientos={movimientos} ventasPorProducto />
         </CardContent>
       </Card>
-  <NuevoProductoModal open={showModal} onClose={handleCloseModal} />
+      <RotacionStock productos={initialProductos} />
+      <AnalisisVentas30Dias productos={initialProductos} />
+      <NuevoProductoModal open={showModal} onClose={handleCloseModal} />
     </div>
   )
 }
