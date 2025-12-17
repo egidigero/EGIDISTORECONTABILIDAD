@@ -396,6 +396,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           description: `La venta ha sido ${isEditing ? "actualizada" : "creada"} correctamente.`,
         })
         
+        // Forzar refresh del router para actualizar datos
+        router.refresh()
+        
         if (onSuccess) {
           console.log("🔄 Ejecutando onSuccess callback")
           onSuccess()

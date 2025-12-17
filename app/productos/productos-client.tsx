@@ -5,7 +5,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus } from "lucide-react"
+import { Plus, RefreshCw } from "lucide-react"
 import { ProductosTableClient } from "@/components/productos-table-client"
 import { NuevoProductoModal } from "@/components/nuevo-producto-modal"
 import { StockResumen } from "@/components/stock-resumen"
@@ -59,6 +59,9 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
             <div className="flex gap-2 mt-2">
               <Button asChild variant="outline" size="sm">
                 <a href="/">← Volver al menú principal</a>
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+                <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
             </div>
           </div>
