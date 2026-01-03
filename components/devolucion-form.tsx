@@ -514,13 +514,19 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                     <SelectValue placeholder="Selecciona el motivo del reclamo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Producto defectuoso">Producto defectuoso</SelectItem>
-                    <SelectItem value="Producto dañado en envío">Producto dañado en envío</SelectItem>
+                    <SelectItem value="No enciende">No enciende</SelectItem>
+                    <SelectItem value="Duración corta de batería">Duración corta de batería</SelectItem>
+                    <SelectItem value="Problemas de carga">Problemas de carga</SelectItem>
+                    <SelectItem value="Pantalla defectuosa">Pantalla defectuosa</SelectItem>
+                    <SelectItem value="Botones no funcionan">Botones no funcionan</SelectItem>
+                    <SelectItem value="Problemas de conectividad">Problemas de conectividad</SelectItem>
+                    <SelectItem value="Software/Firmware defectuoso">Software/Firmware defectuoso</SelectItem>
+                    <SelectItem value="Sensor defectuoso">Sensor defectuoso</SelectItem>
+                    <SelectItem value="Daño físico en envío">Daño físico en envío</SelectItem>
                     <SelectItem value="Producto incorrecto enviado">Producto incorrecto enviado</SelectItem>
-                    <SelectItem value="No conforme con el producto">No conforme con el producto</SelectItem>
-                    <SelectItem value="Producto no coincide con descripción">Producto no coincide con descripción</SelectItem>
-                    <SelectItem value="Cambio de opinión del cliente">Cambio de opinión del cliente</SelectItem>
-                    <SelectItem value="Garantía">Garantía</SelectItem>
+                    <SelectItem value="No coincide con descripción">No coincide con descripción</SelectItem>
+                    <SelectItem value="Arrepentimiento del cliente">Arrepentimiento del cliente</SelectItem>
+                    <SelectItem value="Defecto de fabricación">Defecto de fabricación</SelectItem>
                     <SelectItem value="Otro">Otro</SelectItem>
                   </SelectContent>
                 </Select>

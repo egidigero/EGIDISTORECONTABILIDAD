@@ -3,7 +3,7 @@ import NuevaDevolucionModalWrapper from "@/components/nueva-devolucion-modal-wra
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, RotateCcw, FileText } from "lucide-react"
-import { DevolucionesTable } from "@/components/devoluciones-table"
+import { DevolucionesClientWrapper } from "@/components/devoluciones-client-wrapper"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 
 export default async function DevolucionesPage() {
@@ -63,7 +63,7 @@ export default async function DevolucionesPage() {
                   <div className="mt-2">Revisá la consola del servidor para más detalles.</div>
                 </div>
               ) : (
-                <DevolucionesTable devoluciones={devoluciones} />
+                <DevolucionesClientWrapper devoluciones={devoluciones} />
               )}
             </CardContent>
           </Card>

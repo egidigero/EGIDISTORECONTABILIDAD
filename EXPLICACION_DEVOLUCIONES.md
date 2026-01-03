@@ -77,22 +77,34 @@ Esto permite:
 
 ## Motivos de Reclamo
 
-Ahora los motivos son un **desplegable con opciones predefinidas**:
+Ahora los motivos son un **desplegable con opciones predefinidas y específicas**:
 
 ### Opciones disponibles:
-1. Producto defectuoso
-2. Producto dañado en envío
-3. Producto incorrecto enviado
-4. No conforme con el producto
-5. Producto no coincide con descripción
-6. Cambio de opinión del cliente
-7. Garantía
-8. Otro
+**Problemas técnicos del producto:**
+1. No enciende
+2. Duración corta de batería
+3. Problemas de carga
+4. Pantalla defectuosa
+5. Botones no funcionan
+6. Problemas de conectividad
+7. Software/Firmware defectuoso
+8. Sensor defectuoso
+
+**Problemas de envío y logística:**
+9. Daño físico en envío
+10. Producto incorrecto enviado
+
+**Otros:**
+11. No coincide con descripción
+12. Arrepentimiento del cliente
+13. Defecto de fabricación
+14. Otro
 
 ### Ventajas:
-- **Datos consistentes**: Todos usan la misma nomenclatura
-- **Reportes acumulativos**: Puedes saber cuántos reclamos por cada motivo
-- **Análisis de problemas**: Identificar patrones (ej: muchos "dañados en envío" = problema con courier)
+- **Datos específicos**: Motivos técnicos detallados para identificar problemas exactos
+- **Reportes acumulativos**: Saber exactamente cuántos productos tienen problemas de batería, pantalla, etc.
+- **Análisis de calidad**: Identificar patrones de defectos por producto
+- **Decisiones de compra**: Datos para decidir si seguir vendiendo un producto problemático
 
 ---
 
@@ -166,6 +178,53 @@ Al hacer clic en el botón de la pérdida, se muestra:
 ### ✅ Motivo:
 - Ahora es un desplegable con opciones predefinidas
 - Permite análisis acumulativo de problemas
+
+---
+
+## Nuevos Reportes Avanzados
+
+### 📊 Análisis por Producto
+
+Para cada modelo de producto, ahora puedes ver:
+
+**Métricas principales:**
+- Cantidad total de devoluciones
+- Pérdida total acumulada
+- Pérdida promedio por devolución
+- Cantidad de productos recuperables vs no recuperables
+- Tasa de no recuperables (%)
+
+**Análisis de problemas:**
+- Problema principal del producto
+- Top 3 motivos de devolución con cantidades
+- Permite identificar si un producto tiene un defecto recurrente
+
+**Ejemplo de uso:**
+Si ves que el "DT NO.1 V 2" tiene 5 devoluciones y 4 son por "Duración corta de batería", sabrás que:
+1. Hay un problema real con la batería de ese modelo
+2. Deberías considerar cambiar de proveedor o dejar de vender ese modelo
+3. Puedes calcular el impacto económico real de ese defecto
+
+### 💰 Resumen de Costos por Modelo
+
+**Ranking de productos por pérdida:**
+- Ordenados de mayor a menor pérdida total
+- Muestra el porcentaje que representa cada producto del total de pérdidas
+- Incluye cantidad de devoluciones por producto
+- Visualización con barras de progreso
+
+**Para qué sirve:**
+- Identificar qué productos están generando más pérdidas
+- Tomar decisiones de inventario basadas en datos
+- Negociar mejores condiciones con proveedores de productos problemáticos
+- Ajustar precios considerando el riesgo de devolución
+
+### 🔍 Insights que puedes obtener:
+
+1. **Calidad del producto**: Si un modelo tiene muchas devoluciones por defectos técnicos
+2. **Problemas del proveedor**: Si varios modelos del mismo proveedor tienen el mismo problema
+3. **Expectativas vs realidad**: Si hay muchos "No coincide con descripción", mejorar las fotos/descripciones
+4. **ROI por producto**: Considerar el costo de devoluciones al calcular la rentabilidad
 
 ---
 

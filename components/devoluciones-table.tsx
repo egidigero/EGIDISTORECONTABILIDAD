@@ -222,10 +222,12 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                                 <span>Envío devolución:</span>
                                 <span className="font-medium">${Number(getAlias(devolucion, ['costo_envio_devolucion', 'costoEnvioDevolucion'], 0)).toLocaleString()}</span>
                               </div>
-                              <div className="flex justify-between">
-                                <span>Comisión:</span>
-                                <span className="font-medium">${Number(getAlias(devolucion, ['comision_venta', 'comisionVenta', 'comision'], 0)).toLocaleString()}</span>
-                              </div>
+                              {Number(getAlias(devolucion, ['monto_reembolsado', 'montoReembolsado'], 0)) > 0 && (
+                                <div className="flex justify-between">
+                                  <span>Monto reembolsado:</span>
+                                  <span className="font-medium">${Number(getAlias(devolucion, ['monto_reembolsado', 'montoReembolsado'], 0)).toLocaleString()}</span>
+                                </div>
+                              )}
                               <div className="flex justify-between pt-2 border-t font-semibold text-foreground">
                                 <span>Total pérdida:</span>
                                 <span className="text-red-600">${Number(getAlias(devolucion, ['perdida_total', 'perdidaTotal'], 0)).toLocaleString()}</span>
