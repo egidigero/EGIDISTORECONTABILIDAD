@@ -79,9 +79,15 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
         try {
           const s = devolucion?.fecha_reclamo ?? devolucion?.fechaReclamo ?? null
           if (!s) return '-'
+          // Si la fecha es solo YYYY-MM-DD sin hora, parsearla directamente sin conversión de zona horaria
+          if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.trim())) {
+            const [year, month, day] = s.trim().split('-').map(Number)
+            return `${day}/${month}/${year}`
+          }
+          // Si tiene hora, usar toLocaleDateString con opciones UTC
           const d = new Date(s)
           if (isNaN(d.getTime())) return '-'
-          return d.toLocaleDateString()
+          return d.toLocaleDateString('es-AR', { timeZone: 'UTC' })
         } catch (e) {
           return '-'
         }
