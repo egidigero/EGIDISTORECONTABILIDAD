@@ -29,7 +29,7 @@ interface DevolucionesReporteProps {
 }
 
 const estadoColors: Record<string, string> = {
-  "Pendiente": "bg-yellow-500",
+  "En devolución": "bg-yellow-500",
   "Aceptada en camino": "bg-blue-500",
   "Entregada - Reembolso": "bg-red-500",
   "Entregada - Cambio mismo producto": "bg-green-500",
@@ -39,7 +39,7 @@ const estadoColors: Record<string, string> = {
 }
 
 const estadoLabels: Record<string, string> = {
-  "Pendiente": "Pendiente",
+  "En devolución": "En devolución",
   "Aceptada en camino": "En camino",
   "Entregada - Reembolso": "Reembolso",
   "Entregada - Cambio mismo producto": "Cambio",

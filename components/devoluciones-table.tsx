@@ -91,10 +91,14 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "venta",
       header: "Venta",
       render: (devolucion: any) => {
-  const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName', 'cliente', 'buyer'], 'Sin comprador')
+        const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName', 'cliente', 'buyer'], 'Sin comprador')
+        const telefono = getAlias(devolucion, ['telefono_contacto', 'telefonoContacto', 'phone', 'phone_number', 'buyer_phone'], null)
         return (
-          <div className="text-sm font-medium">
-            {comprador || 'Sin comprador'}
+          <div className="text-sm">
+            <div className="font-medium">{comprador || 'Sin comprador'}</div>
+            {telefono && telefono !== '0' ? (
+              <div className="text-xs text-muted-foreground">{telefono}</div>
+            ) : null}
           </div>
         )
       }
@@ -103,22 +107,12 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "producto",
       header: "Producto",
       render: (devolucion: any) => {
-  const modelo = getAlias(devolucion, ['producto_nombre', 'producto_title', 'title', 'name', 'producto_modelo', 'modelo', 'product_model', 'producto_model', 'producto'], null)
-  const sku = getAlias(devolucion, ['producto_sku', 'sku', 'product_sku', 'codigo_sku', 'product_sku'], null)
-        // Fallbacks: try nested venta/producto info if present
-        const ventaProd = getAlias(devolucion, ['producto', 'producto_obj', 'productos', 'producto_ref'], null)
-        let modeloFinal = modelo
-        if (!modeloFinal && ventaProd) {
-          if (typeof ventaProd === 'string') modeloFinal = ventaProd
-          else if (ventaProd?.modelo) modeloFinal = ventaProd.modelo
-          else if (Array.isArray(ventaProd) && ventaProd[0]?.modelo) modeloFinal = ventaProd[0].modelo
-        }
-        // If still missing, show venta id as hint
-        if (!modeloFinal) modeloFinal = getAlias(devolucion, ['venta_id', 'ventaId', 'sale_code', 'saleCode'], 'N/A')
+        const modelo = getAlias(devolucion, ['producto_modelo', 'productoModelo', 'modelo', 'producto_nombre', 'product_name'], 'N/A')
+        const sku = getAlias(devolucion, ['producto_sku', 'productoSku', 'sku'], 'N/A')
         return (
           <div>
-            <div className="font-medium text-sm">{modeloFinal || 'N/A'}</div>
-            <div className="text-xs text-muted-foreground">SKU: {sku || 'N/A'}</div>
+            <div className="font-medium text-sm">{modelo}</div>
+            <div className="text-xs text-muted-foreground">SKU: {sku}</div>
           </div>
         )
       }
@@ -140,22 +134,6 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
           {devolucion.estado}
         </Badge>
       ),
-    },
-    {
-      key: "contacto",
-      header: "Contacto",
-      render: (devolucion: any) => {
-        const nombre = getAlias(devolucion, ['nombre_contacto', 'nombreContacto', 'comprador', 'buyer_name', 'displayName'], 'N/A')
-        const telefono = getAlias(devolucion, ['telefono_contacto', 'telefonoContacto', 'phone', 'phone_number', 'buyer_phone'], null)
-        return (
-          <div className="text-sm">
-            <div className="font-medium">{nombre || 'N/A'}</div>
-            {telefono ? (
-              <div className="text-xs text-muted-foreground">{telefono}</div>
-            ) : null}
-          </div>
-        )
-      },
     },
     {
       key: "perdida_total",
@@ -234,7 +212,7 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                             <div className="space-y-1 text-muted-foreground">
                               <div className="flex justify-between">
                                 <span>Costo producto:</span>
-                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_producto', 'costoProducto', 'costo'], 0)).toLocaleString()}</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['total_costo_productos', 'totalCostoProductos', 'costo_producto_original', 'costoProductoOriginal'], 0)).toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Envío original:</span>
@@ -246,7 +224,7 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                               </div>
                               <div className="flex justify-between">
                                 <span>Comisión:</span>
-                                <span className="font-medium">${Number(getAlias(devolucion, ['comision', 'comisionPerdida'], 0)).toLocaleString()}</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['comision_venta', 'comisionVenta', 'comision'], 0)).toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between pt-2 border-t font-semibold text-foreground">
                                 <span>Total pérdida:</span>
