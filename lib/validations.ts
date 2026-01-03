@@ -79,7 +79,7 @@ export const devolucionSchemaBase = z.object({
   
   // Estado del reclamo
   estado: z.enum([
-    "Pendiente",
+    "En devolución",
     "Aceptada en camino",
     "Entregada - Reembolso",
     "Entregada - Cambio mismo producto",
@@ -88,7 +88,7 @@ export const devolucionSchemaBase = z.object({
     "Rechazada"
   ], {
     required_error: "Selecciona un estado",
-  }).default("Pendiente"),
+  }).default("En devolución"),
   
   // Detalles
   motivo: z.string().min(1, "El motivo es requerido"),
@@ -148,7 +148,7 @@ export type DevolucionFormData = z.infer<typeof devolucionSchemaBase>
 
 // Exportar opciones para uso en componentes cliente (evitar leer internals de Zod)
 export const DEVOLUCION_ESTADOS = [
-  "Pendiente",
+  "En devolución",
   "Aceptada en camino",
   "Entregada - Reembolso",
   "Entregada - Cambio mismo producto",

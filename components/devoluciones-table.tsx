@@ -3,7 +3,9 @@
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
 import { DevolucionActions } from "@/components/devolucion-actions"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
+import { ChevronDown, ChevronUp } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 const plataformaLabels = {
   TN: "Tienda Nube",
@@ -12,7 +14,7 @@ const plataformaLabels = {
 }
 
 const estadoColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  "Pendiente": "default",
+  "En devolución": "default",
   "Aceptada en camino": "secondary",
   "Entregada - Reembolso": "outline",
   "Entregada - Cambio mismo producto": "outline",
@@ -26,6 +28,8 @@ interface DevolucionesTableProps {
 }
 
 export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  
   // Helper to read several possible field aliases coming from different view shapes
   const getAlias = (row: any, keys: string[], fallback: any = null) => {
     for (const k of keys) {
@@ -35,6 +39,19 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
     }
     return fallback
   }
+  
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+  
   useEffect(() => {
     try {
       console.debug('[DevolucionesTable] props.devoluciones.length=', Array.isArray(devoluciones) ? devoluciones.length : 'no-array', devoluciones?.[0])
@@ -48,22 +65,16 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       header: "ID",
       render: (devolucion: any) => {
         const id = getAlias(devolucion, ['id_devolucion', 'numeroDevolucion', 'idDevolucion', 'id'])
-        const track = getAlias(devolucion, ['numero_seguimiento', 'numeroSeguimiento', 'numeroSeguimiento', 'tracking', 'tracking_number'], null)
         return (
-          <div>
-            <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
-              {id || 'Sin ID'}
-            </code>
-            <div className="text-xs text-muted-foreground mt-1">
-              {track ? `N°: ${track}` : 'Sin N°'}
-            </div>
-          </div>
+          <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
+            {id || 'Sin ID'}
+          </code>
         )
       }
     },
     {
       key: "fecha_reclamo",
-      header: "Reclamo",
+      header: "Día de reclamo",
       render: (devolucion: any) => {
         try {
           const s = devolucion?.fecha_reclamo ?? devolucion?.fechaReclamo ?? null
@@ -80,14 +91,10 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "venta",
       header: "Venta",
       render: (devolucion: any) => {
-  const ventaCode = getAlias(devolucion, ['venta_codigo', 'saleCode', 'sale_code', 'externalOrderId', 'ventaId', 'venta_id'], 'N/A')
   const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName', 'cliente', 'buyer'], 'Sin comprador')
         return (
-          <div>
-            <code className="text-xs bg-muted px-2 py-1 rounded">{ventaCode || 'N/A'}</code>
-            <div className="text-xs text-muted-foreground mt-1">
-              {comprador || 'Sin comprador'}
-            </div>
+          <div className="text-sm font-medium">
+            {comprador || 'Sin comprador'}
           </div>
         )
       }
@@ -156,10 +163,23 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       render: (devolucion: any) => {
         const perdidaVal = getAlias(devolucion, ['perdida_total', 'perdidaTotal', 'perdida', 'loss', 'total_perdida'], 0)
         const perdida = Number(perdidaVal || 0)
+        const id = getAlias(devolucion, ['id_devolucion', 'numeroDevolucion', 'idDevolucion', 'id'])
+        const isExpanded = expandedRows.has(id)
+        
         return (
-          <span className={perdida > 0 ? "text-red-600 font-semibold" : "text-green-600"}>
-            ${perdida.toLocaleString()}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={perdida > 0 ? "text-red-600 font-semibold" : "text-green-600"}>
+              ${perdida.toLocaleString()}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => toggleRow(id)}
+              className="h-6 w-6 p-0"
+            >
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </div>
         )
       },
     },
@@ -172,6 +192,100 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
     },
   ]
 
-  return <DataTable data={devoluciones} columns={columns} />
+  return (
+    <div className="rounded-md border">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b bg-muted/50">
+            {columns.map((col) => (
+              <th key={col.key} className="p-3 text-left text-sm font-medium">
+                {col.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {devoluciones.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} className="p-8 text-center text-muted-foreground">
+                No hay devoluciones registradas
+              </td>
+            </tr>
+          ) : (
+            devoluciones.map((devolucion) => {
+              const id = getAlias(devolucion, ['id_devolucion', 'numeroDevolucion', 'idDevolucion', 'id'])
+              const isExpanded = expandedRows.has(id)
+              
+              return (
+                <>
+                  <tr key={id} className="border-b hover:bg-muted/50">
+                    {columns.map((col) => (
+                      <td key={col.key} className="p-3 text-sm">
+                        {col.render(devolucion)}
+                      </td>
+                    ))}
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${id}-expanded`} className="border-b bg-muted/20">
+                      <td colSpan={columns.length} className="p-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <h4 className="font-semibold mb-2">Detalle de la pérdida</h4>
+                            <div className="space-y-1 text-muted-foreground">
+                              <div className="flex justify-between">
+                                <span>Costo producto:</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_producto', 'costoProducto', 'costo'], 0)).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Envío original:</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_envio_original', 'costoEnvioOriginal'], 0)).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Envío devolución:</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_envio_devolucion', 'costoEnvioDevolucion'], 0)).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Comisión:</span>
+                                <span className="font-medium">${Number(getAlias(devolucion, ['comision', 'comisionPerdida'], 0)).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between pt-2 border-t font-semibold text-foreground">
+                                <span>Total pérdida:</span>
+                                <span className="text-red-600">${Number(getAlias(devolucion, ['perdida_total', 'perdidaTotal'], 0)).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold mb-2">Detalle del problema</h4>
+                            <div className="space-y-2">
+                              <div>
+                                <span className="text-xs text-muted-foreground">Motivo:</span>
+                                <p className="text-sm">{getAlias(devolucion, ['motivo', 'razon', 'reason'], 'Sin especificar')}</p>
+                              </div>
+                              {getAlias(devolucion, ['observaciones', 'observacion', 'notes'], null) && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Observaciones:</span>
+                                  <p className="text-sm">{getAlias(devolucion, ['observaciones', 'observacion', 'notes'], '')}</p>
+                                </div>
+                              )}
+                              <div>
+                                <span className="text-xs text-muted-foreground">Producto recuperable:</span>
+                                <p className="text-sm font-medium">
+                                  {getAlias(devolucion, ['producto_recuperable', 'productoRecuperable', 'se_recupera_producto'], false) ? '✓ Sí' : '✗ No'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 

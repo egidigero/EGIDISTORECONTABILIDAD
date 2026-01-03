@@ -281,7 +281,7 @@ export async function createDevolucion(data: DevolucionFormData) {
     // don't persist product costs or monto_reembolsado yet. This avoids
     // que la columna generada `perdida_total` muestre la pérdida de producto
     // antes de que la devolución sea finalizada.
-    const isProvisional = (devolucionCompleta.estado === 'Pendiente' || !devolucionCompleta.tipoResolucion)
+    const isProvisional = (devolucionCompleta.estado === 'En devolución' || !devolucionCompleta.tipoResolucion)
 
     const dbRow: any = {
       venta_id: devolucionCompleta.ventaId,
@@ -298,7 +298,7 @@ export async function createDevolucion(data: DevolucionFormData) {
   // plataforma is NOT NULL in the DB; if we couldn't fetch it from the venta or the form,
   // default to 'TN' (Tienda Nube) to avoid DB constraint violation. Adjust as needed.
   plataforma: (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN',
-      estado: devolucionCompleta.estado ?? 'Pendiente',
+      estado: devolucionCompleta.estado ?? 'En devolución',
       tipo_resolucion: devolucionCompleta.tipoResolucion ?? null,
   // Persistir costo de producto ORIGINAL siempre (para trazabilidad),
   // pero no persistir como pérdida hasta la finalización.

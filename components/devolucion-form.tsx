@@ -95,7 +95,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
       })(),
     nombreContacto: (devolucion as any)?.nombreContacto ?? (devolucion as any)?.nombre_contacto ?? "",
     telefonoContacto: (devolucion as any)?.telefonoContacto ?? (devolucion as any)?.telefono_contacto ?? "",
-    estado: typeof ((devolucion as any)?.estado ?? (devolucion as any)?.estado) === "string" && ((devolucion as any)?.estado ?? (devolucion as any)?.estado) ? ((devolucion as any)?.estado ?? (devolucion as any)?.estado) : "Pendiente",
+    estado: typeof ((devolucion as any)?.estado ?? (devolucion as any)?.estado) === "string" && ((devolucion as any)?.estado ?? (devolucion as any)?.estado) ? ((devolucion as any)?.estado ?? (devolucion as any)?.estado) : "En devolución",
     motivo: (devolucion as any)?.motivo ?? (devolucion as any)?.motivo ?? "",
     observaciones: (devolucion as any)?.observaciones ?? (devolucion as any)?.observaciones ?? "",
   costoEnvioOriginal: Number((devolucion as any)?.costoEnvioOriginal ?? (devolucion as any)?.costo_envio_original ?? 0),
@@ -508,8 +508,22 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="motivo">Motivo</Label>
-                <Input id="motivo" {...register("motivo")} placeholder="Producto defectuoso, no conforme..." />
+                <Label htmlFor="motivo">Motivo del reclamo</Label>
+                <Select value={watch("motivo") || ""} onValueChange={(value) => setValue("motivo", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona el motivo del reclamo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Producto defectuoso">Producto defectuoso</SelectItem>
+                    <SelectItem value="Producto dañado en envío">Producto dañado en envío</SelectItem>
+                    <SelectItem value="Producto incorrecto enviado">Producto incorrecto enviado</SelectItem>
+                    <SelectItem value="No conforme con el producto">No conforme con el producto</SelectItem>
+                    <SelectItem value="Producto no coincide con descripción">Producto no coincide con descripción</SelectItem>
+                    <SelectItem value="Cambio de opinión del cliente">Cambio de opinión del cliente</SelectItem>
+                    <SelectItem value="Garantía">Garantía</SelectItem>
+                    <SelectItem value="Otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
                 {errors.motivo && <p className="text-sm text-destructive">{errors.motivo.message}</p>}
               </div>
 
