@@ -567,11 +567,9 @@ export function LiquidacionesTable() {
                                   <h4 className="font-medium text-sm">Devoluciones que impactaron esta liquidación:</h4>
                                   <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
                                     {(detalle as any).devoluciones.map((d: any) => {
-                                      const deltaMP = Number(d.delta_mp_a_liquidar || 0)
-                                      const deltaTN = Number(d.delta_tn_a_liquidar || 0)
-                                      const montoReembolsado = Number(d.monto_reembolsado || 0)
-                                      const costoProducto = Number(d.total_costo_productos || d.costo_producto_perdido || 0)
-                                      const costoEnvios = Number(d.total_costos_envio || 0)
+                                      const deltaMPDisponible = Number(d.delta_mp_disponible || 0)
+                                      const deltaMPLiquidar = Number(d.delta_mp_a_liquidar || 0)
+                                      const deltaTNLiquidar = Number(d.delta_tn_a_liquidar || 0)
                                       const perdidaTotal = Number(d.perdida_total || 0)
                                       
                                       return (
@@ -589,73 +587,36 @@ export function LiquidacionesTable() {
                                             </div>
                                           </div>
                                           
-                                          {/* QUÉ BAJÓ - QUÉ SUBIÓ */}
-                                          <div className="grid grid-cols-2 gap-3 mb-2">
-                                            {/* LO QUE BAJÓ */}
-                                            <div className="bg-red-50 p-2 rounded border border-red-200">
-                                              <div className="font-semibold text-red-900 text-xs mb-2 flex items-center gap-1">
-                                                <span>↓</span> QUÉ BAJÓ
+                                          {/* Impacto en liquidación */}
+                                          <div className="space-y-1 text-sm">
+                                            <div className="font-medium text-xs text-muted-foreground mb-1">Impacto en liquidación:</div>
+                                            {deltaMPDisponible !== 0 && (
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-muted-foreground text-xs">MP disponible:</span>
+                                                <span className={`font-semibold ${deltaMPDisponible < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                                  {deltaMPDisponible > 0 ? '+' : ''}{formatCurrency(deltaMPDisponible)}
+                                                </span>
                                               </div>
-                                              <div className="space-y-1 text-xs">
-                                                {deltaMP < 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">MP a liquidar:</span>
-                                                    <span className="font-semibold text-red-700">{formatCurrency(deltaMP)}</span>
-                                                  </div>
-                                                )}
-                                                {deltaTN < 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">TN a liquidar:</span>
-                                                    <span className="font-semibold text-red-700">{formatCurrency(deltaTN)}</span>
-                                                  </div>
-                                                )}
-                                                {montoReembolsado > 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">Reembolsado:</span>
-                                                    <span className="font-semibold text-red-700">-{formatCurrency(montoReembolsado)}</span>
-                                                  </div>
-                                                )}
-                                                {costoProducto > 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">Producto perdido:</span>
-                                                    <span className="font-semibold text-red-700">-{formatCurrency(costoProducto)}</span>
-                                                  </div>
-                                                )}
-                                                {costoEnvios > 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">Envíos:</span>
-                                                    <span className="font-semibold text-red-700">-{formatCurrency(costoEnvios)}</span>
-                                                  </div>
-                                                )}
-                                                {deltaMP >= 0 && deltaTN >= 0 && montoReembolsado === 0 && costoProducto === 0 && costoEnvios === 0 && (
-                                                  <div className="text-muted-foreground italic">Sin reducciones</div>
-                                                )}
+                                            )}
+                                            {deltaMPLiquidar !== 0 && (
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-muted-foreground text-xs">MP a liquidar:</span>
+                                                <span className={`font-semibold ${deltaMPLiquidar < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                                  {deltaMPLiquidar > 0 ? '+' : ''}{formatCurrency(deltaMPLiquidar)}
+                                                </span>
                                               </div>
-                                            </div>
-
-                                            {/* LO QUE SUBIÓ */}
-                                            <div className="bg-green-50 p-2 rounded border border-green-200">
-                                              <div className="font-semibold text-green-900 text-xs mb-2 flex items-center gap-1">
-                                                <span>↑</span> QUÉ SUBIÓ
+                                            )}
+                                            {deltaTNLiquidar !== 0 && (
+                                              <div className="flex justify-between items-center">
+                                                <span className="text-muted-foreground text-xs">TN a liquidar:</span>
+                                                <span className={`font-semibold ${deltaTNLiquidar < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                                  {deltaTNLiquidar > 0 ? '+' : ''}{formatCurrency(deltaTNLiquidar)}
+                                                </span>
                                               </div>
-                                              <div className="space-y-1 text-xs">
-                                                {deltaMP > 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">MP a liquidar:</span>
-                                                    <span className="font-semibold text-green-700">+{formatCurrency(deltaMP)}</span>
-                                                  </div>
-                                                )}
-                                                {deltaTN > 0 && (
-                                                  <div className="flex justify-between">
-                                                    <span className="text-muted-foreground">TN a liquidar:</span>
-                                                    <span className="font-semibold text-green-700">+{formatCurrency(deltaTN)}</span>
-                                                  </div>
-                                                )}
-                                                {deltaMP <= 0 && deltaTN <= 0 && (
-                                                  <div className="text-muted-foreground italic">Sin aumentos</div>
-                                                )}
-                                              </div>
-                                            </div>
+                                            )}
+                                            {deltaMPDisponible === 0 && deltaMPLiquidar === 0 && deltaTNLiquidar === 0 && (
+                                              <div className="text-xs text-muted-foreground italic">Sin impacto en liquidación</div>
+                                            )}
                                           </div>
                                         </div>
                                       )
