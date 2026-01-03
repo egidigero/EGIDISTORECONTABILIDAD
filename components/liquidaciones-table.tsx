@@ -566,19 +566,100 @@ export function LiquidacionesTable() {
                                 <div className="space-y-2">
                                   <h4 className="font-medium text-sm">Devoluciones que impactaron esta liquidación:</h4>
                                   <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                                    {(detalle as any).devoluciones.map((d: any) => (
-                                      <div key={d.id} className="p-2 rounded bg-white border border-yellow-100 text-xs mb-2">
-                                        <div className="font-medium">#{d.id_devolucion ?? d.numero_devolucion ?? d.id} • {d.tipo_resolucion ?? d.estado}</div>
-                                        <div className="text-xs text-muted-foreground">Reclamo: {d.fecha_reclamo ? new Date(d.fecha_reclamo).toLocaleDateString() : '-'} • Completada: {d.fecha_completada ? new Date(d.fecha_completada).toLocaleDateString() : '-'}</div>
-                                        <div className="text-xs mt-1">
-                                          {d.monto_reembolsado ? <div>Reembolso: {formatCurrency(d.monto_reembolsado)}</div> : null}
-                                          {d.monto_reembolsado ? (
-                                            <div>Reembolso: {formatCurrency(Number(d.monto_reembolsado || 0))}</div>
-                                          ) : null}
-                                          {d.costo_producto_perdido ? <div className="text-red-600">Producto perdido: {formatCurrency(d.costo_producto_perdido)}</div> : null}
+                                    {(detalle as any).devoluciones.map((d: any) => {
+                                      const deltaMP = Number(d.delta_mp_a_liquidar || 0)
+                                      const deltaTN = Number(d.delta_tn_a_liquidar || 0)
+                                      const montoReembolsado = Number(d.monto_reembolsado || 0)
+                                      const costoProducto = Number(d.total_costo_productos || d.costo_producto_perdido || 0)
+                                      const costoEnvios = Number(d.total_costos_envio || 0)
+                                      const perdidaTotal = Number(d.perdida_total || 0)
+                                      
+                                      return (
+                                        <div key={d.id} className="p-3 rounded bg-white border border-yellow-100 mb-2">
+                                          <div className="flex items-start justify-between mb-3">
+                                            <div>
+                                              <div className="font-medium text-sm">#{d.id_devolucion ?? d.numero_devolucion ?? d.id}</div>
+                                              <div className="text-xs text-muted-foreground">
+                                                {d.tipo_resolucion ?? d.estado} • {d.plataforma}
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="text-xs text-muted-foreground">Pérdida total</div>
+                                              <div className="font-semibold text-red-600">{formatCurrency(perdidaTotal)}</div>
+                                            </div>
+                                          </div>
+                                          
+                                          {/* QUÉ BAJÓ - QUÉ SUBIÓ */}
+                                          <div className="grid grid-cols-2 gap-3 mb-2">
+                                            {/* LO QUE BAJÓ */}
+                                            <div className="bg-red-50 p-2 rounded border border-red-200">
+                                              <div className="font-semibold text-red-900 text-xs mb-2 flex items-center gap-1">
+                                                <span>↓</span> QUÉ BAJÓ
+                                              </div>
+                                              <div className="space-y-1 text-xs">
+                                                {deltaMP < 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">MP a liquidar:</span>
+                                                    <span className="font-semibold text-red-700">{formatCurrency(deltaMP)}</span>
+                                                  </div>
+                                                )}
+                                                {deltaTN < 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">TN a liquidar:</span>
+                                                    <span className="font-semibold text-red-700">{formatCurrency(deltaTN)}</span>
+                                                  </div>
+                                                )}
+                                                {montoReembolsado > 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">Reembolsado:</span>
+                                                    <span className="font-semibold text-red-700">-{formatCurrency(montoReembolsado)}</span>
+                                                  </div>
+                                                )}
+                                                {costoProducto > 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">Producto perdido:</span>
+                                                    <span className="font-semibold text-red-700">-{formatCurrency(costoProducto)}</span>
+                                                  </div>
+                                                )}
+                                                {costoEnvios > 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">Envíos:</span>
+                                                    <span className="font-semibold text-red-700">-{formatCurrency(costoEnvios)}</span>
+                                                  </div>
+                                                )}
+                                                {deltaMP >= 0 && deltaTN >= 0 && montoReembolsado === 0 && costoProducto === 0 && costoEnvios === 0 && (
+                                                  <div className="text-muted-foreground italic">Sin reducciones</div>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* LO QUE SUBIÓ */}
+                                            <div className="bg-green-50 p-2 rounded border border-green-200">
+                                              <div className="font-semibold text-green-900 text-xs mb-2 flex items-center gap-1">
+                                                <span>↑</span> QUÉ SUBIÓ
+                                              </div>
+                                              <div className="space-y-1 text-xs">
+                                                {deltaMP > 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">MP a liquidar:</span>
+                                                    <span className="font-semibold text-green-700">+{formatCurrency(deltaMP)}</span>
+                                                  </div>
+                                                )}
+                                                {deltaTN > 0 && (
+                                                  <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">TN a liquidar:</span>
+                                                    <span className="font-semibold text-green-700">+{formatCurrency(deltaTN)}</span>
+                                                  </div>
+                                                )}
+                                                {deltaMP <= 0 && deltaTN <= 0 && (
+                                                  <div className="text-muted-foreground italic">Sin aumentos</div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      )
+                                    })}
                                   </div>
                                 </div>
                               )}
