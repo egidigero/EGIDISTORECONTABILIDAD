@@ -315,10 +315,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Columna 2: Costos y Resultado Final */}
-              <div className="space-y-4">
                 <div>
                   <h3 className="font-semibold text-lg mb-3 text-orange-700">🏪 COSTOS DE PLATAFORMA</h3>
                   <div className="space-y-2 bg-orange-50 p-3 rounded">
@@ -405,6 +402,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                             return acc + Number((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0))
                           }, 0)
                         : (eerrData.devolucionesEnviosTotal || 0);
+                      const cantidadDevoluciones = devols.length;
                       const totalPerdida = Math.round((totalCostoProducto + totalCostosEnvio) * 100) / 100;
                       return (
                         <>
@@ -417,7 +415,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                             <span>{formatCurrency(totalCostoProducto)}</span>
                           </div>
                           <div className="flex justify-between text-sm text-gray-700">
-                            <span>• Costo de envíos:</span>
+                            <span>• Envíos devoluciones ({cantidadDevoluciones}):</span>
                             <span>{formatCurrency(totalCostosEnvio)}</span>
                           </div>
                         </>
@@ -477,7 +475,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                     </div>
                   </div>
                 </div>
+              </div>
 
+              {/* Columna 2: Otros Gastos e Ingresos */}
+              <div className="space-y-4">
                 {/* Otros Gastos del Negocio (desglosado, solo negocio) */}
                 <div className="mb-6">
                   <h3 className="font-semibold text-lg mb-3 text-gray-700">💸 Otros Gastos del Negocio</h3>
@@ -530,28 +531,48 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   </div>
                 </div>
 
-                {/* Otros Ingresos del Negocio (desglosado) */}
+                {/* Otros Ingresos del Negocio (agrupados) */}
                 <div className="mb-6">
                   <h3 className="font-semibold text-lg mb-3 text-green-700">💵 Otros Ingresos del Negocio</h3>
                   <div className="space-y-2 bg-green-50 p-3 rounded">
-                    <div className="flex justify-between text-green-700 font-semibold">
-                      <span>+ Total Otros Ingresos:</span>
-                      <span>{formatCurrency(eerrData.otrosIngresos)}</span>
-                    </div>
-                    {Array.isArray(eerrData.detalleOtrosIngresos) && eerrData.detalleOtrosIngresos.length > 0 ? (
-                      <div className="mt-2">
-                        <ul className="text-xs text-gray-700 space-y-1">
-                          {eerrData.detalleOtrosIngresos.map((ingreso: any) => (
-                            <li key={ingreso.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
-                              <span>{ingreso.fecha?.slice(0,10) || ''} - {ingreso.categoria}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
-                              <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-400 mt-2">Sin otros ingresos en el período</div>
-                    )}
+                    {(() => {
+                      const ingresos = Array.isArray(eerrData.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : [];
+                      const interesesMP = ingresos.filter((i: any) => i.categoria === 'Ingresos del negocio - Intereses de MP');
+                      const otrosIngresos = ingresos.filter((i: any) => i.categoria !== 'Ingresos del negocio - Intereses de MP');
+                      const totalInteresesMP = interesesMP.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      const totalOtros = otrosIngresos.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      const totalGeneral = totalInteresesMP + totalOtros;
+                      
+                      return (
+                        <>
+                          <div className="flex justify-between text-green-700 font-semibold">
+                            <span>+ Total Otros Ingresos:</span>
+                            <span>{formatCurrency(totalGeneral)}</span>
+                          </div>
+                          {totalInteresesMP > 0 && (
+                            <div className="flex justify-between text-sm text-gray-700">
+                              <span>• Intereses de MP:</span>
+                              <span>{formatCurrency(totalInteresesMP)}</span>
+                            </div>
+                          )}
+                          {otrosIngresos.length > 0 && (
+                            <div className="mt-2">
+                              <ul className="text-xs text-gray-700 space-y-1">
+                                {otrosIngresos.map((ingreso: any) => (
+                                  <li key={ingreso.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
+                                    <span>{ingreso.fecha?.slice(0,10) || ''} - {ingreso.categoria}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
+                                    <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {ingresos.length === 0 && (
+                            <div className="text-xs text-gray-400 mt-2">Sin otros ingresos en el período</div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
