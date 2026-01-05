@@ -64,16 +64,18 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
         'Cambio': 'Entregada - Cambio'
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
-      // Use user-provided fechaCompletada when available (required for Reembolso), else default to now
+      // Use user-provided fechaCompletada when available (required for both), else default to now
       if (fechaCompletadaLocal) {
         payload.fechaCompletada = new Date(fechaCompletadaLocal)
+        payload.fechaAccion = fechaCompletadaLocal // Enviar también como fechaAccion para creación de gastos
       } else {
         payload.fechaCompletada = new Date()
+        payload.fechaAccion = new Date().toISOString().split('T')[0]
       }
   // Incluir indicador de recuperabilidad si el usuario lo indicó
   if (productoRecuperable !== null) payload.productoRecuperable = productoRecuperable
   // Incluir desglose de envíos y costo de producto si los tenemos localmente
-  if (typeof costoEnvioNuevoLocal === 'number') payload.costoEnvioNuevo = Number(costoEnvioNuevoLocal)
+  if (typeof costoEnvioNuevoLocal === 'number' && costoEnvioNuevoLocal > 0) payload.costoEnvioNuevo = Number(costoEnvioNuevoLocal)
   if (typeof costoEnvioDevolucionLocal === 'number') payload.costoEnvioDevolucion = Number(costoEnvioDevolucionLocal)
   if (typeof costoProductoOriginalLocal === 'number') payload.costoProductoOriginal = Number(costoProductoOriginalLocal)
   // Ensure we persist costoEnvioOriginal: take from fetchedDevolucion or leave absent
@@ -90,6 +92,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       if (result.success) {
         toast({ title: 'Devolución actualizada', description: 'Se registró la resolución.' })
         setShowAdvance(false)
+        router.refresh()
       } else {
         toast({ title: 'Error', description: result.error || 'No se pudo aplicar la resolución.', variant: 'destructive' })
       }
