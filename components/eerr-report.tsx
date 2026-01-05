@@ -513,6 +513,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       
                       const categorias = Object.keys(gastosPorCategoria).sort();
                       
+                      // Categorías que solo muestran total
+                      const categoriasResumidas = ['Gastos del negocio - Envios devoluciones'];
+                      
                       return <>
                         <div className="flex justify-between text-red-600 font-semibold">
                           <span>(-) Total Otros Gastos:</span>
@@ -530,6 +533,17 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                             {categorias.map((categoria) => {
                               const gastosDeCategoria = gastosPorCategoria[categoria];
                               const subtotal = gastosDeCategoria.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                              const esResumida = categoriasResumidas.includes(categoria);
+                              
+                              if (esResumida) {
+                                // Solo mostrar total con cantidad
+                                return (
+                                  <div key={categoria} className="flex justify-between text-sm text-gray-700">
+                                    <span>• {categoria} ({gastosDeCategoria.length}):</span>
+                                    <span className="text-red-600">-{formatCurrency(subtotal)}</span>
+                                  </div>
+                                );
+                              }
                               
                               return (
                                 <div key={categoria} className="border-l-2 border-gray-300 pl-2">
@@ -580,6 +594,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       
                       const categorias = Object.keys(ingresosPorCategoria).sort();
                       
+                      // Categorías que solo muestran total
+                      const categoriasResumidas = ['Ingresos del negocio - Intereses de MP', 'Ingresos por intereses de MP'];
+                      
                       return (
                         <>
                           <div className="flex justify-between text-green-700 font-semibold">
@@ -591,6 +608,17 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                               {categorias.map((categoria) => {
                                 const ingresosDeCategoria = ingresosPorCategoria[categoria];
                                 const subtotal = ingresosDeCategoria.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                                const esResumida = categoriasResumidas.includes(categoria);
+                                
+                                if (esResumida) {
+                                  // Solo mostrar total
+                                  return (
+                                    <div key={categoria} className="flex justify-between text-sm text-gray-700">
+                                      <span>• {categoria}:</span>
+                                      <span className="text-green-700">{formatCurrency(subtotal)}</span>
+                                    </div>
+                                  );
+                                }
                                 
                                 return (
                                   <div key={categoria} className="border-l-2 border-green-300 pl-2">
