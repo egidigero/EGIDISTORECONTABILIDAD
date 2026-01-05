@@ -479,7 +479,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
               {/* Columna 2: Otros Gastos e Ingresos */}
               <div className="space-y-4">
-                {/* Otros Gastos del Negocio (desglosado, solo negocio) */}
+                {/* Otros Gastos del Negocio (agrupados por categoría) */}
                 <div className="mb-6">
                   <h3 className="font-semibold text-lg mb-3 text-gray-700">💸 Otros Gastos del Negocio</h3>
                   <div className="space-y-2 bg-gray-50 p-3 rounded">
@@ -500,6 +500,19 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
                       // Total final de otros gastos del negocio incluye la diferencia de envíos
                       const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
+                      
+                      // Agrupar por categoría
+                      const gastosPorCategoria = otrosGastosNegocio.reduce((acc: any, gasto: any) => {
+                        const cat = gasto.categoria || 'Sin categoría';
+                        if (!acc[cat]) {
+                          acc[cat] = [];
+                        }
+                        acc[cat].push(gasto);
+                        return acc;
+                      }, {});
+                      
+                      const categorias = Object.keys(gastosPorCategoria).sort();
+                      
                       return <>
                         <div className="flex justify-between text-red-600 font-semibold">
                           <span>(-) Total Otros Gastos:</span>
@@ -507,21 +520,37 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                         </div>
                         {/* Mostrar diferencia de envíos si existe */}
                         {diferenciaEnvios !== 0 && (
-                          <div className="flex justify-between text-red-600 text-xs">
+                          <div className="flex justify-between text-red-600 text-xs mt-1">
                             <span>Diferencia Envíos TN (pagados - en plataforma):</span>
                             <span>-{formatCurrency(diferenciaEnvios)}</span>
                           </div>
                         )}
                         {otrosGastosNegocio.length > 0 ? (
-                          <div className="mt-2">
-                            <ul className="text-xs text-gray-700 space-y-1">
-                              {otrosGastosNegocio.map((gasto: any) => (
-                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
-                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
-                                  <span className="text-red-600">-{formatCurrency(gasto.montoARS)}</span>
-                                </li>
-                              ))}
-                            </ul>
+                          <div className="mt-3 space-y-3">
+                            {categorias.map((categoria) => {
+                              const gastosDeCategoria = gastosPorCategoria[categoria];
+                              const subtotal = gastosDeCategoria.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                              
+                              return (
+                                <div key={categoria} className="border-l-2 border-gray-300 pl-2">
+                                  <div className="font-medium text-sm text-gray-800 mb-1">
+                                    {categoria}
+                                  </div>
+                                  <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                    {gastosDeCategoria.map((gasto: any) => (
+                                      <li key={gasto.id} className="flex justify-between pb-1">
+                                        <span>{gasto.fecha?.slice(0,10) || ''}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                        <span className="text-red-600">-{formatCurrency(gasto.montoARS)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                  <div className="flex justify-between text-sm font-semibold text-red-600 border-t border-gray-200 pt-1">
+                                    <span>Subtotal {categoria}:</span>
+                                    <span>-{formatCurrency(subtotal)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-xs text-gray-400 mt-2">Sin otros gastos en el período</div>
@@ -531,17 +560,25 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   </div>
                 </div>
 
-                {/* Otros Ingresos del Negocio (agrupados) */}
+                {/* Otros Ingresos del Negocio (agrupados por categoría) */}
                 <div className="mb-6">
                   <h3 className="font-semibold text-lg mb-3 text-green-700">💵 Otros Ingresos del Negocio</h3>
                   <div className="space-y-2 bg-green-50 p-3 rounded">
                     {(() => {
                       const ingresos = Array.isArray(eerrData.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : [];
-                      const interesesMP = ingresos.filter((i: any) => i.categoria === 'Ingresos del negocio - Intereses de MP');
-                      const otrosIngresos = ingresos.filter((i: any) => i.categoria !== 'Ingresos del negocio - Intereses de MP');
-                      const totalInteresesMP = interesesMP.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
-                      const totalOtros = otrosIngresos.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
-                      const totalGeneral = totalInteresesMP + totalOtros;
+                      const totalGeneral = ingresos.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      
+                      // Agrupar por categoría
+                      const ingresosPorCategoria = ingresos.reduce((acc: any, ingreso: any) => {
+                        const cat = ingreso.categoria || 'Sin categoría';
+                        if (!acc[cat]) {
+                          acc[cat] = [];
+                        }
+                        acc[cat].push(ingreso);
+                        return acc;
+                      }, {});
+                      
+                      const categorias = Object.keys(ingresosPorCategoria).sort();
                       
                       return (
                         <>
@@ -549,25 +586,34 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                             <span>+ Total Otros Ingresos:</span>
                             <span>{formatCurrency(totalGeneral)}</span>
                           </div>
-                          {totalInteresesMP > 0 && (
-                            <div className="flex justify-between text-sm text-gray-700">
-                              <span>• Intereses de MP:</span>
-                              <span>{formatCurrency(totalInteresesMP)}</span>
+                          {ingresos.length > 0 ? (
+                            <div className="mt-3 space-y-3">
+                              {categorias.map((categoria) => {
+                                const ingresosDeCategoria = ingresosPorCategoria[categoria];
+                                const subtotal = ingresosDeCategoria.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                                
+                                return (
+                                  <div key={categoria} className="border-l-2 border-green-300 pl-2">
+                                    <div className="font-medium text-sm text-green-800 mb-1">
+                                      {categoria}
+                                    </div>
+                                    <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                      {ingresosDeCategoria.map((ingreso: any) => (
+                                        <li key={ingreso.id} className="flex justify-between pb-1">
+                                          <span>{ingreso.fecha?.slice(0,10) || ''}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
+                                          <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    <div className="flex justify-between text-sm font-semibold text-green-700 border-t border-green-200 pt-1">
+                                      <span>Subtotal {categoria}:</span>
+                                      <span>{formatCurrency(subtotal)}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          )}
-                          {otrosIngresos.length > 0 && (
-                            <div className="mt-2">
-                              <ul className="text-xs text-gray-700 space-y-1">
-                                {otrosIngresos.map((ingreso: any) => (
-                                  <li key={ingreso.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
-                                    <span>{ingreso.fecha?.slice(0,10) || ''} - {ingreso.categoria}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
-                                    <span className="text-green-700">{formatCurrency(ingreso.montoARS)}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {ingresos.length === 0 && (
+                          ) : (
                             <div className="text-xs text-gray-400 mt-2">Sin otros ingresos en el período</div>
                           )}
                         </>
@@ -616,21 +662,50 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                         ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
                         : [];
                       const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      
+                      // Agrupar por categoría
+                      const gastosPorCategoria = gastosPersonales.reduce((acc: any, gasto: any) => {
+                        const cat = gasto.categoria || 'Sin categoría';
+                        if (!acc[cat]) {
+                          acc[cat] = [];
+                        }
+                        acc[cat].push(gasto);
+                        return acc;
+                      }, {});
+                      
+                      const categorias = Object.keys(gastosPorCategoria).sort();
+                      
                       return <>
                         <div className="flex justify-between text-pink-700 font-semibold">
                           <span>(-) Total Gastos Personales:</span>
                           <span>-{formatCurrency(totalPersonales)}</span>
                         </div>
                         {gastosPersonales.length > 0 ? (
-                          <div className="mt-2">
-                            <ul className="text-xs text-gray-700 space-y-1">
-                              {gastosPersonales.map((gasto: any) => (
-                                <li key={gasto.id} className="flex justify-between border-b border-gray-100 pb-1 last:border-b-0">
-                                  <span>{gasto.fecha?.slice(0,10) || ''} - {gasto.categoria}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
-                                  <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
-                                </li>
-                              ))}
-                            </ul>
+                          <div className="mt-3 space-y-3">
+                            {categorias.map((categoria) => {
+                              const gastosDeCategoria = gastosPorCategoria[categoria];
+                              const subtotal = gastosDeCategoria.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                              
+                              return (
+                                <div key={categoria} className="border-l-2 border-pink-300 pl-2">
+                                  <div className="font-medium text-sm text-pink-800 mb-1">
+                                    {categoria}
+                                  </div>
+                                  <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                    {gastosDeCategoria.map((gasto: any) => (
+                                      <li key={gasto.id} className="flex justify-between pb-1">
+                                        <span>{gasto.fecha?.slice(0,10) || ''}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                        <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                  <div className="flex justify-between text-sm font-semibold text-pink-700 border-t border-pink-200 pt-1">
+                                    <span>Subtotal {categoria}:</span>
+                                    <span>-{formatCurrency(subtotal)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-xs text-gray-400 mt-2">Sin gastos personales en el período</div>
