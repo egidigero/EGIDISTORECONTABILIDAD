@@ -674,10 +674,28 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       // Use the adjusted margen operativo (already subtracts devoluciones) so the detailed
                       // Margen Neto matches the cards and reflects the devoluciones deduction.
                       const margenNeto = margenOperativoAjustadoCalc - totalNegocio + eerrData.otrosIngresos;
-                      return <div className="flex justify-between text-black font-bold text-lg">
-                        <span>Margen Neto:</span>
-                        <span className={margenNeto >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenNeto)}</span>
-                      </div>;
+                      
+                      // Calcular intereses de MP para el margen sin intereses
+                      const ingresos = Array.isArray(eerrData.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : [];
+                      const interesesMP = ingresos.filter((i: any) => 
+                        i.categoria === 'Ingresos del negocio - Intereses de MP' || 
+                        i.categoria === 'Ingresos por intereses de MP'
+                      );
+                      const totalInteresesMP = interesesMP.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      const margenNetoSinIntereses = margenNeto - totalInteresesMP;
+                      
+                      return <>
+                        <div className="flex justify-between text-black font-bold text-lg">
+                          <span>Margen Neto:</span>
+                          <span className={margenNeto >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenNeto)}</span>
+                        </div>
+                        {totalInteresesMP > 0 && (
+                          <div className="flex justify-between text-gray-600 text-sm mt-2 pt-2 border-t border-yellow-200">
+                            <span>Margen Neto sin Intereses MP:</span>
+                            <span className={margenNetoSinIntereses >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenNetoSinIntereses)}</span>
+                          </div>
+                        )}
+                      </>;
                     })()}
                   </div>
                 </div>
