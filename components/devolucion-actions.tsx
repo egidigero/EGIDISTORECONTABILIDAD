@@ -271,11 +271,11 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
                   type="number" 
                   step="0.01"
                   className="w-full border rounded p-2" 
-                  value={costoEnvioOriginalLocal ?? 0} 
-                  onChange={(e) => setCostoEnvioOriginalLocal(Number(e.target.value))} 
+                  value={costoEnvioNuevoLocal ?? 0} 
+                  onChange={(e) => setCostoEnvioNuevoLocal(Number(e.target.value))} 
                   placeholder="0.00"
                 />
-                <p className="text-xs text-muted-foreground mt-1">Costo del envío del producto nuevo/cambio.</p>
+                <p className="text-xs text-muted-foreground mt-1">Costo del envío del producto nuevo/cambio (envío de ida).</p>
               </div>
             )}
             

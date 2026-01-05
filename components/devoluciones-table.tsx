@@ -99,12 +99,27 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       render: (devolucion: any) => {
         const comprador = getAlias(devolucion, ['comprador', 'buyer_name', 'nombre_contacto', 'nombreContacto', 'displayName', 'cliente', 'buyer'], 'Sin comprador')
         const telefono = getAlias(devolucion, ['telefono_contacto', 'telefonoContacto', 'phone', 'phone_number', 'buyer_phone'], null)
+        const fechaCompra = getAlias(devolucion, ['fecha_compra', 'fechaCompra'], null)
         return (
           <div className="text-sm">
             <div className="font-medium">{comprador || 'Sin comprador'}</div>
             {telefono && telefono !== '0' ? (
               <div className="text-xs text-muted-foreground">{telefono}</div>
             ) : null}
+            {fechaCompra && (() => {
+              try {
+                const s = fechaCompra
+                if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.trim())) {
+                  const [year, month, day] = s.trim().split('-').map(Number)
+                  return <div className="text-xs text-muted-foreground">Compra: {day}/{month}/{year}</div>
+                }
+                const d = new Date(s)
+                if (isNaN(d.getTime())) return null
+                return <div className="text-xs text-muted-foreground">Compra: {d.toLocaleDateString('es-AR', { timeZone: 'UTC' })}</div>
+              } catch (e) {
+                return null
+              }
+            })()}
           </div>
         )
       }

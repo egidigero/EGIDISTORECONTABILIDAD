@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge"
 export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) => void }) {
   const [fechaInicio, setFechaInicio] = useState<string>('')
   const [fechaFin, setFechaFin] = useState<string>('')
+  const [fechaCompraInicio, setFechaCompraInicio] = useState<string>('')
+  const [fechaCompraFin, setFechaCompraFin] = useState<string>('')
   const [plataforma, setPlataforma] = useState<string>('todas')
   const [estado, setEstado] = useState<string>('todos')
   const [loading, setLoading] = useState(false)
@@ -23,6 +25,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
       const params = new URLSearchParams()
       if (fechaInicio) params.set('fechaInicio', fechaInicio)
       if (fechaFin) params.set('fechaFin', fechaFin)
+      if (fechaCompraInicio) params.set('fechaCompraInicio', fechaCompraInicio)
+      if (fechaCompraFin) params.set('fechaCompraFin', fechaCompraFin)
       if (plataforma && plataforma !== 'todas') params.set('plataforma', plataforma)
       if (estado && estado !== 'todos') params.set('estado', estado)
       
@@ -34,6 +38,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
       let activos = 0
       if (fechaInicio) activos++
       if (fechaFin) activos++
+      if (fechaCompraInicio) activos++
+      if (fechaCompraFin) activos++
       if (plataforma !== 'todas') activos++
       if (estado !== 'todos') activos++
       setFiltrosActivos(activos)
@@ -47,6 +53,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
   function limpiarFiltros() {
     setFechaInicio('')
     setFechaFin('')
+    setFechaCompraInicio('')
+    setFechaCompraFin('')
     setPlataforma('todas')
     setEstado('todos')
     setFiltrosActivos(0)
@@ -111,7 +119,7 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
             <div className="space-y-2">
               <Label htmlFor="fechaInicio" className="flex items-center gap-1">
                 <Calendar className="h-3 w-3" />
-                Fecha desde
+                Reclamo desde
               </Label>
               <Input 
                 id="fechaInicio"
@@ -124,7 +132,7 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
             <div className="space-y-2">
               <Label htmlFor="fechaFin" className="flex items-center gap-1">
                 <Calendar className="h-3 w-3" />
-                Fecha hasta
+                Reclamo hasta
               </Label>
               <Input 
                 id="fechaFin"
@@ -134,6 +142,34 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="fechaCompraInicio" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                Compra desde
+              </Label>
+              <Input 
+                id="fechaCompraInicio"
+                type="date" 
+                value={fechaCompraInicio} 
+                onChange={e => setFechaCompraInicio(e.target.value)} 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="fechaCompraFin" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                Compra hasta
+              </Label>
+              <Input 
+                id="fechaCompraFin"
+                type="date" 
+                value={fechaCompraFin} 
+                onChange={e => setFechaCompraFin(e.target.value)} 
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="plataforma">Plataforma</Label>
               <Select value={plataforma} onValueChange={setPlataforma}>

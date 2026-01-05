@@ -1850,17 +1850,43 @@ export async function buscarVentas(query: string) {
 }
 
 // Obtener estadísticas para reportes
-export async function getEstadisticasDevoluciones(fechaInicio?: string, fechaFin?: string) {
+export async function getEstadisticasDevoluciones(
+  fechaInicio?: string, 
+  fechaFin?: string,
+  fechaCompraInicio?: string,
+  fechaCompraFin?: string,
+  plataforma?: string,
+  estado?: string
+) {
   try {
     let query = supabase
       .from('devoluciones_resumen')
       .select('*')
 
+    // Filtrar por fecha de reclamo
     if (fechaInicio) {
       query = query.gte('fecha_reclamo', fechaInicio)
     }
     if (fechaFin) {
       query = query.lte('fecha_reclamo', fechaFin)
+    }
+
+    // Filtrar por fecha de compra
+    if (fechaCompraInicio) {
+      query = query.gte('fecha_compra', fechaCompraInicio)
+    }
+    if (fechaCompraFin) {
+      query = query.lte('fecha_compra', fechaCompraFin)
+    }
+
+    // Filtrar por plataforma
+    if (plataforma && plataforma !== 'todas') {
+      query = query.eq('plataforma', plataforma)
+    }
+
+    // Filtrar por estado
+    if (estado && estado !== 'todos') {
+      query = query.eq('estado', estado)
     }
 
     const { data: devoluciones, error } = await query

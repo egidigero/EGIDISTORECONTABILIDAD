@@ -6,7 +6,19 @@ export async function GET(req: Request) {
     const url = new URL(req.url)
     const fechaInicio = url.searchParams.get('fechaInicio') || undefined
     const fechaFin = url.searchParams.get('fechaFin') || undefined
-    const stats = await getEstadisticasDevoluciones(fechaInicio, fechaFin)
+    const fechaCompraInicio = url.searchParams.get('fechaCompraInicio') || undefined
+    const fechaCompraFin = url.searchParams.get('fechaCompraFin') || undefined
+    const plataforma = url.searchParams.get('plataforma') || undefined
+    const estado = url.searchParams.get('estado') || undefined
+    
+    const stats = await getEstadisticasDevoluciones(
+      fechaInicio, 
+      fechaFin, 
+      fechaCompraInicio, 
+      fechaCompraFin,
+      plataforma,
+      estado
+    )
     return NextResponse.json({ success: true, data: stats })
   } catch (err: any) {
     console.error('API devoluciones/estadisticas error', err)

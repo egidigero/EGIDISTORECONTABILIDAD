@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { 
   TrendingDown, 
   Package, 
@@ -9,7 +10,8 @@ import {
   AlertCircle,
   RotateCcw,
   Truck,
-  ShoppingCart
+  ShoppingCart,
+  Calendar
 } from "lucide-react"
 
 interface DevolucionesReporteProps {
