@@ -67,7 +67,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       // Use user-provided fechaCompletada when available (required for both), else default to now
       if (fechaCompletadaLocal) {
         payload.fechaCompletada = new Date(fechaCompletadaLocal)
-        payload.fechaAccion = new Date(fechaCompletadaLocal) // Enviar también como Date para creación de gastos
+        payload.fechaAccion = new Date(fechaCompletadaLocal + 'T12:00:00') // Enviar con hora para evitar problemas de timezone
       } else {
         const hoy = new Date()
         payload.fechaCompletada = hoy
