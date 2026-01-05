@@ -983,6 +983,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   // commission removed: not persisted on devoluciones
   nombreContacto: parsedPartial.nombreContacto ?? existing.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto,
   fechaCompra: parsedPartial.fechaCompra ?? existing.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra,
+  // Preservar fechaAccion explícitamente del parsedPartial (no está en DB)
+  fechaAccion: parsedPartial.fechaAccion ?? new Date(),
     }
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
