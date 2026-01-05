@@ -67,10 +67,11 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       // Use user-provided fechaCompletada when available (required for both), else default to now
       if (fechaCompletadaLocal) {
         payload.fechaCompletada = new Date(fechaCompletadaLocal)
-        payload.fechaAccion = fechaCompletadaLocal // Enviar también como fechaAccion para creación de gastos
+        payload.fechaAccion = new Date(fechaCompletadaLocal) // Enviar también como Date para creación de gastos
       } else {
-        payload.fechaCompletada = new Date()
-        payload.fechaAccion = new Date().toISOString().split('T')[0]
+        const hoy = new Date()
+        payload.fechaCompletada = hoy
+        payload.fechaAccion = hoy
       }
   // Incluir indicador de recuperabilidad si el usuario lo indicó
   if (productoRecuperable !== null) payload.productoRecuperable = productoRecuperable
