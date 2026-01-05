@@ -989,6 +989,11 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
     let mergedClean = stripNulls(mergedPre)
+    
+    // Extraer fechaAccion ANTES de validar - no es campo de DB, solo se usa para crear gastos
+    const fechaAccionForGasto = mergedClean?.fechaAccion || parsedPartial?.fechaAccion || new Date()
+    delete mergedClean.fechaAccion // Remover del objeto que se va a validar y guardar
+    
     // Normalize date-like objects to Date/string so Zod preprocess can handle them.
     // Some deployments send objects (seconds/toDate), some send 'YYYY-MM-DD' strings
     // or 'YYYY-MM-DD HH:MM:SS'. Ensure we coerce to a real Date instance when possible
@@ -997,7 +1002,6 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       mergedClean.fechaCompra = normalizeDateLike(mergedClean.fechaCompra)
       mergedClean.fechaReclamo = normalizeDateLike(mergedClean.fechaReclamo)
       mergedClean.fechaCompletada = normalizeDateLike(mergedClean.fechaCompletada)
-      mergedClean.fechaAccion = normalizeDateLike(mergedClean.fechaAccion)
 
       const ensureDateForZod = (v: any) => {
         if (v === null || typeof v === 'undefined') return undefined
@@ -1081,6 +1085,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   const validatedMergedPartial = devolucionSchemaBase.partial().parse(mergedClean)
   // Alias for backward-compatible references below
   const merged: any = validatedMergedPartial as any
+  // Re-attach fechaAccion después de validar (solo para uso en memoria, no se guarda en DB)
+  merged.fechaAccion = fechaAccionForGasto
 
     let updated: any = null
     try {
