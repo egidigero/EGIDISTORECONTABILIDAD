@@ -290,12 +290,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
-            {/* Si es Reembolso, pedir la fecha de impacto que se aplicará en liquidaciones */}
-            {advanceType === 'Reembolso' && (
+            {/* Pedir la fecha de impacto para Reembolso o Cambio */}
+            {(advanceType === 'Reembolso' || advanceType === 'Cambio') && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Fecha de impacto (aplica en liquidaciones)</label>
                 <input type="date" className="w-full border rounded p-2" value={fechaCompletadaLocal ?? ''} onChange={(e) => setFechaCompletadaLocal(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Elige la fecha en la que quieres que se apliquen los ajustes contables en las liquidaciones.</p>
+                <p className="text-xs text-muted-foreground mt-1">Fecha en la que se aplican los ajustes contables{advanceType === 'Cambio' ? ' y se crea el gasto del envío nuevo' : ''}.</p>
               </div>
             )}
 
@@ -316,7 +316,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowAdvance(false)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleAdvance} disabled={isAdvancing || (advanceType === 'Reembolso' && !fechaCompletadaLocal)}>{isAdvancing ? 'Aplicando...' : 'Confirmar'}</AlertDialogAction>
+            <AlertDialogAction onClick={handleAdvance} disabled={isAdvancing || !fechaCompletadaLocal}>{isAdvancing ? 'Aplicando...' : 'Confirmar'}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
