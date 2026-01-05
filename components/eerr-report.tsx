@@ -235,8 +235,11 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
               const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
               const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN;
               
-              // Otros gastos del negocio (excluyendo envíos TN que van aparte)
-              const otrosGastosNegocio = gastosNegocio.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'));
+              // Otros gastos del negocio (excluyendo envíos TN que van aparte y envíos devoluciones que ya están en pérdidas)
+              const otrosGastosNegocio = gastosNegocio.filter((g: any) => 
+                !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN') &&
+                g.categoria !== 'Gastos del negocio - Envios devoluciones'
+              );
               const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
               const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
               
@@ -485,9 +488,11 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <div className="space-y-2 bg-gray-50 p-3 rounded">
                     {(() => {
                       // Gastos del negocio: excluir personales, ADS y Pago de Importación
+                      // También excluir Envios devoluciones porque ya están incluidos en pérdidas de devoluciones
                       let gastosNegocio = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) =>
-                            !categoriasExcluirEERR.includes(g.categoria)
+                            !categoriasExcluirEERR.includes(g.categoria) &&
+                            g.categoria !== 'Gastos del negocio - Envios devoluciones'
                           )
                         : [];
                       // De los gastos del negocio, separar los envíos TN
@@ -513,8 +518,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       
                       const categorias = Object.keys(gastosPorCategoria).sort();
                       
-                      // Categorías que solo muestran total
-                      const categoriasResumidas = ['Gastos del negocio - Envios devoluciones'];
+                      // Categorías que solo muestran total (ya no necesitamos Envios devoluciones aquí)
+                      const categoriasResumidas: string[] = [];
                       
                       return <>
                         <div className="flex justify-between text-red-600 font-semibold">
