@@ -302,11 +302,11 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
             )}
 
             {/* Pedir la fecha de impacto para Reembolso o Cambio */}
-            {(advanceType === 'Reembolso' || advanceType === 'Cambio') && (
+            {(advanceType === 'Reembolso' || advanceType === 'Cambio mismo producto') && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Fecha de impacto (aplica en liquidaciones)</label>
                 <input type="date" className="w-full border rounded p-2" value={fechaCompletadaLocal ?? ''} onChange={(e) => setFechaCompletadaLocal(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Fecha en la que se aplican los ajustes contables{advanceType === 'Cambio' ? ' y se crea el gasto del envío nuevo' : ''}.</p>
+                <p className="text-xs text-muted-foreground mt-1">Fecha en la que se aplican los ajustes contables{advanceType === 'Cambio mismo producto' ? ' y se crea el gasto del envío nuevo' : ''}.</p>
               </div>
             )}
 
