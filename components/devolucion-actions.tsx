@@ -25,6 +25,9 @@ interface DevolucionActionsProps {
   devolucion: {
     id: string
     motivo: string
+    tipoResolucion?: string
+    tipo_resolucion?: string
+    estado?: string
     venta?: {
       saleCode?: string
       comprador?: string
@@ -45,6 +48,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [loadingDevolucion, setLoadingDevolucion] = useState(false)
   const [costoEnvioOriginalLocal, setCostoEnvioOriginalLocal] = useState<number | null>(null)
   const [costoEnvioDevolucionLocal, setCostoEnvioDevolucionLocal] = useState<number | null>(null)
+  const [costoEnvioNuevoLocal, setCostoEnvioNuevoLocal] = useState<number | null>(null)
   const [costoProductoOriginalLocal, setCostoProductoOriginalLocal] = useState<number | null>(null)
   const [isAdvancing, setIsAdvancing] = useState(false)
   const router = useRouter()
@@ -57,9 +61,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       // marcar fecha completada y estado según tipo seleccionado
       const estadoMap: Record<string,string> = {
         'Reembolso': 'Entregada - Reembolso',
-        'Cambio mismo producto': 'Entregada - Cambio mismo producto',
-        'Cambio otro producto': 'Entregada - Cambio otro producto',
-        'Sin reembolso': 'Entregada - Sin reembolso'
+        'Cambio': 'Entregada - Cambio'
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
       // Use user-provided fechaCompletada when available (required for Reembolso), else default to now
@@ -71,6 +73,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   // Incluir indicador de recuperabilidad si el usuario lo indicó
   if (productoRecuperable !== null) payload.productoRecuperable = productoRecuperable
   // Incluir desglose de envíos y costo de producto si los tenemos localmente
+  if (typeof costoEnvioNuevoLocal === 'number') payload.costoEnvioNuevo = Number(costoEnvioNuevoLocal)
   if (typeof costoEnvioDevolucionLocal === 'number') payload.costoEnvioDevolucion = Number(costoEnvioDevolucionLocal)
   if (typeof costoProductoOriginalLocal === 'number') payload.costoProductoOriginal = Number(costoProductoOriginalLocal)
   // Ensure we persist costoEnvioOriginal: take from fetchedDevolucion or leave absent
@@ -105,6 +108,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       const d = await getDevolucionById(devolucion.id)
       setFetchedDevolucion(d)
       // Prefill local cost fields
+      setCostoEnvioNuevoLocal(Number(d?.costo_envio_nuevo ?? d?.costoEnvioNuevo ?? 0))
       setCostoEnvioOriginalLocal(Number(d?.costo_envio_original ?? d?.costoEnvioOriginal ?? 0))
       setCostoEnvioDevolucionLocal(Number(d?.costo_envio_devolucion ?? d?.costoEnvioDevolucion ?? 0))
       setCostoProductoOriginalLocal(Number(d?.costo_producto_original ?? d?.costoProductoOriginal ?? 0))
@@ -175,9 +179,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setShowAdvance(true)}>
-            Registrar avance
-          </DropdownMenuItem>
+          {/* Solo mostrar 'Registrar avance' si NO tiene tipo_resolucion definido */}
+          {!(devolucion.tipoResolucion || devolucion.tipo_resolucion || (devolucion.estado && (devolucion.estado.includes('Reembolso') || devolucion.estado.includes('Cambio')))) && (
+            <DropdownMenuItem onClick={() => setShowAdvance(true)}>
+              Registrar avance
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowEditDialog(true); }}>
             <Edit className="mr-2 h-4 w-4" />
             Editar
@@ -253,10 +260,25 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
             <select className="w-full border rounded p-2" value={advanceType} onChange={(e) => setAdvanceType(e.target.value)}>
               <option value="">-- Seleccionar --</option>
               <option value="Reembolso">Reembolso</option>
-              <option value="Cambio mismo producto">Cambio mismo producto</option>
-              <option value="Cambio otro producto">Cambio otro producto</option>
-              <option value="Sin reembolso">Sin reembolso</option>
+              <option value="Cambio">Cambio</option>
             </select>
+            
+            {/* Solo pedir envío nuevo cuando es Cambio */}
+            {advanceType === 'Cambio' && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Costo envío nuevo/ida (ARS)</label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  className="w-full border rounded p-2" 
+                  value={costoEnvioOriginalLocal ?? 0} 
+                  onChange={(e) => setCostoEnvioOriginalLocal(Number(e.target.value))} 
+                  placeholder="0.00"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Costo del envío del producto nuevo/cambio.</p>
+              </div>
+            )}
+            
             {/* Preguntar si se recupera el producto cuando se eligió una resolución */}
             {advanceType !== '' && (
               <div className="mt-4">
@@ -290,17 +312,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
-            {/* Mostrar costos de envío y costo del producto (pueden editarse antes de confirmar) */}
-            {fetchedDevolucion && (
-              <div className="mt-4 grid grid-cols-1 gap-3">
-                {/* No pedir costo envío ida: lo tomamos automáticamente desde la devolución/venta. */}
-                <div>
-                  <label className="block text-sm font-medium">Costo envío vuelta (ARS)</label>
-                  <input type="number" className="w-full border rounded p-2" value={costoEnvioDevolucionLocal ?? 0} onChange={(e) => setCostoEnvioDevolucionLocal(Number(e.target.value))} />
-                </div>
-                {/* Costo de producto se toma automáticamente desde la venta/devolución; no mostrar input */}
-              </div>
-            )}
+            {/* Los costos se toman automáticamente, no se piden en este modal */}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowAdvance(false)}>Cancelar</AlertDialogCancel>

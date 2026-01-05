@@ -571,6 +571,11 @@ export function LiquidacionesTable() {
                                       const deltaMPLiquidar = Number(d.delta_mp_a_liquidar || 0)
                                       const deltaTNLiquidar = Number(d.delta_tn_a_liquidar || 0)
                                       const perdidaTotal = Number(d.perdida_total || 0)
+                                      const costoProducto = Number(d.total_costo_productos || d.costo_producto_perdido || 0)
+                                      const envioOriginal = Number(d.costo_envio_original || 0)
+                                      const envioDevolucion = Number(d.costo_envio_devolucion || 0)
+                                      const envioNuevo = Number(d.costo_envio_nuevo || 0)
+                                      const totalEnvios = envioOriginal + envioDevolucion + envioNuevo
                                       
                                       return (
                                         <div key={d.id} className="p-3 rounded bg-white border border-yellow-100 mb-2">
@@ -584,6 +589,23 @@ export function LiquidacionesTable() {
                                             <div className="text-right">
                                               <div className="text-xs text-muted-foreground">Pérdida total</div>
                                               <div className="font-semibold text-red-600">{formatCurrency(perdidaTotal)}</div>
+                                              {costoProducto > 0 && (
+                                                <div className="text-xs text-muted-foreground mt-1">
+                                                  Producto: {formatCurrency(costoProducto)}
+                                                </div>
+                                              )}
+                                              {totalEnvios > 0 && (
+                                                <div className="text-xs text-muted-foreground">
+                                                  Envíos: {formatCurrency(totalEnvios)}
+                                                  {(envioOriginal > 0 || envioDevolucion > 0 || envioNuevo > 0) && (
+                                                    <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
+                                                      {envioOriginal > 0 && <div>• Original: {formatCurrency(envioOriginal)}</div>}
+                                                      {envioDevolucion > 0 && <div>• Devolución: {formatCurrency(envioDevolucion)}</div>}
+                                                      {envioNuevo > 0 && <div>• Nuevo: {formatCurrency(envioNuevo)}</div>}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
                                           

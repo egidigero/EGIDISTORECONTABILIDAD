@@ -437,10 +437,18 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                   {errors.costoEnvioDevolucion && <p className="text-sm text-destructive">{errors.costoEnvioDevolucion.message}</p>}
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="costoEnvioNuevo">Costo envío nuevo/cambio (ARS)</Label>
+                  <Input id="costoEnvioNuevo" type="number" step="0.01" {...register("costoEnvioNuevo", { valueAsNumber: true })} placeholder="0.00" />
+                  {errors.costoEnvioNuevo && <p className="text-sm text-destructive">{errors.costoEnvioNuevo.message}</p>}
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="numeroSeguimiento">Número de seguimiento</Label>
                   <Input id="numeroSeguimiento" {...register("numeroSeguimiento")} />
                   {errors.numeroSeguimiento && <p className="text-sm text-destructive">{errors.numeroSeguimiento.message}</p>}
                 </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="numeroDevolucion">Número de devolución</Label>
                   {/* Permitimos editar el número de devolución manualmente si fuera necesario */}

@@ -432,6 +432,48 @@ export async function createDevolucion(data: DevolucionFormData) {
           } catch (errG) {
             console.error('Error creando gasto/ingreso para devolución (creación):', errG)
           }
+
+          // Si hay costo de envío nuevo (cambio), crear gasto adicional
+          const costoEnvioNuevo = Number((validatedData as any).costoEnvioNuevo ?? dbRow.costo_envio_nuevo ?? 0)
+          if (!Number.isNaN(costoEnvioNuevo) && costoEnvioNuevo > 0) {
+            try {
+              const { createGastoIngreso } = await import('@/lib/actions/gastos-ingresos')
+              const ventaRefCandidates = [
+                (datosVenta as any)?.saleCode,
+                (datosVenta as any)?.externalOrderId,
+                (datosVenta as any)?.productoId,
+                (datosVenta as any)?.comprador,
+                dbRow.venta_id,
+                created.venta_id,
+                created.id,
+              ]
+              const ventaRef = ventaRefCandidates.find(v => v !== undefined && v !== null && String(v).trim() !== '') ?? 'sin-ref'
+              const descripcionNuevo = `Costo de envío nuevo/cambio ${ventaRef}`
+              const gastoNuevoRes = await createGastoIngreso({
+                fecha: new Date(impactoFecha),
+                tipo: 'Gasto',
+                categoria: 'Gastos del negocio - Envios devoluciones',
+                descripcion: `${descripcionNuevo} - devol ${created.id}`,
+                montoARS: costoEnvioNuevo,
+                canal: 'General'
+              } as GastoIngresoFormData)
+
+              if (gastoNuevoRes && gastoNuevoRes.success) {
+                revalidatePath('/liquidaciones')
+                revalidatePath('/eerr')
+                try {
+                  const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+                  await recalcularLiquidacionesEnCascada(impactoFecha)
+                } catch (rcErr) {
+                  console.warn('No se pudo ejecutar recálculo en cascada tras crear gasto envío nuevo (no crítico)', rcErr)
+                }
+              } else {
+                console.error('No se pudo crear gasto_ingreso para envío nuevo (creación):', gastoNuevoRes?.error)
+              }
+            } catch (errGNuevo) {
+              console.error('Error creando gasto para envío nuevo (creación):', errGNuevo)
+            }
+          }
         } else {
           console.warn('No se encontró liquidación de hoy para aplicar costo de envío en creación de devolución', errorHoy)
         }
@@ -1211,6 +1253,66 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       }
     } catch (errShip) {
       console.warn('Error evaluando cambio de costo_envio_devolucion (no crítico):', errShip)
+    }
+
+    // Si se agregó o modificó el costo de envío nuevo (cambio), crear/actualizar gasto
+    try {
+      const prevShippingNuevo = Number((existing as any).costo_envio_nuevo ?? 0)
+      const newShippingNuevo = Number((parsedPartial as any).costoEnvioNuevo ?? (parsedPartial as any).costo_envio_nuevo ?? (updated as any)?.costo_envio_nuevo ?? 0)
+      if (!Number.isNaN(newShippingNuevo) && newShippingNuevo !== prevShippingNuevo && newShippingNuevo > 0) {
+        try {
+          const { createGastoIngreso, updateGastoIngreso } = await import('@/lib/actions/gastos-ingresos')
+          // Usar fechaAccion si está disponible, sino hoy
+          const fechaAccion = (merged && merged.fechaAccion) ? new Date(merged.fechaAccion).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+          const ventaRef = (updated as any)?.venta_id ?? (existing as any).venta_id ?? id
+          const descripcionNuevo = `Costo envío nuevo/cambio - devol ${updated?.id ?? id} - venta ${ventaRef}`
+          const gastoNuevoPayload: GastoIngresoFormData = {
+            fecha: new Date(fechaAccion),
+            tipo: 'Gasto',
+            categoria: 'Gastos del negocio - Envios devoluciones',
+            descripcion: descripcionNuevo,
+            montoARS: newShippingNuevo,
+            canal: 'General'
+          }
+
+          // Buscar si ya existe un gasto para envío nuevo de esta devolución
+          let gastoNuevoActual: any = null
+          try {
+            const { data: foundNuevo } = await supabase
+              .from('gastos_ingresos')
+              .select('*')
+              .ilike('descripcion', `%envío nuevo%devol ${updated?.id ?? id}%`)
+              .limit(1)
+              .single()
+
+            if (foundNuevo) {
+              const upd = await updateGastoIngreso(foundNuevo.id, gastoNuevoPayload)
+              if (upd && (upd as any).success) gastoNuevoActual = (upd as any).data
+            } else {
+              const createdG = await createGastoIngreso(gastoNuevoPayload)
+              if (createdG && (createdG as any).success) gastoNuevoActual = (createdG as any).data
+            }
+          } catch (searchErrNuevo) {
+            console.warn('Error buscando/creando gasto envío nuevo (fallback):', searchErrNuevo)
+          }
+
+          if (gastoNuevoActual) {
+            try {
+              const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+              await recalcularLiquidacionesEnCascada(fechaAccion)
+            } catch (rcErr) {
+              console.warn('No se pudo ejecutar recálculo en cascada tras crear/actualizar gasto de envío nuevo (no crítico)', rcErr)
+            }
+            revalidatePath('/liquidaciones')
+            revalidatePath('/eerr')
+            revalidatePath('/ventas')
+          }
+        } catch (innerErrNuevo) {
+          console.warn('Error creando/actualizando gasto de envío nuevo tras updateDevolucion (no crítico):', innerErrNuevo)
+        }
+      }
+    } catch (errShipNuevo) {
+      console.warn('Error evaluando cambio de costo_envio_nuevo (no crítico):', errShipNuevo)
     }
 
     // Fallback explicit persistence: ensure numero_devolucion and numero_seguimiento are stored
