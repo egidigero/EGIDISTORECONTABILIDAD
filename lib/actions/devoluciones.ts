@@ -995,6 +995,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       mergedClean.fechaCompra = normalizeDateLike(mergedClean.fechaCompra)
       mergedClean.fechaReclamo = normalizeDateLike(mergedClean.fechaReclamo)
       mergedClean.fechaCompletada = normalizeDateLike(mergedClean.fechaCompletada)
+      mergedClean.fechaAccion = normalizeDateLike(mergedClean.fechaAccion)
 
       const ensureDateForZod = (v: any) => {
         if (v === null || typeof v === 'undefined') return undefined
