@@ -61,7 +61,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       // marcar fecha completada y estado según tipo seleccionado
       const estadoMap: Record<string,string> = {
         'Reembolso': 'Entregada - Reembolso',
-        'Cambio': 'Entregada - Cambio'
+        'Cambio mismo producto': 'Entregada - Cambio mismo producto'
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
       // Use user-provided fechaCompletada when available (required for both), else default to now
@@ -271,11 +271,11 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
             <select className="w-full border rounded p-2" value={advanceType} onChange={(e) => setAdvanceType(e.target.value)}>
               <option value="">-- Seleccionar --</option>
               <option value="Reembolso">Reembolso</option>
-              <option value="Cambio">Cambio</option>
+              <option value="Cambio mismo producto">Cambio</option>
             </select>
             
             {/* Solo pedir envío nuevo cuando es Cambio */}
-            {advanceType === 'Cambio' && (
+            {advanceType === 'Cambio mismo producto' && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Costo envío nuevo/ida (ARS)</label>
                 <input 
