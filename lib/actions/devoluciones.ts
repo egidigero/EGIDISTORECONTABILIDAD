@@ -360,9 +360,9 @@ export async function createDevolucion(data: DevolucionFormData) {
   const costoEnvioDevolucion = Number(validatedData.costoEnvioDevolucion ?? 0)
   const costoEnvio = costoEnvioDevolucion
       if (costoEnvio && costoEnvio > 0) {
-        // Use the claim date (fechaReclamo) as the accounting impact date; fallback to today
-        const impactoFecha = (validatedData && (validatedData as any).fechaReclamo)
-          ? new Date((validatedData as any).fechaReclamo).toISOString().split('T')[0]
+        // Use the purchase date (fechaCompra) as the accounting impact date; fallback to today
+        const impactoFecha = (validatedData && (validatedData as any).fechaCompra)
+          ? new Date((validatedData as any).fechaCompra).toISOString().split('T')[0]
           : new Date().toISOString().split('T')[0]
         const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
         await asegurarLiquidacionParaFecha(impactoFecha)
@@ -452,9 +452,9 @@ export async function createDevolucion(data: DevolucionFormData) {
   // If platform is ML and either the user marked MP to be retained at creation
   // or the devolución is a Reembolso with an explicit monto > 0, persist deltas.
   if ((plataformaCreada === 'ML' || (datosVenta && (datosVenta as any).plataforma === 'ML')) && (mpRetenerCreada || (tipoResCreada === 'Reembolso' && montoReembolsadoCreada > 0))) {
-        // Use fechaReclamo as impact date for MP adjustments on creation
-        const impactoFecha = (validatedData && (validatedData as any).fechaReclamo)
-          ? new Date((validatedData as any).fechaReclamo).toISOString().split('T')[0]
+        // Use fechaCompra (original sale date) as impact date for MP adjustments on creation
+        const impactoFecha = (validatedData && (validatedData as any).fechaCompra)
+          ? new Date((validatedData as any).fechaCompra).toISOString().split('T')[0]
           : new Date().toISOString().split('T')[0]
         const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
         await asegurarLiquidacionParaFecha(impactoFecha)
@@ -672,12 +672,12 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     ? new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
                     : fechaHoyActual
                   // If the user requested to move money to 'mp_retenido', prefer the
-                  // claim date (fechaReclamo) as the accounting impact date. Otherwise
+                  // purchase date (fechaCompra) as the accounting impact date. Otherwise
                   // use the fechaCompletada (fechaHoy) as before.
-                  const fechaReclamoProvided = (parsedPartial && (parsedPartial as any).fechaReclamo)
-                    ? new Date((parsedPartial as any).fechaReclamo).toISOString().split('T')[0]
+                  const fechaCompraProvided = (parsedPartial && (parsedPartial as any).fechaCompra)
+                    ? new Date((parsedPartial as any).fechaCompra).toISOString().split('T')[0]
                     : null
-                  const impactoFechaForDeltas = mpRetenerProvided ? (fechaReclamoProvided ?? fechaHoy) : fechaHoy
+                  const impactoFechaForDeltas = mpRetenerProvided ? (fechaCompraProvided ?? fechaHoy) : fechaHoy
                   const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
                   await asegurarLiquidacionParaFecha(fechaHoy)
                   const { data: liqHoy, error: liqErr } = await supabase.from('liquidaciones').select('*').eq('fecha', fechaHoy).single()

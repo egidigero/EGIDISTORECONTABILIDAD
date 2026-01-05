@@ -7,14 +7,16 @@ export async function GET(request: Request) {
     const fecha = url.searchParams.get('fecha')
     if (!fecha) return NextResponse.json({ success: false, error: 'missing fecha' }, { status: 400 })
 
-    // Buscar devoluciones que impacten esa fecha: fecha_completada o created_at dentro del día
-    const fechaInicio = `${fecha}T00:00:00.000Z`
-    const fechaFin = `${fecha}T23:59:59.999Z`
-
+    // Buscar devoluciones que impacten esa fecha usando fecha_compra (fecha de venta original)
+    // Solo incluir devoluciones con estado completado
+    const estadosCompletados = ['Entregada - Reembolso', 'Entregada - Cambio mismo producto', 'Entregada - Cambio otro producto', 'Entregada - Sin reembolso', 'Rechazada']
+    
     const { data, error } = await supabase
       .from('devoluciones_resumen')
       .select('*')
-      .or(`fecha_completada.gte.${fecha} , created_at.gte.${fecha}`) // fallback: rely on fecha fields
+      .gte('fecha_compra', `${fecha}T00:00:00.000Z`)
+      .lte('fecha_compra', `${fecha}T23:59:59.999Z`)
+      .in('estado', estadosCompletados)
       .order('fecha_reclamo', { ascending: false })
 
     if (error) throw error

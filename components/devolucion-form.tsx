@@ -89,9 +89,9 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
       })(),
       fechaCompletada: (function(){
         const v = (devolucion as any)?.fechaCompletada ?? (devolucion as any)?.fecha_completada
-        if (!v) return new Date().toISOString().split('T')[0]
+        if (!v) return '' // No default date - only set when actually completed
         const d = v instanceof Date ? v : new Date(v)
-        return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
+        return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0]
       })(),
     nombreContacto: (devolucion as any)?.nombreContacto ?? (devolucion as any)?.nombre_contacto ?? "",
     telefonoContacto: (devolucion as any)?.telefonoContacto ?? (devolucion as any)?.telefono_contacto ?? "",
