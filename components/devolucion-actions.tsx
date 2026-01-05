@@ -88,7 +88,14 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   }
     // Incluir estado del dinero en Mercado Pago (si el usuario lo indicó)
     if (mpEstado) payload.mpEstado = mpEstado
+      
+      console.log('[DevolucionActions] Enviando payload:', payload)
+      console.log('[DevolucionActions] ID devolución:', devolucion.id)
+      
       const result = await updateDevolucion(devolucion.id, payload)
+      
+      console.log('[DevolucionActions] Resultado:', result)
+      
       if (result.success) {
         toast({ title: 'Devolución actualizada', description: 'Se registró la resolución.' })
         setShowAdvance(false)
@@ -97,6 +104,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
         toast({ title: 'Error', description: result.error || 'No se pudo aplicar la resolución.', variant: 'destructive' })
       }
     } catch (err) {
+      console.error('[DevolucionActions] Error:', err)
       toast({ title: 'Error', description: 'Ocurrió un error al aplicar la resolución.', variant: 'destructive' })
     } finally {
       setIsAdvancing(false)
