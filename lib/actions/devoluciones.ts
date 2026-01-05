@@ -972,10 +972,15 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
     // Normalize existing DB row (snake_case) to camelCase expected by Zod
     const existingCamel = toCamelCase(existing)
 
+    // Extraer fechaAccion del parsedPartial ANTES del merge - solo se usa para crear gastos
+    const fechaAccionForGasto = parsedPartial.fechaAccion || new Date()
+    const parsedWithoutFechaAccion = { ...parsedPartial }
+    delete parsedWithoutFechaAccion.fechaAccion
+
     const mergedPre = {
       // mantener los valores actuales y sobreescribir con los campos provistos
       ...existingCamel,
-      ...parsedPartial,
+      ...parsedWithoutFechaAccion,
       // asegurar que los campos originales se completen si vienen vacíos
   costoProductoOriginal: parsedPartial.costoProductoOriginal ?? existing.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0,
   costoEnvioOriginal: parsedPartial.costoEnvioOriginal ?? existing.costoEnvioOriginal ?? datosVenta?.costoEnvioOriginal ?? 0,
@@ -983,16 +988,10 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   // commission removed: not persisted on devoluciones
   nombreContacto: parsedPartial.nombreContacto ?? existing.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto,
   fechaCompra: parsedPartial.fechaCompra ?? existing.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra,
-  // Preservar fechaAccion explícitamente del parsedPartial (no está en DB)
-  fechaAccion: parsedPartial.fechaAccion ?? new Date(),
     }
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
     let mergedClean = stripNulls(mergedPre)
-    
-    // Extraer fechaAccion ANTES de validar - no es campo de DB, solo se usa para crear gastos
-    const fechaAccionForGasto = mergedClean?.fechaAccion || parsedPartial?.fechaAccion || new Date()
-    delete mergedClean.fechaAccion // Remover del objeto que se va a validar y guardar
     
     // Normalize date-like objects to Date/string so Zod preprocess can handle them.
     // Some deployments send objects (seconds/toDate), some send 'YYYY-MM-DD' strings
