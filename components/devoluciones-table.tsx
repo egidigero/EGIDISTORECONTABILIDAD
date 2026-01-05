@@ -87,7 +87,7 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
           // Si tiene hora, usar toLocaleDateString con opciones UTC
           const d = new Date(s)
           if (isNaN(d.getTime())) return '-'
-          e
+          return d.toLocaleDateString('es-AR', { timeZone: 'UTC' })
         } catch (e) {
           return '-'
         }

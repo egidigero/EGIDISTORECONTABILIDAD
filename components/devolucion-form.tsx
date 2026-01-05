@@ -54,10 +54,10 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
   const isEditing = !!devolucion
 
   // Local form type: allow date fields to be string (YYYY-MM-DD) or Date to match how inputs provide values.
-  type LocalDevolucionForm = Omit<DevolucionFormData, 'fechaCompra' | 'fechaReclamo' | 'fechaCompletada'> & {
+  type LocalDevolucionForm = Omit<DevolucionFormData, 'fechaCompra' | 'fechaReclamo' | 'fechaAccion'> & {
     fechaCompra: string | Date
     fechaReclamo: string | Date
-    fechaCompletada: string | Date
+    fechaAccion: string | Date
     productoRecuperable?: boolean
   }
 
@@ -87,12 +87,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
         const d = v instanceof Date ? v : new Date(v)
         return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
       })(),
-      fechaCompletada: (function(){
-        const v = (devolucion as any)?.fechaCompletada ?? (devolucion as any)?.fecha_completada
-        if (!v) return '' // No default date - only set when actually completed
-        const d = v instanceof Date ? v : new Date(v)
-        return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0]
-      })(),
+      fechaAccion: new Date().toISOString().split('T')[0], // Siempre hoy - fecha de ejecución de la acción
     nombreContacto: (devolucion as any)?.nombreContacto ?? (devolucion as any)?.nombre_contacto ?? "",
     telefonoContacto: (devolucion as any)?.telefonoContacto ?? (devolucion as any)?.telefono_contacto ?? "",
     estado: typeof ((devolucion as any)?.estado ?? (devolucion as any)?.estado) === "string" && ((devolucion as any)?.estado ?? (devolucion as any)?.estado) ? ((devolucion as any)?.estado ?? (devolucion as any)?.estado) : "En devolución",
@@ -152,12 +147,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
           const d = val instanceof Date ? val : new Date(val)
           return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
         })(),
-        fechaCompletada: (function(){
-          const val = v.fechaCompletada ?? v.fecha_completada
-          if (!val) return new Date().toISOString().split('T')[0]
-          const d = val instanceof Date ? val : new Date(val)
-          return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0]
-        })(),
+        fechaAccion: new Date().toISOString().split('T')[0], // Siempre hoy - fecha de ejecución
         nombreContacto: v.nombreContacto ?? v.nombre_contacto ?? "",
         telefonoContacto: v.telefonoContacto ?? v.telefono_contacto ?? "",
         estado: (v.estado ?? v.estado) ?? "Pendiente",
@@ -317,7 +307,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
         ...data as any,
         fechaCompra: data.fechaCompra instanceof Date ? data.fechaCompra : new Date(String(data.fechaCompra)),
         fechaReclamo: data.fechaReclamo instanceof Date ? data.fechaReclamo : new Date(String(data.fechaReclamo)),
-        fechaCompletada: data.fechaCompletada instanceof Date ? data.fechaCompletada : new Date(String(data.fechaCompletada)),
+        fechaAccion: data.fechaAccion instanceof Date ? data.fechaAccion : new Date(String(data.fechaAccion)),
       }
 
       const result = isEditing && devolucion && 'id' in devolucion ? await updateDevolucion((devolucion as any).id, payload) : await createDevolucion(payload)
@@ -431,9 +421,10 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
                 </div>
                 {isEditing && (
                   <div className="space-y-2">
-                    <Label htmlFor="fechaCompletada">Fecha completada</Label>
-                    <Input id="fechaCompletada" type="date" {...register("fechaCompletada", { valueAsDate: true })} />
-                    {errors.fechaCompletada && <p className="text-sm text-destructive">{errors.fechaCompletada.message}</p>}
+                    <Label htmlFor="fechaAccion">Fecha de la acción</Label>
+                    <p className="text-xs text-muted-foreground mb-1">Fecha en que se ejecuta el cambio (crea gastos, impacta liquidaciones, etc.)</p>
+                    <Input id="fechaAccion" type="date" {...register("fechaAccion", { valueAsDate: true })} />
+                    {errors.fechaAccion && <p className="text-sm text-destructive">{errors.fechaAccion.message}</p>}
                   </div>
                 )}
               </div>

@@ -67,11 +67,11 @@ export const devolucionSchemaBase = z.object({
     if (typeof arg === 'string' && arg) return new Date(arg)
     return arg
   }, z.date({ required_error: "La fecha de reclamo es requerida" })).default(new Date()),
-  fechaCompletada: z.preprocess((arg) => {
+  fechaAccion: z.preprocess((arg) => {
     if (arg instanceof Date) return arg
-    if (typeof arg === 'string' && arg) return new Date(arg)
-    return arg
-  }, z.date({ required_error: "La fecha completada es requerida" })).default(new Date()),
+    if (typeof arg === 'string' && arg.trim()) return new Date(arg)
+    return new Date()
+  }, z.date()).default(new Date()),
   
   // Información de contacto
   nombreContacto: z.string().min(1, "El nombre de contacto es requerido"),

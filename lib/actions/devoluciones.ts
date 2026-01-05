@@ -289,7 +289,7 @@ export async function createDevolucion(data: DevolucionFormData) {
       id_devolucion: devolucionCompleta.numeroDevolucion,
       fecha_compra: devolucionCompleta.fechaCompra,
       fecha_reclamo: devolucionCompleta.fechaReclamo,
-      fecha_completada: devolucionCompleta.fechaCompletada ?? null,
+      // fecha_completada NO se guarda - solo se usa para ejecutar acciones
       nombre_contacto: devolucionCompleta.nombreContacto ?? null,
       telefono_contacto: devolucionCompleta.telefonoContacto ?? null,
   // Persistir número de seguimiento si el cliente lo proveyó
