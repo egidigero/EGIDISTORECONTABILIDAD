@@ -263,48 +263,23 @@ export async function calcularEERR(
     margenFinalConPersonales = Math.round((margenNetoNegocioBase - gastosPersonales) * 100) / 100;
   }
 
-    // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_completada ====
-    // El usuario pidió que EERR tome los datos de `devoluciones`, NO de la vista `devoluciones_resumen`.
+    // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_compra ====
+    // Las devoluciones impactan en el mes de la venta original (fecha_compra)
     let devoluciones: any[] = []
     try {
-      // Primero: traer por fecha_completada
-      let queryA = supabase
+      let query = supabase
         .from('devoluciones')
         .select('*')
-        .gte('fecha_completada', fechaDesde.toISOString())
-        .lte('fecha_completada', fechaHasta.toISOString())
+        .gte('fecha_compra', fechaDesde.toISOString())
+        .lte('fecha_compra', fechaHasta.toISOString())
 
       if (canal && canal !== 'General') {
-        queryA = queryA.eq('plataforma', canal)
+        query = query.eq('plataforma', canal)
       }
 
-  const { data: dataA, error: errA } = await queryA
-  try { console.log('EERR debug - devoluciones queryA bounds/completed:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(dataA) ? dataA.length : 0, error: errA ? JSON.stringify(errA) : null }) } catch (e) {}
-  if (!errA && Array.isArray(dataA)) devoluciones = dataA
-
-      // Segundo: también traer por fecha_reclamo y mergear (algunas filas usan reclamo en vez de completada)
-      let queryB = supabase
-        .from('devoluciones')
-        .select('*')
-        .gte('fecha_reclamo', fechaDesde.toISOString())
-        .lte('fecha_reclamo', fechaHasta.toISOString())
-
-      if (canal && canal !== 'General') {
-        queryB = queryB.eq('plataforma', canal)
-      }
-
-  const { data: dataB, error: errB } = await queryB
-  try { console.log('EERR debug - devoluciones queryB bounds/reclamo:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(dataB) ? dataB.length : 0, error: errB ? JSON.stringify(errB) : null }) } catch (e) {}
-  if (!errB && Array.isArray(dataB)) {
-        const mapById: Record<string, any> = {}
-        for (const d of devoluciones) mapById[String(d.id)] = d
-        for (const d of dataB) {
-          if (!mapById[String(d.id)]) {
-            devoluciones.push(d)
-            mapById[String(d.id)] = d
-          }
-        }
-      }
+  const { data, error: err } = await query
+  try { console.log('EERR debug - devoluciones por fecha_compra:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(data) ? data.length : 0, error: err ? JSON.stringify(err) : null }) } catch (e) {}
+  if (!err && Array.isArray(data)) devoluciones = data
     } catch (err) {
       // ignore
     }
