@@ -237,6 +237,28 @@ export async function getDevoluciones() {
 // Crear devolución con auto-completado de datos financieros
 export async function createDevolucion(data: DevolucionFormData) {
   try {
+    // Validar que la venta no tenga ya una devolución activa
+    if (data.ventaId) {
+      const { data: devolucionExistente, error: checkError } = await supabase
+        .from('devoluciones')
+        .select('id, numero_devolucion, id_devolucion')
+        .eq('venta_id', data.ventaId)
+        .maybeSingle()
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 = no rows returned (OK), cualquier otro error es problema
+        throw checkError
+      }
+
+      if (devolucionExistente) {
+        const numDev = devolucionExistente.numero_devolucion || devolucionExistente.id_devolucion || devolucionExistente.id
+        return {
+          success: false,
+          error: `Esta venta ya tiene una devolución registrada (${numDev}). Eliminá la devolución existente si querés crear una nueva.`
+        }
+      }
+    }
+
     // Obtener datos de la venta primero para poder autocompletar fechas/costos
     const datosVenta = data.ventaId ? await obtenerDatosVenta(data.ventaId) : null
 

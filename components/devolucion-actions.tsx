@@ -40,6 +40,8 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showAdvance, setShowAdvance] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showRecepcion, setShowRecepcion] = useState(false)
+  const [showPrueba, setShowPrueba] = useState(false)
   const [advanceType, setAdvanceType] = useState<string>("")
   const [productoRecuperable, setProductoRecuperable] = useState<boolean | null>(null)
   const [mpEstado, setMpEstado] = useState<string | null>(null)
@@ -51,6 +53,15 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [costoEnvioNuevoLocal, setCostoEnvioNuevoLocal] = useState<number | null>(null)
   const [costoProductoOriginalLocal, setCostoProductoOriginalLocal] = useState<number | null>(null)
   const [isAdvancing, setIsAdvancing] = useState(false)
+  
+  // Estados para seguimiento de producto
+  const [fechaRecepcion, setFechaRecepcion] = useState<string>('')
+  const [ubicacionProducto, setUbicacionProducto] = useState<string>('')
+  const [fechaPrueba, setFechaPrueba] = useState<string>('')
+  const [resultadoPrueba, setResultadoPrueba] = useState<string>('')
+  const [observacionesPrueba, setObservacionesPrueba] = useState<string>('')
+  const [isProcessing, setIsProcessing] = useState(false)
+  
   const router = useRouter()
 
   const handleAdvance = async () => {
@@ -109,6 +120,68 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       toast({ title: 'Error', description: 'Ocurrió un error al aplicar la resolución.', variant: 'destructive' })
     } finally {
       setIsAdvancing(false)
+    }
+  }
+
+  const handleRecepcion = async () => {
+    if (!fechaRecepcion) {
+      toast({ title: 'Error', description: 'Debés ingresar la fecha de recepción', variant: 'destructive' })
+      return
+    }
+    
+    setIsProcessing(true)
+    try {
+      const payload: any = {
+        fechaRecepcion: new Date(fechaRecepcion + 'T12:00:00'),
+        ubicacionProducto: ubicacionProducto || null,
+        resultadoPrueba: 'Pendiente'
+      }
+      
+      const result = await updateDevolucion(devolucion.id, payload)
+      
+      if (result.success) {
+        toast({ title: 'Recepción registrada', description: 'Se registró la recepción del producto.' })
+        setShowRecepcion(false)
+        router.refresh()
+      } else {
+        toast({ title: 'Error', description: result.error || 'No se pudo registrar la recepción.', variant: 'destructive' })
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: 'Ocurrió un error al registrar la recepción.', variant: 'destructive' })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handlePrueba = async () => {
+    if (!fechaPrueba || !resultadoPrueba) {
+      toast({ title: 'Error', description: 'Debés completar fecha y resultado de la prueba', variant: 'destructive' })
+      return
+    }
+    
+    setIsProcessing(true)
+    try {
+      const payload: any = {
+        fechaPrueba: new Date(fechaPrueba + 'T12:00:00'),
+        resultadoPrueba,
+        observacionesPrueba: observacionesPrueba || null,
+        // Actualizar automáticamente producto_recuperable según el resultado
+        productoRecuperable: resultadoPrueba === 'Funciona - Recuperable'
+      }
+      
+      const result = await updateDevolucion(devolucion.id, payload)
+      
+      if (result.success) {
+        toast({ title: 'Prueba registrada', description: 'Se registró la prueba del producto.' })
+        setShowPrueba(false)
+        router.refresh()
+      } else {
+        toast({ title: 'Error', description: result.error || 'No se pudo registrar la prueba.', variant: 'destructive' })
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: 'Ocurrió un error al registrar la prueba.', variant: 'destructive' })
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -184,7 +257,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={async (open) => { if (open) await loadDevolucion(); }}>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="h-8 w-8 p-0">
             <MoreHorizontal className="h-4 w-4" />
@@ -197,6 +270,21 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               Registrar avance
             </DropdownMenuItem>
           )}
+          
+          {/* Mostrar 'Registrar Recepción' solo si tiene resolución pero no tiene fecha_recepcion */}
+          {(devolucion.estado?.includes('Entregada') && !fetchedDevolucion?.fecha_recepcion && !fetchedDevolucion?.fechaRecepcion) && (
+            <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowRecepcion(true); }}>
+              📦 Registrar Recepción
+            </DropdownMenuItem>
+          )}
+          
+          {/* Mostrar 'Registrar Prueba' solo si tiene recepción pero no tiene prueba */}
+          {(fetchedDevolucion?.fecha_recepcion || fetchedDevolucion?.fechaRecepcion) && fetchedDevolucion?.resultado_prueba === 'Pendiente' && (
+            <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowPrueba(true); }}>
+              🔍 Registrar Prueba
+            </DropdownMenuItem>
+          )}
+          
           <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowEditDialog(true); }}>
             <Edit className="mr-2 h-4 w-4" />
             Editar
@@ -329,6 +417,95 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowAdvance(false)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleAdvance} disabled={isAdvancing || !fechaCompletadaLocal}>{isAdvancing ? 'Aplicando...' : 'Confirmar'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal para Registrar Recepción */}
+      <AlertDialog open={showRecepcion} onOpenChange={setShowRecepcion}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>📦 Registrar Recepción del Producto</AlertDialogTitle>
+            <AlertDialogDescription>Indicá cuándo recibiste el producto devuelto y dónde lo guardaste.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Fecha de recepción *</label>
+              <input 
+                type="date" 
+                className="w-full border rounded p-2" 
+                value={fechaRecepcion} 
+                onChange={(e) => setFechaRecepcion(e.target.value)} 
+              />
+              <p className="text-xs text-muted-foreground mt-1">Fecha en que recibiste físicamente el producto.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Ubicación del producto</label>
+              <input 
+                type="text" 
+                className="w-full border rounded p-2" 
+                value={ubicacionProducto} 
+                onChange={(e) => setUbicacionProducto(e.target.value)}
+                placeholder="Ej: Estante A3, Con técnico, Depósito"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Dónde guardaste el producto (opcional).</p>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowRecepcion(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRecepcion} disabled={isProcessing || !fechaRecepcion}>
+              {isProcessing ? 'Registrando...' : 'Confirmar Recepción'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal para Registrar Prueba */}
+      <AlertDialog open={showPrueba} onOpenChange={setShowPrueba}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>🔍 Registrar Prueba del Producto</AlertDialogTitle>
+            <AlertDialogDescription>Indicá el resultado de la prueba del producto devuelto.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Fecha de prueba *</label>
+              <input 
+                type="date" 
+                className="w-full border rounded p-2" 
+                value={fechaPrueba} 
+                onChange={(e) => setFechaPrueba(e.target.value)} 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Resultado de la prueba *</label>
+              <select 
+                className="w-full border rounded p-2" 
+                value={resultadoPrueba} 
+                onChange={(e) => setResultadoPrueba(e.target.value)}
+              >
+                <option value="">-- Seleccionar --</option>
+                <option value="Funciona - Recuperable">✅ Funciona - Recuperable</option>
+                <option value="No funciona - No recuperable">❌ No funciona - No recuperable</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">El campo producto_recuperable se actualizará automáticamente.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Observaciones de la prueba</label>
+              <textarea 
+                className="w-full border rounded p-2" 
+                rows={3}
+                value={observacionesPrueba} 
+                onChange={(e) => setObservacionesPrueba(e.target.value)}
+                placeholder="Detalles de qué se probó y qué se encontró..."
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowPrueba(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePrueba} disabled={isProcessing || !fechaPrueba || !resultadoPrueba}>
+              {isProcessing ? 'Registrando...' : 'Confirmar Prueba'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -259,6 +259,10 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                                 <span>Total pérdida:</span>
                                 <span className="text-red-600">${Number(getAlias(devolucion, ['perdida_total', 'perdidaTotal'], 0)).toLocaleString()}</span>
                               </div>
+                              <div className="pt-2 border-t text-xs">
+                                <span className="text-muted-foreground">N° Seguimiento:</span>
+                                <p className="font-medium text-foreground">{getAlias(devolucion, ['numero_seguimiento', 'numeroSeguimiento'], 'Sin número')}</p>
+                              </div>
                             </div>
                           </div>
                           <div>
@@ -283,6 +287,59 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                             </div>
                           </div>
                         </div>
+                        
+                        {/* Estado del Producto (si tiene seguimiento) */}
+                        {(getAlias(devolucion, ['fecha_recepcion', 'fechaRecepcion'], null) || 
+                          getAlias(devolucion, ['fecha_prueba', 'fechaPrueba'], null) || 
+                          getAlias(devolucion, ['ubicacion_producto', 'ubicacionProducto'], null)) && (
+                          <div className="mt-4 pt-4 border-t">
+                            <h4 className="font-semibold mb-2 flex items-center gap-2">
+                              📦 Estado del Producto
+                            </h4>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              {getAlias(devolucion, ['fecha_recepcion', 'fechaRecepcion'], null) && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Fecha recepción:</span>
+                                  <p className="text-sm font-medium">
+                                    {new Date(getAlias(devolucion, ['fecha_recepcion', 'fechaRecepcion'], '')).toLocaleDateString('es-AR')}
+                                  </p>
+                                </div>
+                              )}
+                              {getAlias(devolucion, ['ubicacion_producto', 'ubicacionProducto'], null) && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Ubicación:</span>
+                                  <p className="text-sm font-medium">{getAlias(devolucion, ['ubicacion_producto', 'ubicacionProducto'], '')}</p>
+                                </div>
+                              )}
+                              {getAlias(devolucion, ['fecha_prueba', 'fechaPrueba'], null) && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Fecha prueba:</span>
+                                  <p className="text-sm font-medium">
+                                    {new Date(getAlias(devolucion, ['fecha_prueba', 'fechaPrueba'], '')).toLocaleDateString('es-AR')}
+                                  </p>
+                                </div>
+                              )}
+                              {getAlias(devolucion, ['resultado_prueba', 'resultadoPrueba'], null) && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Resultado prueba:</span>
+                                  <p className={`text-sm font-medium ${
+                                    getAlias(devolucion, ['resultado_prueba', 'resultadoPrueba'], '') === 'Funciona - Recuperable' ? 'text-green-600' : 
+                                    getAlias(devolucion, ['resultado_prueba', 'resultadoPrueba'], '') === 'No funciona - No recuperable' ? 'text-red-600' : 
+                                    'text-yellow-600'
+                                  }`}>
+                                    {getAlias(devolucion, ['resultado_prueba', 'resultadoPrueba'], '')}
+                                  </p>
+                                </div>
+                              )}
+                              {getAlias(devolucion, ['observaciones_prueba', 'observacionesPrueba'], null) && (
+                                <div className="col-span-2">
+                                  <span className="text-xs text-muted-foreground">Observaciones prueba:</span>
+                                  <p className="text-sm mt-1 bg-muted/50 p-2 rounded">{getAlias(devolucion, ['observaciones_prueba', 'observacionesPrueba'], '')}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

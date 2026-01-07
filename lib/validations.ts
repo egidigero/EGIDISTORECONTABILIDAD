@@ -128,6 +128,25 @@ export const devolucionSchemaBase = z.object({
   // Comisión original de la venta (opcional, usada en cálculos/trazabilidad)
   comisionOriginal: z.number().min(0).default(0),
   // commission fields removed from DB; calculations derived from ventas/liquidaciones
+  
+  // Seguimiento post-recepción del producto
+  fechaRecepcion: z.preprocess((arg) => {
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    return arg
+  }, z.date().optional()),
+  ubicacionProducto: z.string().optional(),
+  fechaPrueba: z.preprocess((arg) => {
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    return arg
+  }, z.date().optional()),
+  resultadoPrueba: z.enum([
+    "Pendiente",
+    "Funciona - Recuperable",
+    "No funciona - No recuperable"
+  ]).optional(),
+  observacionesPrueba: z.string().optional(),
 })
 
 // Expose a stable alias for the base schema (ZodObject) so server code can call .partial()
