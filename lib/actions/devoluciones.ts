@@ -1136,6 +1136,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
     try {
       // Debug: log attempted update payload to help diagnose why updates fail
       const snakeCasePayload = toSnakeCase(validatedMergedPartial)
+      try { console.debug('[updateDevolucion] BEFORE filter, snakeCasePayload.fecha_recepcion=', snakeCasePayload.fecha_recepcion, 'validatedMergedPartial.fechaRecepcion=', validatedMergedPartial.fechaRecepcion) } catch (dbg) {}
       // Filtrar undefined para evitar enviar campos que no queremos actualizar
       const cleanPayload = Object.fromEntries(
         Object.entries(snakeCasePayload).filter(([_, v]) => v !== undefined)
