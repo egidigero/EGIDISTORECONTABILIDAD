@@ -272,15 +272,15 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
             </DropdownMenuItem>
           )}
           
-          {/* Mostrar 'Registrar Recepción' solo si tiene resolución pero no tiene fecha_recepcion */}
-          {(devolucion.estado?.includes('Entregada') && !fetchedDevolucion?.fecha_recepcion && !fetchedDevolucion?.fechaRecepcion) && (
+          {/* Mostrar 'Registrar Recepción' si aún no tiene fecha_recepcion (puede hacerse antes o después de completar) */}
+          {!fetchedDevolucion?.fecha_recepcion && !fetchedDevolucion?.fechaRecepcion && (
             <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowRecepcion(true); }}>
               📦 Registrar Recepción
             </DropdownMenuItem>
           )}
           
-          {/* Mostrar 'Registrar Prueba' solo si tiene recepción pero no tiene prueba */}
-          {(fetchedDevolucion?.fecha_recepcion || fetchedDevolucion?.fechaRecepcion) && fetchedDevolucion?.resultado_prueba === 'Pendiente' && (
+          {/* Mostrar 'Registrar Prueba' si tiene recepción pero no tiene prueba (puede hacerse antes de completar) */}
+          {(fetchedDevolucion?.fecha_recepcion || fetchedDevolucion?.fechaRecepcion) && (!fetchedDevolucion?.resultado_prueba || fetchedDevolucion?.resultado_prueba === 'Pendiente') && (
             <DropdownMenuItem onClick={async () => { await loadDevolucion(); setShowPrueba(true); }}>
               🔍 Registrar Prueba
             </DropdownMenuItem>
