@@ -131,14 +131,28 @@ export const devolucionSchemaBase = z.object({
   
   // Seguimiento post-recepción del producto
   fechaRecepcion: z.preprocess((arg) => {
+    if (!arg) return undefined
     if (arg instanceof Date) return arg
     if (typeof arg === 'string' && arg) return new Date(arg)
+    // Manejar objetos serializados (de Firestore, etc.)
+    if (typeof arg === 'object') {
+      if (typeof (arg as any).toDate === 'function') return (arg as any).toDate()
+      if (typeof (arg as any).seconds === 'number') return new Date((arg as any).seconds * 1000)
+      if (typeof (arg as any).toISOString === 'function') return new Date((arg as any).toISOString())
+    }
     return arg
   }, z.date().optional()),
   ubicacionProducto: z.string().nullable().optional(),
   fechaPrueba: z.preprocess((arg) => {
+    if (!arg) return undefined
     if (arg instanceof Date) return arg
     if (typeof arg === 'string' && arg) return new Date(arg)
+    // Manejar objetos serializados (de Firestore, etc.)
+    if (typeof arg === 'object') {
+      if (typeof (arg as any).toDate === 'function') return (arg as any).toDate()
+      if (typeof (arg as any).seconds === 'number') return new Date((arg as any).seconds * 1000)
+      if (typeof (arg as any).toISOString === 'function') return new Date((arg as any).toISOString())
+    }
     return arg
   }, z.date().optional()),
   resultadoPrueba: z.enum([
