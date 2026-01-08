@@ -31,17 +31,26 @@ function toSnakeCase(obj: any): any {
     fechaCompra: 'fecha_compra',
     fechaReclamo: 'fecha_reclamo',
     fechaCompletada: 'fecha_completada',
+    fechaRecepcion: 'fecha_recepcion',
+    fechaPrueba: 'fecha_prueba',
+    ubicacionProducto: 'ubicacion_producto',
+    resultadoPrueba: 'resultado_prueba',
+    observacionesPrueba: 'observaciones_prueba',
     productoRecuperable: 'producto_recuperable',
     numeroSeguimiento: 'numero_seguimiento',
     numeroDevolucionGenerado: 'id_devolucion'
   ,
   // MP/ML flags persisted from the UI
   mpEstado: 'mp_estado',
-  mpRetener: 'mp_retenido'
+  mpRetener: 'mp_retenido',
+  // Campos que NO se deben guardar en DB (solo en memoria)
+  fechaAccion: '__SKIP__'
   }
   for (const key of Object.keys(obj)) {
     const val = (obj as any)[key]
     const snake = mapping[key] ?? key.replace(/([A-Z])/g, '_$1').toLowerCase()
+    // Filtrar campos marcados como __SKIP__
+    if (snake === '__SKIP__') continue
     out[snake] = toSnakeCase(val)
   }
   return out
@@ -1003,13 +1012,25 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       // mantener los valores actuales y sobreescribir con los campos provistos
       ...existingCamel,
       ...parsedWithoutFechaAccion,
-      // asegurar que los campos originales se completen si vienen vacíos
-  costoProductoOriginal: parsedPartial.costoProductoOriginal ?? existing.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0,
-  costoEnvioOriginal: parsedPartial.costoEnvioOriginal ?? existing.costoEnvioOriginal ?? datosVenta?.costoEnvioOriginal ?? 0,
-  montoVentaOriginal: parsedPartial.montoVentaOriginal ?? existing.montoVentaOriginal ?? datosVenta?.montoVentaOriginal ?? 0,
-  // commission removed: not persisted on devoluciones
-  nombreContacto: parsedPartial.nombreContacto ?? existing.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto,
-  fechaCompra: parsedPartial.fechaCompra ?? existing.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra,
+      // asegurar que los campos originales se completen SOLO si vienen explícitamente
+      // (no sobrescribir con defaults cuando estamos actualizando otros campos como recepción/prueba)
+    }
+    
+    // Solo agregar estos campos si vienen en el payload o si estamos creando (no hay existing)
+    if (parsedPartial.costoProductoOriginal !== undefined) {
+      mergedPre.costoProductoOriginal = parsedPartial.costoProductoOriginal ?? datosVenta?.costoProductoOriginal ?? 0
+    }
+    if (parsedPartial.costoEnvioOriginal !== undefined) {
+      mergedPre.costoEnvioOriginal = parsedPartial.costoEnvioOriginal ?? datosVenta?.costoEnvioOriginal ?? 0
+    }
+    if (parsedPartial.montoVentaOriginal !== undefined) {
+      mergedPre.montoVentaOriginal = parsedPartial.montoVentaOriginal ?? datosVenta?.montoVentaOriginal ?? 0
+    }
+    if (parsedPartial.nombreContacto !== undefined) {
+      mergedPre.nombreContacto = parsedPartial.nombreContacto ?? datosVenta?.comprador ?? existing.nombreContacto
+    }
+    if (parsedPartial.fechaCompra !== undefined) {
+      mergedPre.fechaCompra = parsedPartial.fechaCompra ?? datosVenta?.fechaCompra ?? existing.fechaCompra
     }
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
@@ -1114,10 +1135,15 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
     let updated: any = null
     try {
       // Debug: log attempted update payload to help diagnose why updates fail
-      try { console.debug('[updateDevolucion] id=', id, 'payload=', toSnakeCase(validatedMergedPartial)) } catch (dbg) {}
+      const snakeCasePayload = toSnakeCase(validatedMergedPartial)
+      // Filtrar undefined para evitar enviar campos que no queremos actualizar
+      const cleanPayload = Object.fromEntries(
+        Object.entries(snakeCasePayload).filter(([_, v]) => v !== undefined)
+      )
+      try { console.debug('[updateDevolucion] id=', id, 'payload=', cleanPayload) } catch (dbg) {}
       const resp = await supabase
         .from('devoluciones')
-        .update(toSnakeCase(validatedMergedPartial))
+        .update(cleanPayload)
         .eq('id', id)
         .select()
         .single()
