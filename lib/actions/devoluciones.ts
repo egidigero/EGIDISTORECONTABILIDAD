@@ -1534,6 +1534,23 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             await supabase.from('ventas').update({ estadoEnvio: 'Devuelto' }).eq('id', venta.id)
           }
 
+          // Disparar recálculo para Sin reembolso (liberar dinero retenido)
+          if (aplicarRecalculo && becameSinReembolso) {
+            try {
+              const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+              const fechaRecalculo = (merged.fechaAccion && new Date(merged.fechaAccion).toISOString().split('T')[0]) || 
+                                    (merged.fechaCompletada && new Date(merged.fechaCompletada).toISOString().split('T')[0]) || 
+                                    new Date().toISOString().split('T')[0]
+              await recalcularLiquidacionesEnCascada(fechaRecalculo)
+              console.log('[Sin reembolso] Recálculo ejecutado desde', fechaRecalculo)
+              revalidatePath('/liquidaciones')
+              revalidatePath('/eerr')
+              revalidatePath('/ventas')
+            } catch (recalcErr) {
+              console.warn('Error ejecutando recálculo para Sin reembolso (no crítico)', recalcErr)
+            }
+          }
+
           if (ajusteHoy !== 0) {
                 // Ensure we persist envio breakdown and total on finalization
                 try {
