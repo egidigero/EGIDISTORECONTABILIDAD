@@ -1383,15 +1383,20 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       const prevEstado = existing.estado ?? null
       const newEstado = merged.estado ?? null
 
-      const wasFinalBefore = !!(prevTipo === 'Reembolso' || (typeof prevEstado === 'string' && (String(prevEstado).includes('Reembolso') || String(prevEstado).includes('Cambio'))))
-      const isFinalNow = !!(newTipo === 'Reembolso' || newTipo?.startsWith('Cambio') || (typeof newEstado === 'string' && (String(newEstado).includes('Reembolso') || String(newEstado).includes('Cambio'))))
+      const wasFinalBefore = !!(prevTipo === 'Reembolso' || (typeof prevEstado === 'string' && (String(prevEstado).includes('Reembolso') || String(prevEstado).includes('Cambio') || String(prevEstado).includes('Sin reembolso'))))
+      const isFinalNow = !!(newTipo === 'Reembolso' || newTipo === 'Sin reembolso' || newTipo?.startsWith('Cambio') || (typeof newEstado === 'string' && (String(newEstado).includes('Reembolso') || String(newEstado).includes('Cambio') || String(newEstado).includes('Sin reembolso'))))
 
       // Obtener venta original si necesitamos aplicar ajustes
       if (isFinalNow) {
-        // SERVER-SIDE GUARD: require fechaCompletada when finalizing; the client already enforces this but
-        // validate on the server as well to avoid surprises from direct API calls.
-  const fechaCompletadaProvided = !!(merged.fechaCompletada || (merged as any).fecha_completada)
-        if (!fechaCompletadaProvided) {
+        console.log('[updateDevolucion] isFinalNow = true, newTipo:', newTipo, 'newEstado:', newEstado)
+        
+        // SERVER-SIDE GUARD: require fechaCompletada when finalizing (except Sin reembolso which can proceed without it)
+        const fechaCompletadaProvided = !!(merged.fechaCompletada || (merged as any).fecha_completada)
+        const esSinReembolso = newTipo === 'Sin reembolso' || (typeof newEstado === 'string' && String(newEstado).includes('Sin reembolso'))
+        
+        console.log('[updateDevolucion] fechaCompletadaProvided:', fechaCompletadaProvided, 'esSinReembolso:', esSinReembolso)
+        
+        if (!fechaCompletadaProvided && !esSinReembolso) {
           console.warn('Finalización sin fechaCompletada detectada; cancelando ajustes contables')
           // We intentionally don't throw to avoid breaking the update, but we don't apply accounting.
           revalidatePath('/devoluciones')

@@ -54,10 +54,11 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
   const isEditing = !!devolucion
 
   // Local form type: allow date fields to be string (YYYY-MM-DD) or Date to match how inputs provide values.
-  type LocalDevolucionForm = Omit<DevolucionFormData, 'fechaCompra' | 'fechaReclamo' | 'fechaAccion'> & {
+  type LocalDevolucionForm = Omit<DevolucionFormData, 'fechaCompra' | 'fechaReclamo' | 'fechaAccion' | 'fechaCompletada'> & {
     fechaCompra: string | Date
     fechaReclamo: string | Date
     fechaAccion: string | Date
+    fechaCompletada?: string | Date
     productoRecuperable?: boolean
   }
 
