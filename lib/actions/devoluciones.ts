@@ -1468,19 +1468,24 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
           } else if (becameSinReembolso) {
             // Sin reembolso: es como que NO PASÓ NADA
             // Solo liberar dinero retenido (si hay), sin pérdidas ni costos
-            console.log('[Sin reembolso] Cliente nunca devolvió - liberando dinero retenido')
+            console.log('[Sin reembolso] === INICIO FLUJO SIN REEMBOLSO ===')
+            console.log('[Sin reembolso] Devolución ID:', id)
+            console.log('[Sin reembolso] Venta:', { plataforma: (venta as any).plataforma, metodoPago: (venta as any).metodoPago })
+            console.log('[Sin reembolso] merged.fechaAccion:', merged.fechaAccion)
+            console.log('[Sin reembolso] merged.fechaCompletada:', merged.fechaCompletada)
             
             // Marcar sin impacto financiero
             try {
-              await supabase.from('devoluciones').update({ 
+              const updateResult = await supabase.from('devoluciones').update({ 
                 monto_reembolsado: 0,
                 producto_recuperable: false,
                 costo_envio_original: 0,
                 costo_envio_devolucion: 0,
                 costo_envio_nuevo: 0
               }).eq('id', id)
+              console.log('[Sin reembolso] ✓ Campos actualizados a 0:', updateResult.error ? updateResult.error : 'OK')
             } catch (snErr) {
-              console.warn('No se pudo actualizar campos para Sin reembolso (no crítico)', snErr)
+              console.error('[Sin reembolso] ✗ Error actualizando campos:', snErr)
             }
 
             // Liberar dinero retenido (si hay) usando fechaAccion
@@ -1488,22 +1493,32 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
               const plataforma = (venta as any).plataforma ?? null
               const metodoPago = (venta as any).metodoPago ?? null
               
+              console.log('[Sin reembolso] Verificando plataforma ML:', { plataforma, metodoPago })
+              
               if (plataforma === 'ML' || metodoPago === 'MercadoPago') {
+                console.log('[Sin reembolso] ✓ Es ML/MercadoPago - buscando delta reclamo...')
+                
                 // Buscar si hay dinero retenido previamente
-                const { data: deltaReclamo } = await supabase
+                const { data: deltaReclamo, error: deltaError } = await supabase
                   .from('devoluciones_deltas')
                   .select('*')
                   .eq('devolucion_id', id)
                   .eq('tipo', 'reclamo')
                   .single()
 
+                console.log('[Sin reembolso] Delta reclamo encontrado:', deltaReclamo)
+                console.log('[Sin reembolso] Error al buscar delta:', deltaError)
+
                 if (deltaReclamo && deltaReclamo.delta_mp_retenido > 0) {
                   const montoRetenido = Number(deltaReclamo.delta_mp_retenido)
+                  console.log('[Sin reembolso] ✓ Dinero retenido encontrado:', montoRetenido)
                   
                   // Usar fechaAccion (fecha de ejecución) para liberar el dinero
                   const fechaAccion = (merged.fechaAccion && new Date(merged.fechaAccion).toISOString().split('T')[0]) || 
                                      (merged.fechaCompletada && new Date(merged.fechaCompletada).toISOString().split('T')[0]) || 
                                      new Date().toISOString().split('T')[0]
+                  
+                  console.log('[Sin reembolso] Fecha de liberación:', fechaAccion)
                   
                   // Crear delta de liberación
                   const deltaLiberacion: any = {
@@ -1516,16 +1531,24 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     delta_tn_a_liquidar: 0
                   }
 
-                  await supabase.from('devoluciones_deltas').upsert([deltaLiberacion], { onConflict: 'devolucion_id,tipo' })
+                  console.log('[Sin reembolso] Delta a insertar:', deltaLiberacion)
+
+                  const upsertResult = await supabase.from('devoluciones_deltas').upsert([deltaLiberacion], { onConflict: 'devolucion_id,tipo' })
+                  console.log('[Sin reembolso] Resultado upsert:', upsertResult.error ? upsertResult.error : 'OK')
+                  
                   aplicarRecalculo = true
-                  console.log('[Sin reembolso] ✓ Dinero liberado:', montoRetenido, 'ARS el', fechaAccion)
+                  console.log('[Sin reembolso] ✓✓✓ Dinero liberado:', montoRetenido, 'ARS el', fechaAccion)
                 } else {
-                  console.log('[Sin reembolso] No había dinero retenido')
+                  console.log('[Sin reembolso] ✗ No había dinero retenido (delta_mp_retenido:', deltaReclamo?.delta_mp_retenido, ')')
                 }
+              } else {
+                console.log('[Sin reembolso] ✗ No es ML/MercadoPago - skip liberación')
               }
             } catch (liberarErr) {
-              console.warn('Error liberando dinero retenido (no crítico)', liberarErr)
+              console.error('[Sin reembolso] ✗✗✗ Error liberando dinero retenido:', liberarErr)
             }
+            
+            console.log('[Sin reembolso] === FIN FLUJO - aplicarRecalculo:', aplicarRecalculo, '===')
           }
 
           // Marcar venta como devuelta si se convirtió en reembolso
