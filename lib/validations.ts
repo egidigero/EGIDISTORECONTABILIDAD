@@ -135,7 +135,7 @@ export const devolucionSchemaBase = z.object({
     if (typeof arg === 'string' && arg) return new Date(arg)
     return arg
   }, z.date().optional()),
-  ubicacionProducto: z.string().optional(),
+  ubicacionProducto: z.string().nullable().optional(),
   fechaPrueba: z.preprocess((arg) => {
     if (arg instanceof Date) return arg
     if (typeof arg === 'string' && arg) return new Date(arg)
@@ -146,7 +146,7 @@ export const devolucionSchemaBase = z.object({
     "Funciona - Recuperable",
     "No funciona - No recuperable"
   ]).optional(),
-  observacionesPrueba: z.string().optional(),
+  observacionesPrueba: z.string().nullable().optional(),
 })
 
 // Expose a stable alias for the base schema (ZodObject) so server code can call .partial()

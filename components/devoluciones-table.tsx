@@ -150,11 +150,24 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
     {
       key: "estado",
       header: "Estado",
-      render: (devolucion: any) => (
-        <Badge variant={estadoColors[devolucion.estado] || "default"}>
-          {devolucion.estado}
-        </Badge>
-      ),
+      render: (devolucion: any) => {
+        const estado = getAlias(devolucion, ['estado', 'status'], 'Pendiente')
+        const fechaRecepcion = getAlias(devolucion, ['fecha_recepcion', 'fechaRecepcion'], null)
+        
+        // Si está pendiente y no tiene fecha de recepción, mostrar "En camino"
+        let estadoDisplay = estado
+        if ((estado === 'Pendiente' || estado === 'En devolución' || estado === 'Aceptada en camino') && !fechaRecepcion) {
+          estadoDisplay = '📦 En camino'
+        } else if ((estado === 'Pendiente' || estado === 'En devolución' || estado === 'Aceptada en camino') && fechaRecepcion) {
+          estadoDisplay = '✅ Recibido'
+        }
+        
+        return (
+          <Badge variant={estadoColors[estado] || "default"}>
+            {estadoDisplay}
+          </Badge>
+        )
+      },
     },
     {
       key: "perdida_total",
