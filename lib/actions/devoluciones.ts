@@ -241,7 +241,7 @@ export async function createDevolucion(data: DevolucionFormData) {
     if (data.ventaId) {
       const { data: devolucionExistente, error: checkError } = await supabase
         .from('devoluciones')
-        .select('id, numero_devolucion, id_devolucion')
+        .select('id, id_devolucion')
         .eq('venta_id', data.ventaId)
         .maybeSingle()
 
@@ -251,7 +251,7 @@ export async function createDevolucion(data: DevolucionFormData) {
       }
 
       if (devolucionExistente) {
-        const numDev = devolucionExistente.numero_devolucion || devolucionExistente.id_devolucion || devolucionExistente.id
+        const numDev = devolucionExistente.id_devolucion || devolucionExistente.id
         return {
           success: false,
           error: `Esta venta ya tiene una devolución registrada (${numDev}). Eliminá la devolución existente si querés crear una nueva.`
