@@ -1092,6 +1092,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       mergedClean.fechaCompra = ensureDateForZod(mergedClean.fechaCompra)
       mergedClean.fechaReclamo = ensureDateForZod(mergedClean.fechaReclamo)
       mergedClean.fechaCompletada = ensureDateForZod(mergedClean.fechaCompletada)
+      mergedClean.fechaRecepcion = ensureDateForZod(mergedClean.fechaRecepcion)
+      mergedClean.fechaPrueba = ensureDateForZod(mergedClean.fechaPrueba)
     }
 
     // Debug: log the normalized date values right before parsing so we can inspect invalid inputs
