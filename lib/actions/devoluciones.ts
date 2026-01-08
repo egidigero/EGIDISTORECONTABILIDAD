@@ -1449,6 +1449,10 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
           const newShipping = Number(merged.costoEnvioDevolucion ?? 0)
           const diffShipping = newShipping - prevShipping
 
+          // Si es Sin reembolso -> liberar dinero retenido (vuelve a MP disponible)
+          const becameSinReembolso = (newTipo === 'Sin reembolso' || (typeof newEstado === 'string' && String(newEstado).includes('Sin reembolso')))
+          const wasSinReembolso = (prevTipo === 'Sin reembolso' || (typeof prevEstado === 'string' && String(prevEstado).includes('Sin reembolso')))
+
           // Determinar ajustes a aplicar HOY
           let ajusteHoy = 0
           let aplicarRecalculo = false
@@ -1461,10 +1465,72 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             // Para cambio, solo aplicar el costo de envío de devolución (diferencia o monto nuevo si se convirtió ahora)
             ajusteHoy = diffShipping !== 0 ? diffShipping : (becameCambio && !wasCambio ? newShipping : 0)
             aplicarRecalculo = ajusteHoy !== 0
+          } else if (becameSinReembolso) {
+            // Sin reembolso: es como que NO PASÓ NADA
+            // Solo liberar dinero retenido (si hay), sin pérdidas ni costos
+            console.log('[Sin reembolso] Cliente nunca devolvió - liberando dinero retenido')
+            
+            // Marcar sin impacto financiero
+            try {
+              await supabase.from('devoluciones').update({ 
+                monto_reembolsado: 0,
+                producto_recuperable: false,
+                costo_envio_original: 0,
+                costo_envio_devolucion: 0,
+                costo_envio_nuevo: 0
+              }).eq('id', id)
+            } catch (snErr) {
+              console.warn('No se pudo actualizar campos para Sin reembolso (no crítico)', snErr)
+            }
+
+            // Liberar dinero retenido (si hay) usando fechaAccion
+            try {
+              const plataforma = (venta as any).plataforma ?? null
+              const metodoPago = (venta as any).metodoPago ?? null
+              
+              if (plataforma === 'ML' || metodoPago === 'MercadoPago') {
+                // Buscar si hay dinero retenido previamente
+                const { data: deltaReclamo } = await supabase
+                  .from('devoluciones_deltas')
+                  .select('*')
+                  .eq('devolucion_id', id)
+                  .eq('tipo', 'reclamo')
+                  .single()
+
+                if (deltaReclamo && deltaReclamo.delta_mp_retenido > 0) {
+                  const montoRetenido = Number(deltaReclamo.delta_mp_retenido)
+                  
+                  // Usar fechaAccion (fecha de ejecución) para liberar el dinero
+                  const fechaAccion = (merged.fechaAccion && new Date(merged.fechaAccion).toISOString().split('T')[0]) || 
+                                     (merged.fechaCompletada && new Date(merged.fechaCompletada).toISOString().split('T')[0]) || 
+                                     new Date().toISOString().split('T')[0]
+                  
+                  // Crear delta de liberación
+                  const deltaLiberacion: any = {
+                    devolucion_id: id,
+                    tipo: 'sin_reembolso',
+                    fecha_impacto: fechaAccion,
+                    delta_mp_disponible: montoRetenido,  // Vuelve a disponible
+                    delta_mp_retenido: -montoRetenido,   // Sale de retenido
+                    delta_mp_a_liquidar: 0,
+                    delta_tn_a_liquidar: 0
+                  }
+
+                  await supabase.from('devoluciones_deltas').upsert([deltaLiberacion], { onConflict: 'devolucion_id,tipo' })
+                  aplicarRecalculo = true
+                  console.log('[Sin reembolso] ✓ Dinero liberado:', montoRetenido, 'ARS el', fechaAccion)
+                } else {
+                  console.log('[Sin reembolso] No había dinero retenido')
+                }
+              }
+            } catch (liberarErr) {
+              console.warn('Error liberando dinero retenido (no crítico)', liberarErr)
+            }
           }
 
           // Marcar venta como devuelta si se convirtió en reembolso
-          if (becameReembolso) {
+          // (NO marcar si es Sin reembolso - la venta sigue siendo válida)
+          if (becameReembolso && !becameSinReembolso) {
             await supabase.from('ventas').update({ estadoEnvio: 'Devuelto' }).eq('id', venta.id)
           }
 
@@ -1892,6 +1958,8 @@ export async function getEstadisticasDevoluciones(
     let query = supabase
       .from('devoluciones_resumen')
       .select('*')
+      // Excluir 'Sin reembolso' - no cuentan como devoluciones reales
+      .neq('tipo_resolucion', 'Sin reembolso')
 
     // Filtrar por fecha de reclamo
     if (fechaInicio) {

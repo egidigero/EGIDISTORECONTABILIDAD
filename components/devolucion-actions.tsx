@@ -72,7 +72,8 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       // marcar fecha completada y estado según tipo seleccionado
       const estadoMap: Record<string,string> = {
         'Reembolso': 'Entregada - Reembolso',
-        'Cambio mismo producto': 'Entregada - Cambio mismo producto'
+        'Cambio mismo producto': 'Entregada - Cambio mismo producto',
+        'Sin reembolso': 'Entregada - Sin reembolso'
       }
       payload.estado = estadoMap[advanceType] || 'Pendiente'
       // Use user-provided fechaCompletada when available (required for both), else default to now
@@ -361,6 +362,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               <option value="">-- Seleccionar --</option>
               <option value="Reembolso">Reembolso</option>
               <option value="Cambio mismo producto">Cambio</option>
+              <option value="Sin reembolso">Sin reembolso (cliente no devolvió)</option>
             </select>
             
             {/* Solo pedir envío nuevo cuando es Cambio */}
@@ -379,8 +381,8 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
             
-            {/* Preguntar si se recupera el producto cuando se eligió una resolución */}
-            {advanceType !== '' && (
+            {/* Preguntar si se recupera el producto cuando se eligió una resolución (excepto Sin reembolso) */}
+            {advanceType !== '' && advanceType !== 'Sin reembolso' && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">¿Se recupera el producto?</label>
                 <div className="flex items-center gap-3">
@@ -390,12 +392,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
-            {/* Pedir la fecha de impacto para Reembolso o Cambio */}
-            {(advanceType === 'Reembolso' || advanceType === 'Cambio mismo producto') && (
+            {/* Pedir la fecha de impacto para Reembolso, Cambio o Sin reembolso */}
+            {(advanceType === 'Reembolso' || advanceType === 'Cambio mismo producto' || advanceType === 'Sin reembolso') && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Fecha de impacto (aplica en liquidaciones)</label>
                 <input type="date" className="w-full border rounded p-2" value={fechaCompletadaLocal ?? ''} onChange={(e) => setFechaCompletadaLocal(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Fecha en la que se aplican los ajustes contables{advanceType === 'Cambio mismo producto' ? ' y se crea el gasto del envío nuevo' : ''}.</p>
+                <p className="text-xs text-muted-foreground mt-1">Fecha en la que se {advanceType === 'Sin reembolso' ? 'libera el dinero retenido (vuelve a MP disponible)' : advanceType === 'Cambio mismo producto' ? 'aplican los ajustes contables y se crea el gasto del envío nuevo' : 'aplican los ajustes contables'}.</p>
               </div>
             )}
 
