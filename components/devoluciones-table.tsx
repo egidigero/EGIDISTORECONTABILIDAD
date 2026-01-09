@@ -153,19 +153,44 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       render: (devolucion: any) => {
         const estado = getAlias(devolucion, ['estado', 'status'], 'Pendiente')
         const fechaRecepcion = getAlias(devolucion, ['fecha_recepcion', 'fechaRecepcion'], null)
+        const fechaPrueba = getAlias(devolucion, ['fecha_prueba', 'fechaPrueba'], null)
+        const resultadoPrueba = getAlias(devolucion, ['resultado_prueba', 'resultadoPrueba'], 'Pendiente')
         
         // Si está pendiente y no tiene fecha de recepción, mostrar "En camino"
         let estadoDisplay = estado
+        let estadoIcon = ''
+        
         if ((estado === 'Pendiente' || estado === 'En devolución' || estado === 'Aceptada en camino') && !fechaRecepcion) {
-          estadoDisplay = '📦 En camino'
+          estadoDisplay = 'En camino'
+          estadoIcon = '📦'
         } else if ((estado === 'Pendiente' || estado === 'En devolución' || estado === 'Aceptada en camino') && fechaRecepcion) {
-          estadoDisplay = '✅ Recibido'
+          estadoDisplay = 'Recibido'
+          estadoIcon = '✅'
         }
         
         return (
-          <Badge variant={estadoColors[estado] || "default"}>
-            {estadoDisplay}
-          </Badge>
+          <div className="flex flex-col gap-1">
+            <Badge variant={estadoColors[estado] || "default"}>
+              {estadoIcon && <span className="mr-1">{estadoIcon}</span>}
+              {estadoDisplay}
+            </Badge>
+            {/* Indicadores de recepción y prueba */}
+            <div className="flex gap-1 text-xs">
+              {fechaRecepcion && (
+                <span className="text-green-600" title={`Recibido: ${new Date(fechaRecepcion).toLocaleDateString()}`}>
+                  📦✓
+                </span>
+              )}
+              {fechaPrueba && (
+                <span 
+                  className={resultadoPrueba?.includes('Funciona') ? 'text-green-600' : 'text-red-600'}
+                  title={`Probado: ${resultadoPrueba} (${new Date(fechaPrueba).toLocaleDateString()})`}
+                >
+                  {resultadoPrueba?.includes('Funciona') ? '🔍✅' : '🔍❌'}
+                </span>
+              )}
+            </div>
+          </div>
         )
       },
     },

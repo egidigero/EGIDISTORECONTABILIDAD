@@ -16,6 +16,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
   const [fechaCompraFin, setFechaCompraFin] = useState<string>('')
   const [plataforma, setPlataforma] = useState<string>('todas')
   const [estado, setEstado] = useState<string>('todos')
+  const [estadoRecepcion, setEstadoRecepcion] = useState<string>('todos')
+  const [estadoPrueba, setEstadoPrueba] = useState<string>('todos')
   const [loading, setLoading] = useState(false)
   const [filtrosActivos, setFiltrosActivos] = useState(0)
 
@@ -29,6 +31,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
       if (fechaCompraFin) params.set('fechaCompraFin', fechaCompraFin)
       if (plataforma && plataforma !== 'todas') params.set('plataforma', plataforma)
       if (estado && estado !== 'todos') params.set('estado', estado)
+      if (estadoRecepcion && estadoRecepcion !== 'todos') params.set('estadoRecepcion', estadoRecepcion)
+      if (estadoPrueba && estadoPrueba !== 'todos') params.set('estadoPrueba', estadoPrueba)
       
       const res = await fetch(`/api/devoluciones/estadisticas?${params.toString()}`)
       const json = await res.json()
@@ -42,6 +46,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
       if (fechaCompraFin) activos++
       if (plataforma !== 'todas') activos++
       if (estado !== 'todos') activos++
+      if (estadoRecepcion !== 'todos') activos++
+      if (estadoPrueba !== 'todos') activos++
       setFiltrosActivos(activos)
     } catch (err) {
       console.error('Error fetching devoluciones stats', err)
@@ -57,6 +63,8 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
     setFechaCompraFin('')
     setPlataforma('todas')
     setEstado('todos')
+    setEstadoRecepcion('todos')
+    setEstadoPrueba('todos')
     setFiltrosActivos(0)
     fetchStats()
   }
@@ -169,7 +177,7 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label htmlFor="plataforma">Plataforma</Label>
               <Select value={plataforma} onValueChange={setPlataforma}>
@@ -199,6 +207,36 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
                   <SelectItem value="Entregada - Cambio mismo producto">Entregada - Cambio</SelectItem>
                   <SelectItem value="Entregada - Sin reembolso">Entregada - Sin reembolso</SelectItem>
                   <SelectItem value="Rechazada">Rechazada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="estadoRecepcion">📦 Recepción</Label>
+              <Select value={estadoRecepcion} onValueChange={setEstadoRecepcion}>
+                <SelectTrigger id="estadoRecepcion">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="recibido">✅ Recibido</SelectItem>
+                  <SelectItem value="no_recibido">📦 En camino</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="estadoPrueba">🔍 Prueba</Label>
+              <Select value={estadoPrueba} onValueChange={setEstadoPrueba}>
+                <SelectTrigger id="estadoPrueba">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="probado">✅ Probado</SelectItem>
+                  <SelectItem value="no_probado">⏳ Sin probar</SelectItem>
+                  <SelectItem value="funciona">✅ Funciona</SelectItem>
+                  <SelectItem value="no_funciona">❌ No funciona</SelectItem>
                 </SelectContent>
               </Select>
             </div>
