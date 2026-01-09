@@ -679,7 +679,18 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
   // Sanitize incoming partial payload to avoid empty-string enum values causing Zod to fail
   const _safePartial: any = { ...(data as any) }
   if (_safePartial.mpEstado === "") _safePartial.mpEstado = undefined
+  
+  // Debug: log incoming data from frontend
+  try { 
+    console.debug('[updateDevolucion] FROM FRONTEND - fechaRecepcion=', _safePartial.fechaRecepcion, 'type=', typeof _safePartial.fechaRecepcion, 'instanceof Date=', _safePartial.fechaRecepcion instanceof Date) 
+  } catch (dbg) {}
+  
   const parsedPartial = devolucionSchemaBase.partial().parse(_safePartial)
+  
+  // Debug: log after first parse
+  try { 
+    console.debug('[updateDevolucion] AFTER FIRST PARSE - fechaRecepcion=', parsedPartial.fechaRecepcion, 'type=', typeof parsedPartial.fechaRecepcion) 
+  } catch (dbg) {}
 
     // Obtener registro existente para hacer un update tipo "merge"
     const { data: existing, error: fetchError } = await supabase
