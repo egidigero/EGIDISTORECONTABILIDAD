@@ -10,6 +10,8 @@ export async function GET(req: Request) {
     const fechaCompraFin = url.searchParams.get('fechaCompraFin') || undefined
     const plataforma = url.searchParams.get('plataforma') || undefined
     const estado = url.searchParams.get('estado') || undefined
+    const estadoRecepcion = url.searchParams.get('estadoRecepcion') || undefined
+    const estadoPrueba = url.searchParams.get('estadoPrueba') || undefined
     
     const stats = await getEstadisticasDevoluciones(
       fechaInicio, 
@@ -17,7 +19,9 @@ export async function GET(req: Request) {
       fechaCompraInicio, 
       fechaCompraFin,
       plataforma,
-      estado
+      estado,
+      estadoRecepcion,
+      estadoPrueba
     )
     return NextResponse.json({ success: true, data: stats })
   } catch (err: any) {

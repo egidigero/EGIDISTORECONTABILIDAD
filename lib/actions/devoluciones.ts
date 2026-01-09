@@ -2062,7 +2062,9 @@ export async function getEstadisticasDevoluciones(
   fechaCompraInicio?: string,
   fechaCompraFin?: string,
   plataforma?: string,
-  estado?: string
+  estado?: string,
+  estadoRecepcion?: string,
+  estadoPrueba?: string
 ) {
   try {
     let query = supabase
@@ -2095,6 +2097,34 @@ export async function getEstadisticasDevoluciones(
     // Filtrar por estado
     if (estado && estado !== 'todos') {
       query = query.eq('estado', estado)
+    }
+
+    // Filtrar por estado de recepción
+    if (estadoRecepcion && estadoRecepcion !== 'todos') {
+      if (estadoRecepcion === 'recibido') {
+        query = query.not('fecha_recepcion', 'is', null)
+      } else if (estadoRecepcion === 'no_recibido') {
+        query = query.is('fecha_recepcion', null)
+      } else if (estadoRecepcion === 'pendiente_recibir') {
+        // Solo devoluciones en proceso (no completadas) y sin recibir
+        query = query.is('fecha_recepcion', null).is('tipo_resolucion', null)
+      }
+    }
+
+    // Filtrar por estado de prueba
+    if (estadoPrueba && estadoPrueba !== 'todos') {
+      if (estadoPrueba === 'probado') {
+        query = query.not('fecha_prueba', 'is', null)
+      } else if (estadoPrueba === 'no_probado') {
+        query = query.is('fecha_prueba', null)
+      } else if (estadoPrueba === 'pendiente_probar') {
+        // Recibido pero sin probar y no completado aún
+        query = query.not('fecha_recepcion', 'is', null).is('fecha_prueba', null).is('tipo_resolucion', null)
+      } else if (estadoPrueba === 'funciona') {
+        query = query.ilike('resultado_prueba', '%Funciona%')
+      } else if (estadoPrueba === 'no_funciona') {
+        query = query.ilike('resultado_prueba', '%No funciona%')
+      }
     }
 
     const { data: devoluciones, error } = await query

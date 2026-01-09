@@ -219,8 +219,9 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="recibido">✅ Recibido</SelectItem>
-                  <SelectItem value="no_recibido">📦 En camino</SelectItem>
+                  <SelectItem value="pendiente_recibir">⏳ Pendiente recibir</SelectItem>
+                  <SelectItem value="recibido">✅ Ya recibido</SelectItem>
+                  <SelectItem value="no_recibido">📦 Aún en camino (todos)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -233,10 +234,11 @@ export default function DevolucionesFiltro({ onStats }: { onStats: (stats: any) 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="probado">✅ Probado</SelectItem>
-                  <SelectItem value="no_probado">⏳ Sin probar</SelectItem>
-                  <SelectItem value="funciona">✅ Funciona</SelectItem>
-                  <SelectItem value="no_funciona">❌ No funciona</SelectItem>
+                  <SelectItem value="pendiente_probar">⏳ Pendiente probar</SelectItem>
+                  <SelectItem value="probado">✅ Ya probado</SelectItem>
+                  <SelectItem value="no_probado">❌ Sin probar (todos)</SelectItem>
+                  <SelectItem value="funciona">✅ Probado - Funciona</SelectItem>
+                  <SelectItem value="no_funciona">❌ Probado - No funciona</SelectItem>
                 </SelectContent>
               </Select>
             </div>
