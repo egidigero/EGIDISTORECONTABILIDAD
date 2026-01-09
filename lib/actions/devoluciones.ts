@@ -808,14 +808,16 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     // flow, subtract the original envío of the venta from MP disponible
                     // so that the liquidation reflects the real cash movement. The
                     // envío itself is still recorded as a gasto_ingreso for EERR.
-                    try {
-                      const envioOriginalFromVenta = Number((venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? (parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                      if (!Number.isNaN(envioOriginalFromVenta) && envioOriginalFromVenta > 0) {
-                        // Always subtract from disponible bucket
-                        delta_mp_disponible += -envioOriginalFromVenta
+                    if (plataforma === 'ML') {
+                      try {
+                        const envioOriginalFromVenta = Number((venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? (parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                        if (!Number.isNaN(envioOriginalFromVenta) && envioOriginalFromVenta > 0) {
+                          // Always subtract from disponible bucket
+                          delta_mp_disponible += -envioOriginalFromVenta
+                        }
+                      } catch (envEx) {
+                        // non-critical, continue
                       }
-                    } catch (envEx) {
-                      // non-critical, continue
                     }
 
                     // If user marked to retain money NOW (not previously), add to mp_retenido (positive)

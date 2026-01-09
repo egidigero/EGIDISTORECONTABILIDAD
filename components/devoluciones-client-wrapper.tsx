@@ -76,12 +76,6 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
           const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
           return !fechaRecepcion
         })
-      } else if (filtros.estadoRecepcion === 'pendiente_recibir') {
-        resultado = resultado.filter(dev => {
-          const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
-          const tipoResolucion = dev.tipo_resolucion || dev.tipoResolucion
-          return !fechaRecepcion && !tipoResolucion
-        })
       }
     }
 

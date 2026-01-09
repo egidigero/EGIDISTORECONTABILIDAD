@@ -221,9 +221,8 @@ export function DevolucionesGestionFiltro({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="pendiente_recibir">⏳ Pendiente recibir</SelectItem>
-                  <SelectItem value="recibido">✅ Ya recibido</SelectItem>
-                  <SelectItem value="no_recibido">📦 En camino (todos)</SelectItem>
+                  <SelectItem value="recibido">✅ Recibido</SelectItem>
+                  <SelectItem value="no_recibido">📦 En camino</SelectItem>
                 </SelectContent>
               </Select>
             </div>
