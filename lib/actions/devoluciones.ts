@@ -729,12 +729,17 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             try {
               const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
               const montoVentaLiquidado = await calcularMontoVentaALiquidar(venta as any)
+              console.log('🔍 DEBUG REEMBOLSO - montoVentaLiquidado:', montoVentaLiquidado)
+              console.log('🔍 DEBUG REEMBOLSO - venta.precioNeto:', (venta as any).precioNeto)
+              console.log('🔍 DEBUG REEMBOLSO - venta.pvBruto:', (venta as any).pvBruto)
               // CRITICAL: Always use the calculated amount from the sale, NOT any user-provided value.
               // The montoVentaLiquidado already reflects the correct precioNeto from the venta.
               const newMonto = Number(montoVentaLiquidado ?? 0)
+              console.log('🔍 DEBUG REEMBOLSO - newMonto final:', newMonto)
               // Use monto_reembolsado as the persisted source of truth for previous applied amount (fallback to 0)
               const prevApplied = Number((existing as any).monto_reembolsado ?? (existing as any).monto_reembolsado ?? 0)
               const delta = newMonto - prevApplied
+              console.log('🔍 DEBUG REEMBOLSO - delta calculado:', delta)
               const plataforma = (venta as any).plataforma ?? null
               const metodoPago = (venta as any).metodoPago ?? null
               const fechaHoyActual = new Date().toISOString().split('T')[0]
