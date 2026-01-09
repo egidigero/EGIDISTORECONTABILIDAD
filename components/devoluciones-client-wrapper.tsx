@@ -64,6 +64,59 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
       resultado = resultado.filter(dev => dev.estado === filtros.estado)
     }
 
+    // Filtro por estado de recepción
+    if (filtros.estadoRecepcion) {
+      if (filtros.estadoRecepcion === 'recibido') {
+        resultado = resultado.filter(dev => {
+          const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
+          return !!fechaRecepcion
+        })
+      } else if (filtros.estadoRecepcion === 'no_recibido') {
+        resultado = resultado.filter(dev => {
+          const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
+          return !fechaRecepcion
+        })
+      } else if (filtros.estadoRecepcion === 'pendiente_recibir') {
+        resultado = resultado.filter(dev => {
+          const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
+          const tipoResolucion = dev.tipo_resolucion || dev.tipoResolucion
+          return !fechaRecepcion && !tipoResolucion
+        })
+      }
+    }
+
+    // Filtro por estado de prueba
+    if (filtros.estadoPrueba) {
+      if (filtros.estadoPrueba === 'probado') {
+        resultado = resultado.filter(dev => {
+          const fechaPrueba = dev.fecha_prueba || dev.fechaPrueba
+          return !!fechaPrueba
+        })
+      } else if (filtros.estadoPrueba === 'no_probado') {
+        resultado = resultado.filter(dev => {
+          const fechaPrueba = dev.fecha_prueba || dev.fechaPrueba
+          return !fechaPrueba
+        })
+      } else if (filtros.estadoPrueba === 'pendiente_probar') {
+        resultado = resultado.filter(dev => {
+          const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
+          const fechaPrueba = dev.fecha_prueba || dev.fechaPrueba
+          const tipoResolucion = dev.tipo_resolucion || dev.tipoResolucion
+          return !!fechaRecepcion && !fechaPrueba && !tipoResolucion
+        })
+      } else if (filtros.estadoPrueba === 'funciona') {
+        resultado = resultado.filter(dev => {
+          const resultado = dev.resultado_prueba || dev.resultadoPrueba || ''
+          return resultado.includes('Funciona')
+        })
+      } else if (filtros.estadoPrueba === 'no_funciona') {
+        resultado = resultado.filter(dev => {
+          const resultado = dev.resultado_prueba || dev.resultadoPrueba || ''
+          return resultado.includes('No funciona')
+        })
+      }
+    }
+
     return resultado
   }, [devoluciones, filtros])
 

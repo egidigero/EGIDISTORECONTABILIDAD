@@ -24,6 +24,8 @@ export function DevolucionesGestionFiltro({
   const [fechaFin, setFechaFin] = useState<string>('')
   const [plataforma, setPlataforma] = useState<string>('todas')
   const [estado, setEstado] = useState<string>('todos')
+  const [estadoRecepcion, setEstadoRecepcion] = useState<string>('todos')
+  const [estadoPrueba, setEstadoPrueba] = useState<string>('todos')
   const [busqueda, setBusqueda] = useState<string>('')
   const [filtrosActivos, setFiltrosActivos] = useState(0)
 
@@ -33,6 +35,8 @@ export function DevolucionesGestionFiltro({
       fechaFin,
       plataforma: plataforma !== 'todas' ? plataforma : undefined,
       estado: estado !== 'todos' ? estado : undefined,
+      estadoRecepcion: estadoRecepcion !== 'todos' ? estadoRecepcion : undefined,
+      estadoPrueba: estadoPrueba !== 'todos' ? estadoPrueba : undefined,
       busqueda: busqueda.trim() || undefined
     }
     
@@ -42,6 +46,8 @@ export function DevolucionesGestionFiltro({
     if (fechaFin) activos++
     if (plataforma !== 'todas') activos++
     if (estado !== 'todos') activos++
+    if (estadoRecepcion !== 'todos') activos++
+    if (estadoPrueba !== 'todos') activos++
     if (busqueda.trim()) activos++
     setFiltrosActivos(activos)
     
@@ -53,6 +59,8 @@ export function DevolucionesGestionFiltro({
     setFechaFin('')
     setPlataforma('todas')
     setEstado('todos')
+    setEstadoRecepcion('todos')
+    setEstadoPrueba('todos')
     setBusqueda('')
     setFiltrosActivos(0)
     onFilter({})
@@ -129,6 +137,12 @@ export function DevolucionesGestionFiltro({
             }}>
               Reembolsadas
             </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setEstadoPrueba('pendiente_probar')
+              setTimeout(aplicarFiltros, 100)
+            }}>
+              🔍 Pendiente probar
+            </Button>
             <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(7)}>
               Últimos 7 días
             </Button>
@@ -138,7 +152,7 @@ export function DevolucionesGestionFiltro({
           </div>
 
           {/* Filtros detallados */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fechaInicio" className="flex items-center gap-1">
                 <Calendar className="h-3 w-3" />
@@ -195,6 +209,38 @@ export function DevolucionesGestionFiltro({
                   <SelectItem value="Entregada - Cambio otro producto">Entregada - Otro producto</SelectItem>
                   <SelectItem value="Entregada - Sin reembolso">Entregada - Sin reembolso</SelectItem>
                   <SelectItem value="Rechazada">Rechazada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="estadoRecepcion">📦 Recepción</Label>
+              <Select value={estadoRecepcion} onValueChange={setEstadoRecepcion}>
+                <SelectTrigger id="estadoRecepcion">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="pendiente_recibir">⏳ Pendiente recibir</SelectItem>
+                  <SelectItem value="recibido">✅ Ya recibido</SelectItem>
+                  <SelectItem value="no_recibido">📦 En camino (todos)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="estadoPrueba">🔍 Prueba</Label>
+              <Select value={estadoPrueba} onValueChange={setEstadoPrueba}>
+                <SelectTrigger id="estadoPrueba">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="pendiente_probar">⏳ Pendiente probar</SelectItem>
+                  <SelectItem value="probado">✅ Ya probado</SelectItem>
+                  <SelectItem value="no_probado">❌ Sin probar (todos)</SelectItem>
+                  <SelectItem value="funciona">✅ Probado - Funciona</SelectItem>
+                  <SelectItem value="no_funciona">❌ Probado - No funciona</SelectItem>
                 </SelectContent>
               </Select>
             </div>
