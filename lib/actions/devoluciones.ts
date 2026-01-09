@@ -74,6 +74,7 @@ function toCamelCase(obj: any): any {
 // Helper: recursively remove null values to avoid Zod rejecting null (Zod allows undefined for optional fields)
 function stripNulls(obj: any): any {
   if (obj === null || obj === undefined) return obj
+  if (obj instanceof Date) return obj
   if (Array.isArray(obj)) return obj.map(stripNulls)
   if (typeof obj !== 'object') return obj
   const out: any = {}
