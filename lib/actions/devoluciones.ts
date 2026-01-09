@@ -1045,7 +1045,15 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
     }
 
     // Clean nulls and validate only provided/merged fields for update (allow partial)
+    try {
+      console.debug('[updateDevolucion] BEFORE stripNulls - fechaRecepcion=', mergedPre.fechaRecepcion, 'type=', typeof mergedPre.fechaRecepcion)
+    } catch (dbg) {}
+    
     let mergedClean = stripNulls(mergedPre)
+    
+    try {
+      console.debug('[updateDevolucion] AFTER stripNulls - fechaRecepcion=', mergedClean.fechaRecepcion, 'type=', typeof mergedClean.fechaRecepcion)
+    } catch (dbg) {}
     
     // Normalize date-like objects to Date/string so Zod preprocess can handle them.
     // Some deployments send objects (seconds/toDate), some send 'YYYY-MM-DD' strings
