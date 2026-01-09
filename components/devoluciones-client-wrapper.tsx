@@ -95,8 +95,8 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
         resultado = resultado.filter(dev => {
           const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
           const fechaPrueba = dev.fecha_prueba || dev.fechaPrueba
-          const tipoResolucion = dev.tipo_resolucion || dev.tipoResolucion
-          return !!fechaRecepcion && !fechaPrueba && !tipoResolucion
+          // Mostrar todos los recibidos sin probar, independiente de si completó reembolso/cambio
+          return !!fechaRecepcion && !fechaPrueba
         })
       } else if (filtros.estadoPrueba === 'funciona') {
         resultado = resultado.filter(dev => {
