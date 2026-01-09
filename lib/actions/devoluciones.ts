@@ -222,6 +222,8 @@ export async function getDevoluciones() {
           cam.fechaCompra = toIso(cam.fechaCompra ?? cam.fecha_compra)
           cam.fechaReclamo = toIso(cam.fechaReclamo ?? cam.fecha_reclamo)
           cam.fechaCompletada = toIso(cam.fechaCompletada ?? cam.fecha_completada)
+          cam.fechaRecepcion = toIso(cam.fechaRecepcion ?? cam.fecha_recepcion)
+          cam.fechaPrueba = toIso(cam.fechaPrueba ?? cam.fecha_prueba)
         } catch (dateErr) {
           // swallow — we'll leave original values if normalization fails
         }
