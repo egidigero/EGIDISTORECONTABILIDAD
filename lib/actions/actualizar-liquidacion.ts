@@ -170,13 +170,8 @@ export async function eliminarVentaDeLiquidacion(venta: VentaConProducto) {
  * Este valor se usa para sumar/restar de los acumulados de liquidación (tn_a_liquidar / mp_a_liquidar).
  */
 export async function calcularMontoVentaALiquidar(venta: VentaConProducto) {
-  // Si la venta ya tiene precioNeto calculado, usarlo directamente
-  // (es más confiable que recalcular, ya que tiene la lógica exacta de tarifas)
-  if (typeof venta.precioNeto === 'number') {
-    return Number(venta.precioNeto)
-  }
-  
-  // Fallback: calcular manualmente si no está disponible
+  // IMPORTANTE: NO confiar en precioNeto porque puede estar mal calculado en datos antiguos.
+  // Siempre recalcular para asegurar consistencia.
   const pvBruto = Number(venta.pvBruto || 0)
   const comisionBase = Number(venta.comision || 0)
   const iva = Number(venta.iva || 0)
@@ -184,7 +179,7 @@ export async function calcularMontoVentaALiquidar(venta: VentaConProducto) {
   const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0)
 
   // Para ML: PV - Comisión - IVA - IIBB - Envío
-  // Para TN: PV - Comisión - IVA - IIBB
+  // Para TN: PV - Comisión - IVA - IIBB (NO se resta envío)
   const montoVentaALiquidar = pvBruto - comisionBase - iva - iibb - (venta.plataforma === 'ML' ? cargoEnvioCosto : 0)
   return montoVentaALiquidar
 }
