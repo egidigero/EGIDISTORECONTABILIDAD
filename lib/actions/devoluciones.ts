@@ -2174,15 +2174,20 @@ export async function getEstadisticasDevoluciones(
       : 0
 
     // Obtener conteo de ventas en el rango proporcionado (si aplica) para mostrar % devoluciones sobre ventas
+    // IMPORTANTE: Usar fechas de COMPRA (no de reclamo) para comparar con las ventas correctamente
     let totalVentas = 0
     try {
       // Preferir filtrar por 'fecha' en ventas; si falla, caer a 'created_at'
       let ventasQuery: any = supabase.from('ventas').select('id', { count: 'exact', head: true })
-      if (fechaInicio) {
-        try { ventasQuery = ventasQuery.gte('fecha', fechaInicio) } catch { ventasQuery = ventasQuery.gte('created_at', fechaInicio) }
+      // Usar fechaCompraInicio/Fin si están disponibles, sino caer a fechaInicio/Fin
+      const fechaVentasInicio = fechaCompraInicio || fechaInicio
+      const fechaVentasFin = fechaCompraFin || fechaFin
+      
+      if (fechaVentasInicio) {
+        try { ventasQuery = ventasQuery.gte('fecha', fechaVentasInicio) } catch { ventasQuery = ventasQuery.gte('created_at', fechaVentasInicio) }
       }
-      if (fechaFin) {
-        try { ventasQuery = ventasQuery.lte('fecha', fechaFin) } catch { ventasQuery = ventasQuery.lte('created_at', fechaFin) }
+      if (fechaVentasFin) {
+        try { ventasQuery = ventasQuery.lte('fecha', fechaVentasFin) } catch { ventasQuery = ventasQuery.lte('created_at', fechaVentasFin) }
       }
       const ventasResp = await ventasQuery
       totalVentas = Number(ventasResp?.count ?? 0)
