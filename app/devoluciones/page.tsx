@@ -6,6 +6,10 @@ import { Plus, RotateCcw, FileText } from "lucide-react"
 import { DevolucionesClientWrapper } from "@/components/devoluciones-client-wrapper"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 
+// Forzar revalidación sin cache
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function DevolucionesPage() {
   let devoluciones: any[] = []
   let loadError: string | null = null
