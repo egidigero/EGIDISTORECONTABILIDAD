@@ -170,6 +170,13 @@ export async function eliminarVentaDeLiquidacion(venta: VentaConProducto) {
  * Este valor se usa para sumar/restar de los acumulados de liquidación (tn_a_liquidar / mp_a_liquidar).
  */
 export async function calcularMontoVentaALiquidar(venta: VentaConProducto) {
+  // Si la venta ya tiene precioNeto calculado, usarlo directamente
+  // (es más confiable que recalcular, ya que tiene la lógica exacta de tarifas)
+  if (typeof venta.precioNeto === 'number') {
+    return Number(venta.precioNeto)
+  }
+  
+  // Fallback: calcular manualmente si no está disponible
   const pvBruto = Number(venta.pvBruto || 0)
   const comisionBase = Number(venta.comision || 0)
   const iva = Number(venta.iva || 0)
