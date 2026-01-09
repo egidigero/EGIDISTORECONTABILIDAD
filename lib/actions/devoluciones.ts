@@ -1122,11 +1122,18 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       console.debug('[updateDevolucion] pre-parse fechas types=', {
         fechaCompra: { value: mergedClean?.fechaCompra, type: typeof mergedClean?.fechaCompra },
         fechaReclamo: { value: mergedClean?.fechaReclamo, type: typeof mergedClean?.fechaReclamo },
-        fechaCompletada: { value: mergedClean?.fechaCompletada, type: typeof mergedClean?.fechaCompletada }
+        fechaCompletada: { value: mergedClean?.fechaCompletada, type: typeof mergedClean?.fechaCompletada },
+        fechaRecepcion: { value: mergedClean?.fechaRecepcion, type: typeof mergedClean?.fechaRecepcion }
       })
     } catch (dbg) {}
 
   const validatedMergedPartial = devolucionSchemaBase.partial().parse(mergedClean)
+  
+  // Debug after Zod parse
+  try {
+    console.debug('[updateDevolucion] post-parse fechaRecepcion=', validatedMergedPartial.fechaRecepcion, 'type=', typeof validatedMergedPartial.fechaRecepcion)
+  } catch (dbg) {}
+  
   // Alias for backward-compatible references below
   const merged: any = validatedMergedPartial as any
   // Re-attach fechaAccion después de validar (solo para uso en memoria, no se guarda en DB)
