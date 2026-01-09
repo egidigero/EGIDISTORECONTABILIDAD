@@ -729,7 +729,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             try {
               const { calcularMontoVentaALiquidar } = await import('@/lib/actions/actualizar-liquidacion')
               const montoVentaLiquidado = await calcularMontoVentaALiquidar(venta as any)
-              const newMonto = Number((parsedPartial as any).montoReembolsado ?? (parsedPartial as any).monto_reembolsado ?? montoVentaLiquidado ?? 0)
+              // CRITICAL: Always use the calculated amount from the sale, NOT any user-provided value.
+              // The montoVentaLiquidado already reflects the correct precioNeto from the venta.
+              const newMonto = Number(montoVentaLiquidado ?? 0)
               // Use monto_reembolsado as the persisted source of truth for previous applied amount (fallback to 0)
               const prevApplied = Number((existing as any).monto_reembolsado ?? (existing as any).monto_reembolsado ?? 0)
               const delta = newMonto - prevApplied
