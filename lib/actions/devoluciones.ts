@@ -974,7 +974,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     
                     // Actualizar devolución con estado y campos completos
                     const updatePayload = toSnakeCase(parsedPartial)
-                    await supabase.from('devoluciones').update(updatePayload).eq('id', id)
+                    console.log('[DEBUG TN UPDATE] parsedPartial:', parsedPartial)
+                    console.log('[DEBUG TN UPDATE] updatePayload:', updatePayload)
+                    const updateResult = await supabase.from('devoluciones').update(updatePayload).eq('id', id)
+                    console.log('[DEBUG TN UPDATE] result:', updateResult)
+                    if (updateResult.error) {
+                      console.error('[DEBUG TN UPDATE] ERROR:', updateResult.error)
+                    }
                     try {
                       const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
                       const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
