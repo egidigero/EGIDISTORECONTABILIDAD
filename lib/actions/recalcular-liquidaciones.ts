@@ -168,6 +168,16 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       if (!devErr1 && Array.isArray(devols1)) allDevolsML.push(...devols1)
       if (!devErr2 && Array.isArray(devols2)) allDevolsML.push(...devols2)
       
+      // Debug para el 29/12
+      if (fechaDay === '2025-12-29') {
+        console.log('[recalcular-liquidaciones] 29/12 - devols1 count:', devols1?.length ?? 0)
+        console.log('[recalcular-liquidaciones] 29/12 - devols2 count:', devols2?.length ?? 0)
+        console.log('[recalcular-liquidaciones] 29/12 - allDevolsML count:', allDevolsML.length)
+        if (allDevolsML.length > 0) {
+          console.log('[recalcular-liquidaciones] 29/12 - devoluciones:', allDevolsML.map(d => ({ id: d.id, tipo: d.tipo_resolucion, monto: d.monto_reembolsado })))
+        }
+      }
+      
       // IMPORTANTE: Eliminar duplicados (devoluciones que se crean y completan el mismo día aparecen en ambas queries)
       const seenIds = new Set<string>()
       const uniqueDevolsML = allDevolsML.filter(d => {
@@ -175,6 +185,10 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
         seenIds.add(d.id)
         return true
       })
+      
+      if (fechaDay === '2025-12-29') {
+        console.log('[recalcular-liquidaciones] 29/12 - uniqueDevolsML count:', uniqueDevolsML.length)
+      }
 
       for (const d of uniqueDevolsML) {
         try {
