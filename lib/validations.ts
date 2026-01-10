@@ -86,6 +86,9 @@ export const devolucionSchemaBase = z.object({
     return arg
   }, z.date().optional()),
   
+  // TIMEZONE FIX: String puro para fecha de acción sin conversión UTC
+  fechaAccionString: z.string().optional(),
+  
   // Información de contacto
   nombreContacto: z.string().min(1, "El nombre de contacto es requerido"),
   telefonoContacto: z.string().min(1, "El teléfono de contacto es requerido"),
