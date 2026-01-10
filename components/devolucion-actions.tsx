@@ -78,8 +78,9 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       payload.estado = estadoMap[advanceType] || 'Pendiente'
       // Use user-provided fechaCompletada when available (required for both), else default to now
       if (fechaCompletadaLocal) {
-        payload.fechaCompletada = new Date(fechaCompletadaLocal)
-        payload.fechaAccion = new Date(fechaCompletadaLocal + 'T12:00:00') // Enviar con hora para evitar problemas de timezone
+        // IMPORTANTE: Agregar hora para evitar problemas de timezone (sin hora, new Date interpreta como UTC y puede cambiar el día)
+        payload.fechaCompletada = new Date(fechaCompletadaLocal + 'T12:00:00')
+        payload.fechaAccion = new Date(fechaCompletadaLocal + 'T12:00:00')
       } else {
         const hoy = new Date()
         payload.fechaCompletada = hoy
