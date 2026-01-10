@@ -167,8 +167,16 @@ export async function recalcularLiquidacionCompleta(fecha: string) {
       const allDevolsML: any[] = []
       if (!devErr1 && Array.isArray(devols1)) allDevolsML.push(...devols1)
       if (!devErr2 && Array.isArray(devols2)) allDevolsML.push(...devols2)
+      
+      // IMPORTANTE: Eliminar duplicados (devoluciones que se crean y completan el mismo día aparecen en ambas queries)
+      const seenIds = new Set<string>()
+      const uniqueDevolsML = allDevolsML.filter(d => {
+        if (seenIds.has(d.id)) return false
+        seenIds.add(d.id)
+        return true
+      })
 
-      for (const d of allDevolsML) {
+      for (const d of uniqueDevolsML) {
         try {
           let monto = Number(d.monto_reembolsado ?? 0)
           const tipo = d.tipo_resolucion ?? (d as any)?.tipo_resolucion ?? null
