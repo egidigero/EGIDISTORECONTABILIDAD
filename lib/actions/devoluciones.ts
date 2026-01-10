@@ -886,27 +886,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 // Recalculate in cascade and revalidate (the recalculation will now read the persisted deltas)
                 try {
                   const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                  // CRITICAL: Recalculate from the EARLIEST date that has deltas to ensure
-                  // intermediate liquidaciones (between reclamo and completada) are correct.
-                  // If there was a previous reclamo with retention, use that date; otherwise
-                  // use the fechaCompletada (or fechaHoyActual as fallback).
-                  let fechaImpacto = fechaHoyActual
-                  try {
-                    // Priority 1: If there's an existing fechaReclamo, use that (earliest possible date)
-                    const fechaReclamoExisting = (existing as any).fecha_reclamo ?? (existing as any).fechaReclamo
-                    if (fechaReclamoExisting) {
-                      fechaImpacto = new Date(fechaReclamoExisting).toISOString().split('T')[0]
-                    }
-                    // Priority 2: If the user is NOW marking mpRetener and provided fechaReclamo, use that
-                    else if (parsedPartial && (parsedPartial as any).mpRetener && (parsedPartial as any).fechaReclamo) {
-                      fechaImpacto = new Date((parsedPartial as any).fechaReclamo).toISOString().split('T')[0]
-                    }
-                    // Priority 3: Use fechaCompletada if provided
-                    else if (parsedPartial && (parsedPartial as any).fechaCompletada) {
-                      fechaImpacto = new Date((parsedPartial as any).fechaCompletada).toISOString().split('T')[0]
-                    }
-                  } catch (_) {}
-                  await recalcularLiquidacionesEnCascada(fechaImpacto)
+                  // IMPORTANTE: Usar impactoFechaForDeltas (ya calculado arriba con fechaAccionString)
+                  await recalcularLiquidacionesEnCascada(impactoFechaForDeltas)
                 } catch (rcErr) {
                   console.warn('No se pudo ejecutar recálculo en cascada tras ML (no crítico)', rcErr)
                 }
@@ -985,8 +966,12 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     }
 
                     // Update liquidaciones tn_a_liquidar immediately (for UX) and persist devoluciones row
-                    await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
-                    await supabase.from('devoluciones').update(toSnakeCase(parsedPartial)).eq('id', id)
+                    // IMPORTANTE: No actualizar liquidaciones directamente aquí, dejar que el recálculo lo haga
+                    // await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
+                    
+                    // Actualizar devolución con estado y campos completos
+                    const updatePayload = toSnakeCase(parsedPartial)
+                    await supabase.from('devoluciones').update(updatePayload).eq('id', id)
                     try {
                       const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
                       const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
@@ -997,7 +982,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     }
                     try {
                       const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                      await recalcularLiquidacionesEnCascada(fechaHoyActual)
+                      // IMPORTANTE: Recalcular desde impactoFecha (fecha que eligió el usuario), NO desde hoy
+                      await recalcularLiquidacionesEnCascada(impactoFecha)
                     } catch (rcErr) {
                       console.warn('No se pudo ejecutar recálculo en cascada tras Reembolso temprano (no crítico)', rcErr)
                     }
