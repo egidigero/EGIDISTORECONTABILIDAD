@@ -907,6 +907,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   try {
                     // Normalize dates and ensure fecha_completada is an ISO string when present
                     const payloadToPersist: any = toSnakeCase(parsedPartial)
+                    // IMPORTANTE: Eliminar fechaAccionString porque no existe en la tabla (solo se usa para comunicación)
+                    delete payloadToPersist.fecha_accion_string
                     if (payloadToPersist && payloadToPersist.fecha_completada) {
                       try { payloadToPersist.fecha_completada = new Date(payloadToPersist.fecha_completada).toISOString() } catch {}
                     }
@@ -915,13 +917,14 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     updatedRow = resp.data
                   } catch (updErr: any) {
                     const msg = String(updErr?.message ?? updErr)
-                    if (updErr?.code === 'PGRST204' || msg.includes('mp_estado') || msg.includes('mp_retenido')) {
+                    if (updErr?.code === 'PGRST204' || msg.includes('mp_estado') || msg.includes('mp_retenido') || msg.includes('fecha_accion_string')) {
                       const safePayload: any = toSnakeCase(parsedPartial)
                       if (safePayload && safePayload.fecha_completada) {
                         try { safePayload.fecha_completada = new Date(safePayload.fecha_completada).toISOString() } catch {}
                       }
                       delete safePayload.mp_estado
                       delete safePayload.mp_retenido
+                      delete safePayload.fecha_accion_string
                       const retry = await supabase.from('devoluciones').update(safePayload).eq('id', id).select().single()
                       if (retry.error) throw retry.error
                       updatedRow = retry.data
@@ -974,6 +977,8 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     
                     // Actualizar devolución con estado y campos completos
                     const updatePayload = toSnakeCase(parsedPartial)
+                    // IMPORTANTE: Eliminar fechaAccionString porque no existe en la tabla (solo se usa para comunicación)
+                    delete updatePayload.fecha_accion_string
                     console.log('[DEBUG TN UPDATE] parsedPartial:', parsedPartial)
                     console.log('[DEBUG TN UPDATE] updatePayload:', updatePayload)
                     const updateResult = await supabase.from('devoluciones').update(updatePayload).eq('id', id)
