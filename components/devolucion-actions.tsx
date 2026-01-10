@@ -80,7 +80,8 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
       if (fechaCompletadaLocal) {
         // IMPORTANTE: Agregar hora para evitar problemas de timezone (sin hora, new Date interpreta como UTC y puede cambiar el día)
         payload.fechaCompletada = new Date(fechaCompletadaLocal + 'T12:00:00')
-        payload.fechaAccion = new Date(fechaCompletadaLocal + 'T12:00:00')
+        // Enviar fechaAccion como STRING puro para evitar conversiones de timezone
+        payload.fechaAccionString = fechaCompletadaLocal // '2026-01-09' sin conversión
       } else {
         const hoy = new Date()
         payload.fechaCompletada = hoy
