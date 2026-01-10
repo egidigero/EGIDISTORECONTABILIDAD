@@ -73,6 +73,19 @@ export const devolucionSchemaBase = z.object({
     return new Date()
   }, z.date()).default(new Date()),
   
+  fechaCompletada: z.preprocess((arg) => {
+    if (!arg) return undefined
+    if (arg instanceof Date) return arg
+    if (typeof arg === 'string' && arg) return new Date(arg)
+    // Manejar objetos serializados
+    if (typeof arg === 'object') {
+      if (typeof (arg as any).toDate === 'function') return (arg as any).toDate()
+      if (typeof (arg as any).seconds === 'number') return new Date((arg as any).seconds * 1000)
+      if (typeof (arg as any).toISOString === 'function') return new Date((arg as any).toISOString())
+    }
+    return arg
+  }, z.date().optional()),
+  
   // Información de contacto
   nombreContacto: z.string().min(1, "El nombre de contacto es requerido"),
   telefonoContacto: z.string().min(1, "El teléfono de contacto es requerido"),
