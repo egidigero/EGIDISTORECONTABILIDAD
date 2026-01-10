@@ -960,7 +960,11 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     const currentTn = Number(liq.tn_a_liquidar ?? 0)
                     const nuevoTn = Math.max(0, currentTn - delta)
                     // Persist delta in devoluciones_deltas so recalculation can consume it later
-                    const impactoFecha = fechaHoyActual
+                    // IMPORTANTE: Usar fechaAccionString si está disponible para evitar problemas de timezone
+                    const impactoFecha = (parsedPartial && (parsedPartial as any).fechaAccionString)
+                      ? String((parsedPartial as any).fechaAccionString)
+                      : fechaHoyActual
+                    console.log('[DEBUG TN] fechaAccionString:', (parsedPartial as any)?.fechaAccionString, 'impactoFecha:', impactoFecha)
                     const deltaRow: any = {
                       devolucion_id: id,
                       tipo: (parsedPartial && (parsedPartial as any).fechaCompletada) ? 'completada' : 'manual',
