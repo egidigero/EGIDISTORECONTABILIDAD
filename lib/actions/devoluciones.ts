@@ -763,12 +763,15 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 // in the "Registrar avance" modal instead of always using today.
                 try {
                   // Use fechaAccion for update operations - the date the user chooses to execute the action
-                  // IMPORTANTE: Usar formato local para evitar problemas de timezone al convertir a ISO
+                  // IMPORTANTE: Usar fecha LOCAL sin convertir a UTC para evitar cambios de día
                   let fechaHoy = fechaHoyActual
                   if (parsedPartial && (parsedPartial as any).fechaAccion) {
                     const d = new Date((parsedPartial as any).fechaAccion)
-                    // Usar fecha local en vez de UTC para evitar cambios de día
-                    fechaHoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                    // Formato YYYY-MM-DD usando métodos locales (no UTC)
+                    const year = d.getFullYear()
+                    const month = String(d.getMonth() + 1).padStart(2, '0')
+                    const day = String(d.getDate()).padStart(2, '0')
+                    fechaHoy = `${year}-${month}-${day}`
                   }
                   const impactoFechaForDeltas = fechaHoy
                   const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
@@ -1591,9 +1594,15 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   console.log('[Sin reembolso] ✓ Dinero retenido encontrado:', montoRetenido)
                   
                   // Usar fechaAccion (fecha de ejecución) para liberar el dinero
-                  const fechaAccion = (merged.fechaAccion && new Date(merged.fechaAccion).toISOString().split('T')[0]) || 
-                                     (merged.fechaCompletada && new Date(merged.fechaCompletada).toISOString().split('T')[0]) || 
-                                     new Date().toISOString().split('T')[0]
+                  // IMPORTANTE: Usar fecha LOCAL sin convertir a UTC
+                  let fechaAccion = new Date().toISOString().split('T')[0]
+                  if (merged.fechaAccion) {
+                    const d = new Date(merged.fechaAccion)
+                    fechaAccion = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  } else if (merged.fechaCompletada) {
+                    const d = new Date(merged.fechaCompletada)
+                    fechaAccion = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  }
                   
                   console.log('[Sin reembolso] Fecha de liberación:', fechaAccion)
                   
