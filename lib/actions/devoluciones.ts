@@ -763,9 +763,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 // in the "Registrar avance" modal instead of always using today.
                 try {
                   // Use fechaAccion for update operations - the date the user chooses to execute the action
-                  const fechaHoy = (parsedPartial && (parsedPartial as any).fechaAccion)
-                    ? new Date((parsedPartial as any).fechaAccion).toISOString().split('T')[0]
-                    : fechaHoyActual
+                  // IMPORTANTE: Usar formato local para evitar problemas de timezone al convertir a ISO
+                  let fechaHoy = fechaHoyActual
+                  if (parsedPartial && (parsedPartial as any).fechaAccion) {
+                    const d = new Date((parsedPartial as any).fechaAccion)
+                    // Usar fecha local en vez de UTC para evitar cambios de día
+                    fechaHoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  }
                   const impactoFechaForDeltas = fechaHoy
                   const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
                   await asegurarLiquidacionParaFecha(fechaHoy)
