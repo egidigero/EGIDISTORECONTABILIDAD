@@ -886,8 +886,11 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 // Recalculate in cascade and revalidate (the recalculation will now read the persisted deltas)
                 try {
                   const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
-                  // IMPORTANTE: Usar impactoFechaForDeltas (ya calculado arriba con fechaAccionString)
-                  await recalcularLiquidacionesEnCascada(impactoFechaForDeltas)
+                  // IMPORTANTE: Usar fechaAccionString para obtener la fecha correcta (igual que en impactoFechaForDeltas)
+                  const fechaParaRecalculo = (parsedPartial && (parsedPartial as any).fechaAccionString)
+                    ? String((parsedPartial as any).fechaAccionString)
+                    : fechaHoyActual
+                  await recalcularLiquidacionesEnCascada(fechaParaRecalculo)
                 } catch (rcErr) {
                   console.warn('No se pudo ejecutar recálculo en cascada tras ML (no crítico)', rcErr)
                 }
