@@ -766,6 +766,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                   const fechaHoy = (parsedPartial && (parsedPartial as any).fechaAccionString)
                     ? String((parsedPartial as any).fechaAccionString)
                     : fechaHoyActual
+                  console.log('[DEBUG] fechaAccionString:', (parsedPartial as any)?.fechaAccionString, 'fechaHoy result:', fechaHoy)
                   const impactoFechaForDeltas = fechaHoy
                   const { asegurarLiquidacionParaFecha } = await import('@/lib/actions/liquidaciones')
                   await asegurarLiquidacionParaFecha(fechaHoy)
