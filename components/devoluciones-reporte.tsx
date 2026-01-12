@@ -56,20 +56,55 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     .filter(([estado]) => estado.startsWith("Entregada"))
     .reduce((sum, [, count]) => sum + count, 0)
 
-  // Prefer counting reembolsos por monto_aplicado_liquidacion cuando esté disponible
-  const montoTotalReembolsos = estadisticas.data.reduce((sum, d) => {
-    // d.monto_aplicado_liquidacion puede no existir en todos los rows; preferirlo sobre monto_reembolsado
-    const applied = Number(d.monto_aplicado_liquidacion ?? d.monto_reembolsado ?? 0)
-    return sum + applied
+  // Calcular reembolsos reales (solo reembolsos completados)
+  const devolucionesReembolso = estadisticas.data.filter(d => d.tipo_resolucion === 'Reembolso')
+  const montoTotalReembolsos = devolucionesReembolso.reduce((sum, d) => {
+    return sum + Number(d.monto_reembolsado ?? 0)
   }, 0)
-
-  const totalReembolsos = estadisticas.data.filter(d => Number(d.monto_aplicado_liquidacion ?? d.monto_reembolsado ?? 0) > 0).length || (estadisticas.porEstado["Entregada - Reembolso"] || 0)
+  const totalReembolsos = devolucionesReembolso.length
   const totalCambios = (estadisticas.porEstado["Entregada - Cambio mismo producto"] || 0) +
                        (estadisticas.porEstado["Entregada - Cambio otro producto"] || 0)
 
   const promedioPerdidasPorDevolucion = estadisticas.total > 0 
     ? estadisticas.perdidaTotal / estadisticas.total 
     : 0
+
+  // Calcular detalle de pérdidas por tipo
+  const detallePerdidas = estadisticas.data.reduce((acc, dev) => {
+    const tipoResolucion = dev.tipo_resolucion
+    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    
+    // Envío original: se pierde siempre EXCEPTO en cambios (donde no es pérdida)
+    if (!esCambio) {
+      acc.envioOriginal += Number(dev.costo_envio_original ?? 0)
+    }
+    
+    // Envío de devolución (vuelta): siempre es pérdida
+    acc.envioDevolucion += Number(dev.costo_envio_devolucion ?? 0)
+    
+    // Envío nuevo (ida del cambio): siempre es pérdida
+    acc.envioNuevo += Number(dev.costo_envio_nuevo ?? 0)
+    
+    // Productos perdidos
+    acc.productos += Number(dev.total_costo_productos ?? 0)
+    
+    // Reembolsos
+    acc.reembolsos += Number(dev.monto_reembolsado ?? 0)
+    
+    // Comisiones devueltas (esto REDUCE la pérdida)
+    if (dev.comision_devuelta) {
+      acc.comisionesDevueltas += Number(dev.comision_original ?? 0)
+    }
+    
+    return acc
+  }, {
+    envioOriginal: 0,
+    envioDevolucion: 0,
+    envioNuevo: 0,
+    productos: 0,
+    reembolsos: 0,
+    comisionesDevueltas: 0
+  })
 
   // Agrupar por motivo
   const porMotivo = estadisticas.data.reduce((acc: Record<string, number>, dev: any) => {
@@ -82,7 +117,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     .sort(([, a], [, b]) => (b as number) - (a as number))
     .slice(0, 5)
 
-  // NUEVO: Análisis por producto
+  // NUEVO: Análisis por producto con detalle de pérdidas
   const porProducto = estadisticas.data.reduce((acc: Record<string, any>, dev: any) => {
     const producto = dev.producto_modelo || dev.productoModelo || 'Sin producto'
     if (!acc[producto]) {
@@ -91,7 +126,13 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
         perdidaTotal: 0,
         motivos: {} as Record<string, number>,
         recuperables: 0,
-        noRecuperables: 0
+        noRecuperables: 0,
+        // Detalle de pérdidas por tipo
+        perdidaEnvioOriginal: 0,
+        perdidaEnvioDevolucion: 0,
+        perdidaEnvioNuevo: 0,
+        perdidaProductos: 0,
+        perdidaReembolsos: 0
       }
     }
     acc[producto].cantidad++
@@ -106,6 +147,18 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       acc[producto].noRecuperables++
     }
     
+    // Calcular detalle de pérdidas
+    const tipoResolucion = dev.tipo_resolucion
+    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    
+    if (!esCambio) {
+      acc[producto].perdidaEnvioOriginal += Number(dev.costo_envio_original ?? 0)
+    }
+    acc[producto].perdidaEnvioDevolucion += Number(dev.costo_envio_devolucion ?? 0)
+    acc[producto].perdidaEnvioNuevo += Number(dev.costo_envio_nuevo ?? 0)
+    acc[producto].perdidaProductos += Number(dev.total_costo_productos ?? 0)
+    acc[producto].perdidaReembolsos += Number(dev.monto_reembolsado ?? 0)
+    
     return acc
   }, {})
 
@@ -114,13 +167,18 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       producto,
       cantidad: data.cantidad,
       perdidaTotal: data.perdidaTotal,
-      perdidaPromedio: data.cantidad > 0 ? data.perdidaTotal / data.cantidad : 0,
       motivos: data.motivos,
       motivoPrincipal: Object.entries(data.motivos)
         .sort(([, a]: [string, any], [, b]: [string, any]) => b - a)[0]?.[0] || 'N/A',
       recuperables: data.recuperables,
       noRecuperables: data.noRecuperables,
-      tasaNoRecuperable: data.cantidad > 0 ? (data.noRecuperables / data.cantidad) * 100 : 0
+      tasaNoRecuperable: data.cantidad > 0 ? (data.noRecuperables / data.cantidad) * 100 : 0,
+      // Detalle de pérdidas
+      perdidaEnvioOriginal: data.perdidaEnvioOriginal,
+      perdidaEnvioDevolucion: data.perdidaEnvioDevolucion,
+      perdidaEnvioNuevo: data.perdidaEnvioNuevo,
+      perdidaProductos: data.perdidaProductos,
+      perdidaReembolsos: data.perdidaReembolsos
     }))
     .sort((a, b) => b.cantidad - a.cantidad)
 
@@ -311,118 +369,138 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
         </CardContent>
       </Card>
 
-      {/* Detalle de costos */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Truck className="h-4 w-4" />
-              Costos de Envío
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {estadisticas.data.length > 0 ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total:</span>
-                  <span className="font-semibold">
-                    ${estadisticas.data.reduce((sum, d) => sum + (Number(d.total_costos_envio) || 0), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
+      {/* Detalle de pérdidas por tipo */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingDown className="h-5 w-5" />
+            Detalle de Pérdidas por Tipo
+          </CardTitle>
+          <CardDescription>
+            Desglose de costos y pérdidas del sistema de devoluciones
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {estadisticas.data.length > 0 ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">Costos de Envío</div>
+                  <div className="space-y-2 pl-3 border-l-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Envío original (perdido):</span>
+                      <span className="font-medium text-destructive">
+                        ${detallePerdidas.envioOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Envío de devolución:</span>
+                      <span className="font-medium text-destructive">
+                        ${detallePerdidas.envioDevolucion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Envío nuevo (cambios):</span>
+                      <span className="font-medium text-destructive">
+                        ${detallePerdidas.envioNuevo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Promedio:</span>
-                  <span>
-                    ${(estadisticas.data.reduce((sum, d) => sum + (Number(d.total_costos_envio) || 0), 0) / estadisticas.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">Otros Costos</div>
+                  <div className="space-y-2 pl-3 border-l-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Productos perdidos:</span>
+                      <span className="font-medium text-destructive">
+                        ${detallePerdidas.productos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Reembolsos pagados:</span>
+                      <span className="font-medium text-destructive">
+                        ${detallePerdidas.reembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {detallePerdidas.comisionesDevueltas > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Comisiones recuperadas:</span>
+                        <span className="font-medium text-green-600">
+                          -${detallePerdidas.comisionesDevueltas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">Sin datos</p>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Costos de Productos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {estadisticas.data.length > 0 ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total:</span>
-                  <span className="font-semibold">
-                    ${estadisticas.data.reduce((sum, d) => sum + (Number(d.total_costo_productos) || 0), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              <div className="pt-3 border-t">
+                <div className="flex justify-between text-base font-semibold">
+                  <span>Pérdida Total:</span>
+                  <span className="text-destructive">
+                    ${estadisticas.perdidaTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Promedio:</span>
-                  <span>
-                    ${(estadisticas.data.reduce((sum, d) => sum + (Number(d.total_costo_productos) || 0), 0) / estadisticas.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Promedio por devolución: ${promedioPerdidasPorDevolucion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </p>
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">Sin datos</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Reembolsos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {estadisticas.data.length > 0 ? (
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total:</span>
-                  <span className="font-semibold">
-                    ${montoTotalReembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Cantidad:</span>
-                  <span>
-                    {totalReembolsos}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">Sin datos</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Impacto en ventas */}
-      {estadisticas.impactoVentasNetas !== 0 && (
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <TrendingDown className="h-5 w-5" />
-              Impacto en Ventas Netas
-            </CardTitle>
-            <CardDescription>
-              Reducción de ingresos por reembolsos
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-destructive">
-              ${Math.abs(estadisticas.impactoVentasNetas).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              {totalReembolsos} {totalReembolsos === 1 ? 'venta anulada' : 'ventas anuladas'} por reembolso
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No hay datos de pérdidas disponibles
             </p>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Impacto en ventas y reembolsos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {totalReembolsos > 0 && (
+          <Card className="border-destructive">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <TrendingDown className="h-5 w-5" />
+                Impacto en Ventas Netas
+              </CardTitle>
+              <CardDescription>
+                Reducción de ingresos por reembolsos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-destructive">
+                ${Math.abs(montoTotalReembolsos).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">
+                {totalReembolsos} {totalReembolsos === 1 ? 'venta anulada' : 'ventas anuladas'} por reembolso
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        
+        {totalReembolsos > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Reembolsos Totales
+              </CardTitle>
+              <CardDescription>
+                Dinero devuelto a clientes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">
+                ${montoTotalReembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">
+                Promedio: ${totalReembolsos > 0 ? (montoTotalReembolsos / totalReembolsos).toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '0.00'} por reembolso
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* NUEVO: Análisis por Producto */}
       {productosConDevoluciones.length > 0 && (
@@ -452,30 +530,72 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                     </Badge>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground block">Pérdida total</span>
-                      <span className="font-semibold text-destructive">
-                        ${prod.perdidaTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                      </span>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground block">Recuperables</span>
+                        <span className="font-semibold text-green-600">
+                          {prod.recuperables}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block">No recuperables</span>
+                        <span className="font-semibold text-red-600">
+                          {prod.noRecuperables}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground block">Pérdida promedio</span>
-                      <span className="font-semibold">
-                        ${prod.perdidaPromedio.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block">Recuperables</span>
-                      <span className="font-semibold text-green-600">
-                        {prod.recuperables}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block">No recuperables</span>
-                      <span className="font-semibold text-red-600">
-                        {prod.noRecuperables}
-                      </span>
+
+                    <div className="border-t pt-3">
+                      <div className="text-xs font-medium text-muted-foreground mb-2">Detalle de Pérdidas:</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {prod.perdidaEnvioOriginal > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Envío original:</span>
+                            <span className="text-destructive font-medium">
+                              ${prod.perdidaEnvioOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        {prod.perdidaEnvioDevolucion > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Envío devolución:</span>
+                            <span className="text-destructive font-medium">
+                              ${prod.perdidaEnvioDevolucion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        {prod.perdidaEnvioNuevo > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Envío nuevo:</span>
+                            <span className="text-destructive font-medium">
+                              ${prod.perdidaEnvioNuevo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        {prod.perdidaProductos > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Productos:</span>
+                            <span className="text-destructive font-medium">
+                              ${prod.perdidaProductos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        {prod.perdidaReembolsos > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Reembolsos:</span>
+                            <span className="text-destructive font-medium">
+                              ${prod.perdidaReembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 pt-2 border-t flex justify-between font-semibold">
+                        <span>Total:</span>
+                        <span className="text-destructive">
+                          ${prod.perdidaTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

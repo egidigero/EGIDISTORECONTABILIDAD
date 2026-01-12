@@ -2084,8 +2084,9 @@ export async function getEstadisticasDevoluciones(
     let query = supabase
       .from('devoluciones_resumen')
       .select('*')
-      // Excluir 'Sin reembolso' - no cuentan como devoluciones reales
-      .neq('tipo_resolucion', 'Sin reembolso')
+      // Incluir todas las devoluciones, tanto cerradas como abiertas
+      // Solo excluir las rechazadas que no tienen impacto
+      .neq('estado', 'Rechazada')
 
     // Filtrar por fecha de reclamo
     if (fechaInicio) {
