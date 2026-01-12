@@ -69,12 +69,13 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     ? estadisticas.perdidaTotal / estadisticas.total 
     : 0
 
-  // Calcular detalle de pérdidas por tipo
+  // Calcular detalle de pérdidas por tipo (usar MISMA lógica que columna generada en DB)
   const detallePerdidas = estadisticas.data.reduce((acc, dev) => {
     const tipoResolucion = dev.tipo_resolucion
     const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    const esRecuperable = dev.producto_recuperable === true
     
-    // Envío original: se pierde siempre EXCEPTO en cambios (donde no es pérdida)
+    // Envío original: se pierde siempre EXCEPTO en cambios
     if (!esCambio) {
       acc.envioOriginal += Number(dev.costo_envio_original ?? 0)
     }
@@ -85,8 +86,15 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     // Envío nuevo (ida del cambio): siempre es pérdida
     acc.envioNuevo += Number(dev.costo_envio_nuevo ?? 0)
     
-    // Productos perdidos
-    acc.productos += Number(dev.total_costo_productos ?? 0)
+    // Productos perdidos: depende si es recuperable
+    if (esRecuperable) {
+      // Si es recuperable, solo se pierde el producto nuevo (si hay)
+      acc.productos += Number(dev.costo_producto_nuevo ?? 0)
+    } else {
+      // Si NO es recuperable, se pierden ambos (original + nuevo)
+      acc.productos += Number(dev.costo_producto_original ?? 0)
+      acc.productos += Number(dev.costo_producto_nuevo ?? 0)
+    }
     
     // Reembolsos
     acc.reembolsos += Number(dev.monto_reembolsado ?? 0)
@@ -142,23 +150,32 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     
     const tipoResolucion = dev.tipo_resolucion
     const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    const esRecuperable = dev.producto_recuperable === true
     
     const motivo = dev.motivo || 'Sin especificar'
     acc[producto].motivos[motivo] = (acc[producto].motivos[motivo] || 0) + 1
     
-    if (dev.producto_recuperable || dev.productoRecuperable) {
+    if (esRecuperable) {
       acc[producto].recuperables++
     } else {
       acc[producto].noRecuperables++
     }
     
-    // Calcular detalle de pérdidas (reusar tipoResolucion y esCambio ya declarados arriba)
+    // Calcular detalle de pérdidas (mismo criterio que DB)
     if (!esCambio) {
       acc[producto].perdidaEnvioOriginal += Number(dev.costo_envio_original ?? 0)
     }
     acc[producto].perdidaEnvioDevolucion += Number(dev.costo_envio_devolucion ?? 0)
     acc[producto].perdidaEnvioNuevo += Number(dev.costo_envio_nuevo ?? 0)
-    acc[producto].perdidaProductos += Number(dev.total_costo_productos ?? 0)
+    
+    // Productos: si es recuperable, solo el nuevo; si no, ambos
+    if (esRecuperable) {
+      acc[producto].perdidaProductos += Number(dev.costo_producto_nuevo ?? 0)
+    } else {
+      acc[producto].perdidaProductos += Number(dev.costo_producto_original ?? 0)
+      acc[producto].perdidaProductos += Number(dev.costo_producto_nuevo ?? 0)
+    }
+    
     acc[producto].perdidaReembolsos += Number(dev.monto_reembolsado ?? 0)
     
     return acc

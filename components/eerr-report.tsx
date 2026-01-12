@@ -94,30 +94,25 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const gastosOperativos = eerrData.totalCostosPlataforma;
   const cantidadVentas = detalleVentas?.length || 0;
 
-  // Calcular totales de devoluciones (usar mismas reglas que el bloque de detalle)
+  // Calcular totales de devoluciones usando perdida_total de la DB (fuente de verdad)
   const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : [];
-  const totalCostoProducto = devols.length > 0
+  
+  // TOTAL: usar perdida_total que ya tiene la lógica correcta (cambios sin envío original)
+  const totalPerdidaDevoluciones = devols.length > 0
     ? devols.reduce((acc: number, d: any) => {
-        const totalCostoProductosRow = Number(d.total_costo_productos ?? NaN)
-        const costoProductoPerdido = Number(d.costo_producto_perdido ?? NaN)
-        const perdidaTotal = Number(d.perdida_total ?? NaN)
-        const totalCostosEnvioRow = Number(d.total_costos_envio ?? ((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0)))
-
-        if (!Number.isNaN(totalCostoProductosRow)) return acc + totalCostoProductosRow
-        if (!Number.isNaN(costoProductoPerdido) && costoProductoPerdido > 0) return acc + costoProductoPerdido
-        if (!Number.isNaN(perdidaTotal) && perdidaTotal > 0 && totalCostosEnvioRow > 0) {
-          const derived = Math.max(0, Math.round((perdidaTotal - totalCostosEnvioRow) * 100) / 100)
-          return acc + derived
-        }
-        return acc + 0
+        return acc + Number(d.perdida_total || 0)
       }, 0)
     : (eerrData.devolucionesPerdidaTotal || 0);
 
+  // DESGLOSE para mostrar en detalle (solo informativo, no se usa en el cálculo)
+  const totalCostoProducto = devols.length > 0
+    ? devols.reduce((acc: number, d: any) => {
+        return acc + Number(d.total_costo_productos || 0)
+      }, 0)
+    : 0;
+
   const totalCostosEnvio = devols.length > 0
     ? devols.reduce((acc: number, d: any) => {
-        // Calcular pérdida de envíos correctamente:
-        // - En cambios: NO se pierde el envío original (solo devolución + nuevo)
-        // - En reembolsos/otros: se pierde todo (original + devolución + nuevo)
         const tipoResolucion = d.tipo_resolucion
         const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
         
@@ -134,9 +129,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
         
         return acc + perdidaEnvios
       }, 0)
-    : (eerrData.devolucionesEnviosTotal || 0);
-
-  const totalPerdidaDevoluciones = Math.round((totalCostoProducto + totalCostosEnvio) * 100) / 100;
+    : 0;
 
   // Margen operativo: recalcular base y ajustar por devoluciones para mostrar coherente con el detalle
   const margenOperativoBaseCalc = (eerrData.resultadoBruto ?? 0) - (eerrData.totalCostosPlataforma ?? 0) - (eerrData.publicidad ?? 0)
