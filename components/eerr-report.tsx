@@ -383,38 +383,42 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                   <div className="space-y-2 bg-rose-50 p-3 rounded">
                     {(() => {
                       const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : [];
-                      // Fallbacks: si no hay detalle individual, usar agregados ya calculados en eerrData
-                      // Prefer DB aggregates when available. Compute per-row values conservatively to avoid double-counting:
-                      // - Shipping: use total_costos_envio if present, else sum envio fields
-                      // - Product: use total_costo_productos if present, else costo_producto_perdido if present,
-                      //   else as last resort derive (perdida_total - total_costos_envio) when that makes sense.
-                      const totalCostoProducto = devols.length > 0
+                      
+                      // Usar perdida_total directo (fuente de verdad)
+                      const totalPerdida = devols.length > 0
                         ? devols.reduce((acc: number, d: any) => {
-                            const totalCostoProductosRow = Number(d.total_costo_productos ?? NaN)
-                            const costoProductoPerdido = Number(d.costo_producto_perdido ?? NaN)
-                            const perdidaTotal = Number(d.perdida_total ?? NaN)
-                            const totalCostosEnvioRow = Number(d.total_costos_envio ?? ((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0)))
-
-                            if (!Number.isNaN(totalCostoProductosRow)) return acc + totalCostoProductosRow
-                            if (!Number.isNaN(costoProductoPerdido) && costoProductoPerdido > 0) return acc + costoProductoPerdido
-                            // Last resort: derive product portion from perdida_total minus envio only if perdida_total looks like a sum
-                            if (!Number.isNaN(perdidaTotal) && perdidaTotal > 0 && totalCostosEnvioRow > 0) {
-                              const derived = Math.max(0, Math.round((perdidaTotal - totalCostosEnvioRow) * 100) / 100)
-                              return acc + derived
-                            }
-                            return acc + 0
+                            return acc + Number(d.perdida_total || 0)
                           }, 0)
                         : (eerrData.devolucionesPerdidaTotal || 0);
 
+                      // Desglose para mostrar (informativo)
+                      const totalCostoProducto = devols.length > 0
+                        ? devols.reduce((acc: number, d: any) => {
+                            const esRecuperable = d.producto_recuperable === true
+                            if (esRecuperable) {
+                              return acc + Number(d.costo_producto_nuevo || 0)
+                            } else {
+                              return acc + Number(d.costo_producto_original || 0) + Number(d.costo_producto_nuevo || 0)
+                            }
+                          }, 0)
+                        : 0;
+
                       const totalCostosEnvio = devols.length > 0
                         ? devols.reduce((acc: number, d: any) => {
-                            const totalEnvioRow = Number(d.total_costos_envio ?? NaN)
-                            if (!Number.isNaN(totalEnvioRow)) return acc + totalEnvioRow
-                            return acc + Number((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0))
+                            const tipoResolucion = d.tipo_resolucion
+                            const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+                            
+                            let perdidaEnvios = 0
+                            if (!esCambio) {
+                              perdidaEnvios += Number(d.costo_envio_original || 0)
+                            }
+                            perdidaEnvios += Number(d.costo_envio_devolucion || 0)
+                            perdidaEnvios += Number(d.costo_envio_nuevo || 0)
+                            
+                            return acc + perdidaEnvios
                           }, 0)
-                        : (eerrData.devolucionesEnviosTotal || 0);
+                        : 0;
                       const cantidadDevoluciones = devols.length;
-                      const totalPerdida = Math.round((totalCostoProducto + totalCostosEnvio) * 100) / 100;
                       return (
                         <>
                           <div className="flex justify-between font-semibold">
