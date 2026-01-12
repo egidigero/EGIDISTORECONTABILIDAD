@@ -17,9 +17,9 @@ export async function calcularEERR(
     // completamente del cálculo de ventas/comisiones/envíos del EERR.
     let devolucionesQueryForExclusion = supabase
       .from('devoluciones')
-      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma, fecha_compra')
-      .gte('fecha_compra', fechaDesde.toISOString())
-      .lte('fecha_compra', fechaHasta.toISOString())
+      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma, fecha_reclamo')
+      .gte('fecha_reclamo', fechaDesde.toISOString())
+      .lte('fecha_reclamo', fechaHasta.toISOString())
 
     if (canal && canal !== 'General') {
       devolucionesQueryForExclusion = devolucionesQueryForExclusion.eq('plataforma', canal)
@@ -263,22 +263,22 @@ export async function calcularEERR(
     margenFinalConPersonales = Math.round((margenNetoNegocioBase - gastosPersonales) * 100) / 100;
   }
 
-    // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_compra ====
-    // Las devoluciones impactan en el mes de la venta original (fecha_compra)
+    // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_reclamo ====
+    // Las devoluciones impactan en el mes en que se reclamaron (fecha_reclamo)
     let devoluciones: any[] = []
     try {
       let query = supabase
         .from('devoluciones')
         .select('*')
-        .gte('fecha_compra', fechaDesde.toISOString())
-        .lte('fecha_compra', fechaHasta.toISOString())
+        .gte('fecha_reclamo', fechaDesde.toISOString())
+        .lte('fecha_reclamo', fechaHasta.toISOString())
 
       if (canal && canal !== 'General') {
         query = query.eq('plataforma', canal)
       }
 
   const { data, error: err } = await query
-  try { console.log('EERR debug - devoluciones por fecha_compra:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(data) ? data.length : 0, error: err ? JSON.stringify(err) : null }) } catch (e) {}
+  try { console.log('EERR debug - devoluciones por fecha_reclamo:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(data) ? data.length : 0, error: err ? JSON.stringify(err) : null }) } catch (e) {}
   if (!err && Array.isArray(data)) devoluciones = data
     } catch (err) {
       // ignore

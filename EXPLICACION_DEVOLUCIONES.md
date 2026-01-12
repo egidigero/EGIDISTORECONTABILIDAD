@@ -16,6 +16,7 @@ El sistema maneja **tres fechas diferentes** para cada devolución:
 - Se puede editar **solo al crear** la devolución (para casos donde se registra el reclamo días después)
 - Una vez creada, queda fija para mantener trazabilidad
 - **Importante**: Esta es la fecha que se muestra en la columna "Día de reclamo" en la tabla
+- **CRÍTICO**: Esta es la fecha que se usa para el **impacto contable** en EERR y liquidaciones
 
 ### 3. **Fecha Completada** (`fecha_completada`)
 - Es la fecha en que se **finalizó/resolvió** la devolución
@@ -241,3 +242,12 @@ R: Para tener trazabilidad completa y poder analizar tiempos de respuesta.
 
 **P: ¿Cómo sé si un cambio de producto está bien registrado?**  
 R: En los detalles expandibles verás el desglose completo de costos, incluyendo diferencias de productos.
+
+**P: ¿Por qué las devoluciones impactan por fecha_reclamo y no por fecha_compra?**  
+R: Decisión contable importante:
+- **fecha_reclamo** = cuando ocurrió realmente el gasto (principio de devengo)
+- Permite ver la rentabilidad operativa real del mes
+- Los gastos de envío ya están por fecha_reclamo, así todo queda alineado
+- Evita que meses pasados cambien constantemente
+- Si ganás en enero incluyendo devoluciones de diciembre = negocio sustentable ✅
+
