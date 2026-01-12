@@ -166,10 +166,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       acc[producto].noRecuperables++
     }
     
-    // Calcular detalle de pérdidas
-    const tipoResolucion = dev.tipo_resolucion
-    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
-    
+    // Calcular detalle de pérdidas (reusar tipoResolucion y esCambio ya declarados arriba)
     if (!esCambio) {
       acc[producto].perdidaEnvioOriginal += Number(dev.costo_envio_original ?? 0)
     }
