@@ -403,8 +403,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               </div>
             )}
 
-            {/* Preguntar estado de dinero en MP: solo mostrar cuando es Reembolso y la plataforma es ML/MercadoPago */}
-            {advanceType === 'Reembolso' && (fetchedDevolucion?.plataforma === 'ML' || (fetchedDevolucion as any)?.metodoPago === 'MercadoPago') && (
+            {/* Preguntar estado de dinero en MP: solo mostrar cuando es Reembolso y es Mercado Pago (ML o TN con MP) */}
+            {advanceType === 'Reembolso' && (
+              fetchedDevolucion?.plataforma === 'ML' || 
+              fetchedDevolucion?.metodo_pago === 'MercadoPago' || 
+              (fetchedDevolucion as any)?.metodoPago === 'MercadoPago'
+            ) && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Estado del dinero en MP</label>
                 <select className="w-full border rounded p-2" value={mpEstado ?? "unknown"} onChange={(e) => setMpEstado(e.target.value === 'unknown' ? null : e.target.value)}>
