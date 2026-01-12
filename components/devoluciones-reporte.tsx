@@ -91,32 +91,18 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     // Reembolsos
     acc.reembolsos += Number(dev.monto_reembolsado ?? 0)
     
-    // Comisiones devueltas (esto REDUCE la pérdida)
-    if (dev.comision_devuelta) {
-      acc.comisionesDevueltas += Number(dev.comision_original ?? 0)
-    }
-    
     return acc
   }, {
     envioOriginal: 0,
     envioDevolucion: 0,
     envioNuevo: 0,
     productos: 0,
-    reembolsos: 0,
-    comisionesDevueltas: 0
+    reembolsos: 0
   })
 
-  // Calcular pérdida total ajustada (restando envío original en cambios)
+  // Calcular pérdida total (la DB ya tiene la lógica de no incluir envío original en cambios)
   const perdidaTotalAjustada = estadisticas.data.reduce((sum, dev) => {
-    const tipoResolucion = dev.tipo_resolucion
-    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
-    const perdidaBase = Number(dev.perdida_total || dev.perdidaTotal || 0)
-    
-    // En cambios, restar el envío original que no debería contar como pérdida
-    if (esCambio) {
-      return sum + (perdidaBase - Number(dev.costo_envio_original ?? 0))
-    }
-    return sum + perdidaBase
+    return sum + Number(dev.perdida_total || dev.perdidaTotal || 0)
   }, 0)
 
   // Agrupar por motivo
@@ -150,12 +136,12 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     }
     acc[producto].cantidad++
     
-    // Calcular pérdida: si es cambio, restar envío original
+    // Pérdida ya viene calculada correctamente de la DB
+    const perdidaTotal = Number(dev.perdida_total || dev.perdidaTotal || 0)
+    acc[producto].perdidaTotal += perdidaTotal
+    
     const tipoResolucion = dev.tipo_resolucion
     const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
-    const perdidaBase = Number(dev.perdida_total || dev.perdidaTotal || 0)
-    const perdidaAjustada = esCambio ? perdidaBase - Number(dev.costo_envio_original ?? 0) : perdidaBase
-    acc[producto].perdidaTotal += perdidaAjustada
     
     const motivo = dev.motivo || 'Sin especificar'
     acc[producto].motivos[motivo] = (acc[producto].motivos[motivo] || 0) + 1
@@ -439,14 +425,6 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                         ${detallePerdidas.reembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
-                    {detallePerdidas.comisionesDevueltas > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Comisiones recuperadas:</span>
-                        <span className="font-medium text-green-600">
-                          -${detallePerdidas.comisionesDevueltas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
