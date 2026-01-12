@@ -106,6 +106,19 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     comisionesDevueltas: 0
   })
 
+  // Calcular pérdida total ajustada (restando envío original en cambios)
+  const perdidaTotalAjustada = estadisticas.data.reduce((sum, dev) => {
+    const tipoResolucion = dev.tipo_resolucion
+    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    const perdidaBase = Number(dev.perdida_total || dev.perdidaTotal || 0)
+    
+    // En cambios, restar el envío original que no debería contar como pérdida
+    if (esCambio) {
+      return sum + (perdidaBase - Number(dev.costo_envio_original ?? 0))
+    }
+    return sum + perdidaBase
+  }, 0)
+
   // Agrupar por motivo
   const porMotivo = estadisticas.data.reduce((acc: Record<string, number>, dev: any) => {
     const motivo = dev.motivo || "sin especificar"
@@ -136,7 +149,13 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       }
     }
     acc[producto].cantidad++
-    acc[producto].perdidaTotal += Number(dev.perdida_total || dev.perdidaTotal || 0)
+    
+    // Calcular pérdida: si es cambio, restar envío original
+    const tipoResolucion = dev.tipo_resolucion
+    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+    const perdidaBase = Number(dev.perdida_total || dev.perdidaTotal || 0)
+    const perdidaAjustada = esCambio ? perdidaBase - Number(dev.costo_envio_original ?? 0) : perdidaBase
+    acc[producto].perdidaTotal += perdidaAjustada
     
     const motivo = dev.motivo || 'Sin especificar'
     acc[producto].motivos[motivo] = (acc[producto].motivos[motivo] || 0) + 1
@@ -209,10 +228,10 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-destructive">
-              ${estadisticas.perdidaTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              ${perdidaTotalAjustada.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Promedio: ${promedioPerdidasPorDevolucion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              Promedio: ${(estadisticas.total > 0 ? perdidaTotalAjustada / estadisticas.total : 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
             </p>
           </CardContent>
         </Card>
@@ -439,11 +458,13 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                 <div className="flex justify-between text-base font-semibold">
                   <span>Pérdida Total:</span>
                   <span className="text-destructive">
-                    ${estadisticas.perdidaTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    ${perdidaTotalAjustada.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Promedio por devolución: ${promedioPerdidasPorDevolucion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  Costo de incidencia por venta: ${(typeof estadisticas.totalVentas === 'number' && estadisticas.totalVentas > 0) 
+                    ? (perdidaTotalAjustada / (estadisticas.totalVentas - estadisticas.total)).toLocaleString('es-AR', { minimumFractionDigits: 2 })
+                    : '0.00'} (sobre ventas sin devolución)
                 </p>
               </div>
             </div>
@@ -591,8 +612,8 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                 .sort((a, b) => b.perdidaTotal - a.perdidaTotal)
                 .slice(0, 10)
                 .map((prod, index) => {
-                  const porcentaje = estadisticas.perdidaTotal > 0 
-                    ? (prod.perdidaTotal / estadisticas.perdidaTotal) * 100 
+                  const porcentaje = perdidaTotalAjustada > 0 
+                    ? (prod.perdidaTotal / perdidaTotalAjustada) * 100 
                     : 0
                   return (
                     <div key={prod.producto} className="space-y-1">

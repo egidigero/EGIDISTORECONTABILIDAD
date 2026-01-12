@@ -2227,3 +2227,72 @@ export async function getEstadisticasDevoluciones(
     throw new Error("Error al obtener estadísticas de devoluciones")
   }
 }
+
+// Obtener costos estimados de los últimos 30 días para la calculadora de precios
+export async function getCostosEstimados30Dias() {
+  try {
+    const hace30Dias = new Date()
+    hace30Dias.setDate(hace30Dias.getDate() - 30)
+    const fechaInicio = hace30Dias.toISOString().split('T')[0]
+
+    // Obtener devoluciones de los últimos 30 días (excluir rechazadas)
+    const { data: devoluciones } = await supabase
+      .from('devoluciones_resumen')
+      .select('*')
+      .neq('estado', 'Rechazada')
+      .gte('fecha_compra', fechaInicio)
+
+    // Obtener ventas de los últimos 30 días
+    let ventasQuery = supabase.from('ventas').select('id', { count: 'exact', head: true })
+    try {
+      ventasQuery = ventasQuery.gte('fecha', fechaInicio)
+    } catch {
+      ventasQuery = ventasQuery.gte('created_at', fechaInicio)
+    }
+    const { count: totalVentas } = await ventasQuery
+
+    // Calcular pérdida total por devoluciones
+    const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
+    const cantidadDevoluciones = devoluciones?.length || 0
+    const ventasSinDevoluciones = (totalVentas || 0) - cantidadDevoluciones
+
+    // Calcular costo de incidencia por venta
+    const costoDevolucionesPorVenta = ventasSinDevoluciones > 0 
+      ? perdidaTotalDevoluciones / ventasSinDevoluciones 
+      : 0
+
+    // Obtener gasto en ADS de los últimos 30 días
+    const { data: gastosAds } = await supabase
+      .from('gastos_ingresos')
+      .select('monto')
+      .eq('tipo', 'Gasto')
+      .ilike('categoria', '%publicidad%')
+      .gte('fecha', fechaInicio)
+
+    const totalGastosAds = gastosAds?.reduce((sum, g) => sum + (Number(g.monto) || 0), 0) || 0
+    
+    // Calcular costo de ADS por venta
+    const costoAdsPorVenta = (totalVentas || 0) > 0 
+      ? totalGastosAds / (totalVentas || 1)
+      : 0
+
+    return {
+      costoDevolucionesPorVenta,
+      costoAdsPorVenta,
+      totalVentas: totalVentas || 0,
+      cantidadDevoluciones,
+      perdidaTotalDevoluciones,
+      totalGastosAds
+    }
+  } catch (error) {
+    console.error("Error al obtener costos estimados:", error)
+    return {
+      costoDevolucionesPorVenta: 0,
+      costoAdsPorVenta: 0,
+      totalVentas: 0,
+      cantidadDevoluciones: 0,
+      perdidaTotalDevoluciones: 0,
+      totalGastosAds: 0
+    }
+  }
+}

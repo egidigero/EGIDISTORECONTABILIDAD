@@ -275,7 +275,13 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                               </div>
                               <div className="flex justify-between">
                                 <span>Envío original:</span>
-                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_envio_original', 'costoEnvioOriginal'], 0)).toLocaleString()}</span>
+                                <span className="font-medium">
+                                  ${(() => {
+                                    const tipoRes = getAlias(devolucion, ['tipo_resolucion', 'tipoResolucion'], '')
+                                    const esCambio = tipoRes === 'Cambio mismo producto' || tipoRes === 'Cambio otro producto'
+                                    return esCambio ? '0' : Number(getAlias(devolucion, ['costo_envio_original', 'costoEnvioOriginal'], 0)).toLocaleString()
+                                  })()}
+                                </span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Envío devolución:</span>

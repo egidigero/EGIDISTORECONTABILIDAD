@@ -19,6 +19,10 @@ interface CalculadoraPreciosProps {
   trigger: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  costosEstimados?: {
+    costoDevolucionesPorVenta: number
+    costoAdsPorVenta: number
+  }
 }
 
 interface ParametrosCalculo {
@@ -30,6 +34,8 @@ interface ParametrosCalculo {
   roas: number
   usarComisionManual: boolean // Habilita el campo de comisión manual
   comisionManual?: number // Valor de comisión manual
+  costoDevoluciones: number // Costo estimado de devoluciones por venta
+  costoAds: number // Costo estimado de ADS por venta
 }
 
 interface TarifaData {
@@ -66,7 +72,8 @@ export function CalculadoraPrecios({
   onPrecioCalculado,
   trigger,
   open: controlledOpen,
-  onOpenChange
+  onOpenChange,
+  costosEstimados
 }: CalculadoraPreciosProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
@@ -80,7 +87,9 @@ export function CalculadoraPrecios({
     costoEnvio: 0,
     roas: 5,
     usarComisionManual: false,
-    comisionManual: undefined
+    comisionManual: undefined,
+    costoDevoluciones: costosEstimados?.costoDevolucionesPorVenta || 0,
+    costoAds: costosEstimados?.costoAdsPorVenta || 0
   })
   // Habilitar y forzar comisión manual para TN + MercadoPago + Transferencia
   useEffect(() => {
@@ -94,6 +103,17 @@ export function CalculadoraPrecios({
       setParametros(prev => ({ ...prev, usarComisionManual: false }));
     }
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion]);
+
+  // Actualizar costos estimados cuando cambien
+  useEffect(() => {
+    if (costosEstimados) {
+      setParametros(prev => ({
+        ...prev,
+        costoDevoluciones: costosEstimados.costoDevolucionesPorVenta,
+        costoAds: costosEstimados.costoAdsPorVenta
+      }));
+    }
+  }, [costosEstimados]);
   
   const [tarifa, setTarifa] = useState<TarifaData | null>(null)
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
@@ -190,11 +210,11 @@ export function CalculadoraPrecios({
     // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
     const margenOperativo = resultadoOperativo - totalCostosPlataforma
 
-    // 5. Costo de Publicidad (calculado por ROAS)
-    const costoPublicidad = parametros.roas > 0 ? precio / parametros.roas : 0
+    // 5. Costo de Publicidad (puede ser calculado por ROAS o usar estimado)
+    const costoPublicidad = parametros.costoAds > 0 ? parametros.costoAds : (parametros.roas > 0 ? precio / parametros.roas : 0)
 
-    // 6. Margen Neto = Margen Operativo - Costo Publicidad
-    const margenNeto = margenOperativo - costoPublicidad
+    // 6. Margen Neto = Margen Operativo - Costo Publicidad - Costo Devoluciones
+    const margenNeto = margenOperativo - costoPublicidad - parametros.costoDevoluciones
 
     // 7. Porcentajes
     const margenSobrePrecio = (margenNeto / precio) * 100
@@ -408,6 +428,60 @@ export function CalculadoraPrecios({
                   <div className="text-xs text-muted-foreground">
                     Costo publicidad = Precio ÷ ROAS = ${parametros.precioVenta > 0 && parametros.roas > 0 ? (parametros.precioVenta / parametros.roas).toFixed(2) : '0.00'}
                   </div>
+                </div>
+
+                <Separator />
+                
+                <div className="space-y-3">
+                  <div className="text-sm font-medium">Costos Estimados (Últimos 30 días)</div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Costo de Devoluciones por Venta (ARS)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={parametros.costoDevoluciones}
+                      onChange={(e) => setParametros(prev => ({ 
+                        ...prev, 
+                        costoDevoluciones: parseFloat(e.target.value) || 0 
+                      }))}
+                      placeholder="0.00"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      {costosEstimados && costosEstimados.costoDevolucionesPorVenta > 0 && (
+                        <>Estimado: ${costosEstimados.costoDevolucionesPorVenta.toFixed(2)}</>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Costo de ADS por Venta (ARS)
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={parametros.costoAds}
+                      onChange={(e) => setParametros(prev => ({ 
+                        ...prev, 
+                        costoAds: parseFloat(e.target.value) || 0 
+                      }))}
+                      placeholder="0.00"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      {costosEstimados && costosEstimados.costoAdsPorVenta > 0 && (
+                        <>Estimado: ${costosEstimados.costoAdsPorVenta.toFixed(2)}</>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {(parametros.costoDevoluciones > 0 || parametros.costoAds > 0) && (
+                    <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                      💡 Estos costos se suman al cálculo del margen neto
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -809,6 +883,12 @@ export function CalculadoraPrecios({
                           <span>Costo Publicidad:</span>
                           <span className="font-mono">-${resultado.costoPublicidad.toFixed(2)}</span>
                         </div>
+                        {parametros.costoDevoluciones > 0 && (
+                          <div className="flex justify-between text-amber-600">
+                            <span>Costo Devoluciones:</span>
+                            <span className="font-mono">-${parametros.costoDevoluciones.toFixed(2)}</span>
+                          </div>
+                        )}
                         <Separator />
                         <div className="flex justify-between font-bold text-lg">
                           <span>Margen Neto:</span>
