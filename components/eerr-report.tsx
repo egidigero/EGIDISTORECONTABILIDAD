@@ -115,9 +115,24 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
   const totalCostosEnvio = devols.length > 0
     ? devols.reduce((acc: number, d: any) => {
-        const totalEnvioRow = Number(d.total_costos_envio ?? NaN)
-        if (!Number.isNaN(totalEnvioRow)) return acc + totalEnvioRow
-        return acc + Number((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0))
+        // Calcular pérdida de envíos correctamente:
+        // - En cambios: NO se pierde el envío original (solo devolución + nuevo)
+        // - En reembolsos/otros: se pierde todo (original + devolución + nuevo)
+        const tipoResolucion = d.tipo_resolucion
+        const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
+        
+        let perdidaEnvios = 0
+        
+        // Envío original: se pierde solo si NO es cambio
+        if (!esCambio) {
+          perdidaEnvios += Number(d.costo_envio_original || 0)
+        }
+        
+        // Envío devolución y nuevo: siempre se pierden
+        perdidaEnvios += Number(d.costo_envio_devolucion || 0)
+        perdidaEnvios += Number(d.costo_envio_nuevo || 0)
+        
+        return acc + perdidaEnvios
       }, 0)
     : (eerrData.devolucionesEnviosTotal || 0);
 

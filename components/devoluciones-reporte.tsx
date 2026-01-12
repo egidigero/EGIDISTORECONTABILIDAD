@@ -455,53 +455,6 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
         </CardContent>
       </Card>
 
-      {/* Impacto en ventas y reembolsos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {totalReembolsos > 0 && (
-          <Card className="border-destructive">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-destructive">
-                <TrendingDown className="h-5 w-5" />
-                Impacto en Ventas Netas
-              </CardTitle>
-              <CardDescription>
-                Reducción de ingresos por reembolsos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-destructive">
-                ${Math.abs(montoTotalReembolsos).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                {totalReembolsos} {totalReembolsos === 1 ? 'venta anulada' : 'ventas anuladas'} por reembolso
-              </p>
-            </CardContent>
-          </Card>
-        )}
-        
-        {totalReembolsos > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Reembolsos Totales
-              </CardTitle>
-              <CardDescription>
-                Dinero devuelto a clientes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
-                ${montoTotalReembolsos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Promedio: ${totalReembolsos > 0 ? (montoTotalReembolsos / totalReembolsos).toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '0.00'} por reembolso
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
       {/* NUEVO: Análisis por Producto */}
       {productosConDevoluciones.length > 0 && (
         <Card>
