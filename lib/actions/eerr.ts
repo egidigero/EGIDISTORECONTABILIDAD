@@ -32,13 +32,19 @@ export async function calcularEERR(
       console.log('EERR debug - devolucionesForExclusion sample:', (devolucionesExcl || []).map(d => ({ id: d.id, venta_id: d.venta_id, tipo_resolucion: d.tipo_resolucion ?? d.estado, monto_reembolsado: Number(d.monto_reembolsado || 0) })))
     } catch (e) {}
 
-    // Construir lista de venta_ids que tuvieron reembolso (las excluiremos)
+    // Construir lista de venta_ids que tuvieron reembolso o están en devolución (las excluiremos)
     const ventaIdsExclSet = new Set<string>()
     for (const d of devolucionesExcl) {
-      const tipo = String((d as any).tipo_resolucion || (d as any).estado || '')
-      // Excluir la venta SOLO si el tipo/estado indica explícitamente 'Reembolso' (case-insensitive)
+      const tipo = String((d as any).tipo_resolucion || '')
+      const estado = String((d as any).estado || '')
+      
+      // Excluir la venta si:
+      // 1. tipo_resolucion es 'Reembolso'
+      // 2. estado es 'En devolución' o 'Aceptada en camino' (aún no finalizada)
       const isReembolso = (typeof tipo === 'string' && tipo.toLowerCase().includes('reembolso'))
-      if (isReembolso && (d as any).venta_id) {
+      const isEnDevolucion = estado === 'En devolución' || estado === 'Aceptada en camino'
+      
+      if ((isReembolso || isEnDevolucion) && (d as any).venta_id) {
         ventaIdsExclSet.add(String((d as any).venta_id))
       }
     }
