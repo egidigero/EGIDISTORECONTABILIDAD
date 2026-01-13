@@ -40,9 +40,9 @@ export async function calcularEERR(
       
       // Excluir la venta si:
       // 1. tipo_resolucion es 'Reembolso'
-      // 2. estado es 'En devolución' o 'Aceptada en camino' (aún no finalizada)
+      // 2. estado es 'En devolución' (aún no finalizada)
       const isReembolso = (typeof tipo === 'string' && tipo.toLowerCase().includes('reembolso'))
-      const isEnDevolucion = estado === 'En devolución' || estado === 'Aceptada en camino'
+      const isEnDevolucion = estado === 'En devolución'
       
       if ((isReembolso || isEnDevolucion) && (d as any).venta_id) {
         ventaIdsExclSet.add(String((d as any).venta_id))
