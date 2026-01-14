@@ -398,47 +398,13 @@ export async function updateLiquidacion(id: string, data: LiquidacionFormData) {
       return { success: false, error: error.message }
     }
 
-    // Obtener todas las liquidaciones posteriores a esta fecha para recalcularlas también
-    const { data: liquidacionesPosteriores } = await supabase
-      .from('liquidaciones')
-      .select('*')
-      .gt('fecha', liquidacionActual.fecha)
-      .order('fecha', { ascending: true })
+    // Recalcular en cascada desde esta fecha en adelante para propagar los cambios
+    // Esto asegura que se consideren ventas, gastos, ingresos y devoluciones correctamente
+    const fechaStr = liquidacionActual.fecha.toString().split('T')[0]
+    const { recalcularLiquidacionesEnCascada } = await import('@/lib/actions/recalcular-liquidaciones')
+    await recalcularLiquidacionesEnCascada(fechaStr)
 
-    // Recalcular liquidaciones posteriores en cascada
-    if (liquidacionesPosteriores && liquidacionesPosteriores.length > 0) {
-      let saldosAcumulados = {
-        mp_disponible: nuevo_mp_disponible,
-        mp_a_liquidar: nuevo_mp_a_liquidar,
-        tn_a_liquidar: nuevo_tn_a_liquidar
-      }
-
-      for (const liqPosterior of liquidacionesPosteriores) {
-        const mp_liq_post = liqPosterior.mp_liquidado_hoy || 0
-        const tn_liq_post = liqPosterior.tn_liquidado_hoy || 0
-        const iibb_desc_post = liqPosterior.tn_iibb_descuento || 0
-
-        // Aplicar movimientos de la liquidación posterior
-        saldosAcumulados.mp_disponible += mp_liq_post + tn_liq_post - iibb_desc_post
-        saldosAcumulados.mp_a_liquidar -= mp_liq_post
-        saldosAcumulados.tn_a_liquidar -= tn_liq_post
-
-        // Actualizar la liquidación posterior
-        await supabase
-          .from('liquidaciones')
-          .update({
-            mp_disponible: saldosAcumulados.mp_disponible,
-            mp_a_liquidar: saldosAcumulados.mp_a_liquidar,
-            tn_a_liquidar: saldosAcumulados.tn_a_liquidar,
-            updatedAt: new Date().toISOString()
-          })
-          .eq('id', liqPosterior.id)
-
-        console.log(`Recalculada liquidación posterior ${liqPosterior.fecha}:`, saldosAcumulados)
-      }
-    }
-
-    console.log("Liquidación actualizada con recálculo de saldos:", liquidacion)
+    console.log("Liquidación actualizada con recálculo completo en cascada:", liquidacion)
     revalidatePath("/liquidaciones")
     return { success: true, data: liquidacion }
   } catch (error) {
