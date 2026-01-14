@@ -1949,13 +1949,10 @@ export async function deleteDevolucion(id: string) {
 // Obtener devolución por ID desde la vista
 export async function getDevolucionById(id: string) {
   try {
-    // Query both the view and the base table to get venta_id
+    // Query the base table to get venta_id (not available in the view)
     const { data, error } = await supabase
       .from('devoluciones')
-      .select(`
-        *,
-        venta:ventas!venta_id(id, sale_code, comprador, producto:productos!producto_id(modelo))
-      `)
+      .select('*')
       .eq('id', id)
       .single()
 
