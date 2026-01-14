@@ -1275,7 +1275,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
       const prevShipping = Number((existing as any).costo_envio_devolucion ?? 0)
       // new shipping: priorizar lo provisto en parsedPartial o en el registro actualizado
       const newShipping = Number((parsedPartial as any).costoEnvioDevolucion ?? (parsedPartial as any).costo_envio_devolucion ?? (updated as any)?.costo_envio_devolucion ?? 0)
-      if (!Number.isNaN(newShipping) && newShipping !== prevShipping) {
+      const diffShipping = Math.abs(newShipping - prevShipping)
+      // Solo actualizar si la diferencia es significativa (> 0.01 para evitar problemas de redondeo)
+      if (!Number.isNaN(newShipping) && diffShipping > 0.01) {
         try {
           const { createGastoIngreso, updateGastoIngreso, getGastoIngresoById } = await import('@/lib/actions/gastos-ingresos')
           // Use merged.fechaCompletada as accounting date for the shipping gasto when available; fallback to today.
@@ -1362,7 +1364,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
     try {
       const prevShippingNuevo = Number((existing as any).costo_envio_nuevo ?? 0)
       const newShippingNuevo = Number((parsedPartial as any).costoEnvioNuevo ?? (parsedPartial as any).costo_envio_nuevo ?? (updated as any)?.costo_envio_nuevo ?? 0)
-      if (!Number.isNaN(newShippingNuevo) && newShippingNuevo !== prevShippingNuevo && newShippingNuevo > 0) {
+      const diffShippingNuevo = Math.abs(newShippingNuevo - prevShippingNuevo)
+      // Solo actualizar si la diferencia es significativa (> 0.01 para evitar problemas de redondeo)
+      if (!Number.isNaN(newShippingNuevo) && diffShippingNuevo > 0.01 && newShippingNuevo > 0) {
         try {
           const { createGastoIngreso, updateGastoIngreso } = await import('@/lib/actions/gastos-ingresos')
           // Usar fechaAccion si está disponible, sino hoy
@@ -1531,21 +1535,32 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
           const becameSinReembolso = (newTipo === 'Sin reembolso' || (typeof newEstado === 'string' && String(newEstado).includes('Sin reembolso')))
           const wasSinReembolso = (prevTipo === 'Sin reembolso' || (typeof prevEstado === 'string' && String(prevEstado).includes('Sin reembolso')))
 
+          // Detectar si hubo cambios financieros reales
+          const cambioTipo = prevTipo !== newTipo
+          const cambioEstado = prevEstado !== newEstado
+          const cambioMonto = diffMonto !== 0
+          const cambioEnvio = diffShipping !== 0
+          const huboTransicion = (becameReembolso && !wasReembolso) || (becameCambio && !wasCambio) || (becameSinReembolso && !wasSinReembolso)
+          
+          // Solo aplicar ajustes si hubo cambios financieros reales
+          const hayCAmbioFinanciero = cambioTipo || cambioEstado || cambioMonto || cambioEnvio || huboTransicion
+          
           // Determinar ajustes a aplicar HOY
           let ajusteHoy = 0
           let aplicarRecalculo = false
 
-          if (becameReembolso || wasReembolso) {
+          if ((becameReembolso || wasReembolso) && hayCAmbioFinanciero) {
             // Ajuste monetario: aplicar diferencia entre montos (o monto total si se convirtió ahora)
             ajusteHoy = diffMonto !== 0 ? diffMonto : (becameReembolso && !wasReembolso ? newMonto : 0)
             aplicarRecalculo = ajusteHoy !== 0
-          } else if (becameCambio || wasCambio) {
+          } else if ((becameCambio || wasCambio) && hayCAmbioFinanciero) {
             // Para cambio, solo aplicar el costo de envío de devolución (diferencia o monto nuevo si se convirtió ahora)
             ajusteHoy = diffShipping !== 0 ? diffShipping : (becameCambio && !wasCambio ? newShipping : 0)
             aplicarRecalculo = ajusteHoy !== 0
-          } else if (becameSinReembolso) {
+          } else if (becameSinReembolso && !wasSinReembolso) {
             // Sin reembolso: es como que NO PASÓ NADA
             // Solo liberar dinero retenido (si hay), sin pérdidas ni costos
+            // IMPORTANTE: Solo ejecutar este flujo cuando SE CONVIERTE en sin reembolso (no si ya lo era)
             console.log('[Sin reembolso] === INICIO FLUJO SIN REEMBOLSO ===')
             console.log('[Sin reembolso] Devolución ID:', id)
             console.log('[Sin reembolso] Venta:', { plataforma: (venta as any).plataforma, metodoPago: (venta as any).metodoPago })
