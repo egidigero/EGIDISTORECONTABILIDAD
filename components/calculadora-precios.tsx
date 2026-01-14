@@ -83,6 +83,10 @@ export function CalculadoraPrecios({
   const [showHistorico, setShowHistorico] = useState(false)
   // Import dinámico para evitar SSR issues si aplica
   const HistoricoPreciosProducto = React.useMemo(() => React.lazy(() => import("./historico-precios-producto")), [])
+
+  // Permitir recibir productoId si viene como prop (para contexto de producto)
+  // @ts-ignore: por compatibilidad con distintos usos
+  const productoId = (typeof (arguments[0]?.producto) === 'object' && arguments[0]?.producto?.id) || arguments[0]?.productoId
   
   const [parametros, setParametros] = useState<ParametrosCalculo>({
     plataforma: "ML",
@@ -283,7 +287,7 @@ export function CalculadoraPrecios({
           {showHistorico && (
             <React.Suspense fallback={<div className="p-4 text-center text-muted-foreground">Cargando histórico...</div>}>
               <div className="mt-4 border border-yellow-200 rounded bg-yellow-50 p-4">
-                <HistoricoPreciosProducto />
+                <HistoricoPreciosProducto productoId={productoId} />
               </div>
             </React.Suspense>
           )}
