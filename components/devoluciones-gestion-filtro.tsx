@@ -128,23 +128,30 @@ export function DevolucionesGestionFiltro({
           {/* Accesos rápidos */}
           <div className="flex flex-wrap gap-2">
             <span className="text-sm text-muted-foreground flex items-center">Acceso rápido:</span>
+            <Button variant="outline" size="sm" onClick={() => {
+              setEstadoRecepcion('no_recibido')
+              setEstadoPrueba('todos')
+              setEstado('todos')
+              setTimeout(aplicarFiltros, 100)
+            }}>
+              📦 En camino
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setEstadoRecepcion('recibido')
+              setEstadoPrueba('pendiente_probar')
+              setEstado('todos')
+              setTimeout(aplicarFiltros, 100)
+            }}>
+              🔍 Pendientes de probar
+            </Button>
             <Button variant="outline" size="sm" onClick={filtrarPendientes}>
               En devolución
             </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              setEstado('Entregada - Reembolso')
-              setTimeout(aplicarFiltros, 100)
-            }}>
-              Reembolsadas
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              setEstadoPrueba('pendiente_probar')
-              setTimeout(aplicarFiltros, 100)
-            }}>
-              🔍 Pendiente probar
-            </Button>
             <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(7)}>
               Últimos 7 días
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(15)}>
+              Últimos 15 días
             </Button>
             <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(30)}>
               Últimos 30 días
@@ -203,12 +210,9 @@ export function DevolucionesGestionFiltro({
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
                   <SelectItem value="En devolución">En devolución</SelectItem>
-                  <SelectItem value="Aceptada en camino">Aceptada en camino</SelectItem>
-                  <SelectItem value="Entregada - Reembolso">Entregada - Reembolso</SelectItem>
-                  <SelectItem value="Entregada - Cambio mismo producto">Entregada - Cambio</SelectItem>
-                  <SelectItem value="Entregada - Cambio otro producto">Entregada - Otro producto</SelectItem>
-                  <SelectItem value="Entregada - Sin reembolso">Entregada - Sin reembolso</SelectItem>
-                  <SelectItem value="Rechazada">Rechazada</SelectItem>
+                  <SelectItem value="reembolso">Reembolso</SelectItem>
+                  <SelectItem value="cambio">Cambio</SelectItem>
+                  <SelectItem value="Entregada - Sin reembolso">Sin reembolso</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -235,11 +239,10 @@ export function DevolucionesGestionFiltro({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="pendiente_probar">⏳ Pendiente probar</SelectItem>
-                  <SelectItem value="probado">✅ Ya probado</SelectItem>
-                  <SelectItem value="no_probado">❌ Sin probar (todos)</SelectItem>
-                  <SelectItem value="funciona">✅ Probado - Funciona</SelectItem>
-                  <SelectItem value="no_funciona">❌ Probado - No funciona</SelectItem>
+                  <SelectItem value="pendiente_probar">Pendiente probar</SelectItem>
+                  <SelectItem value="probado">Probado</SelectItem>
+                  <SelectItem value="funciona">Probado - Funciona</SelectItem>
+                  <SelectItem value="no_funciona">Probado - No funciona</SelectItem>
                 </SelectContent>
               </Select>
             </div>
