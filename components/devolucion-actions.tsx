@@ -217,7 +217,12 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
         // ignore
       }
     } catch (err) {
-      console.warn('No se pudo obtener devolución para el modal de avance', err)
+      console.error('Error al obtener devolución para edición:', err)
+      toast({ 
+        title: 'Error', 
+        description: 'No se pudo cargar la devolución. Intenta de nuevo.',
+        variant: 'destructive' 
+      })
     } finally {
       setLoadingDevolucion(false)
     }
