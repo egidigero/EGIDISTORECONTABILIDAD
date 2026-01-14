@@ -29,6 +29,31 @@ export function DevolucionesGestionFiltro({
   const [busqueda, setBusqueda] = useState<string>('')
   const [filtrosActivos, setFiltrosActivos] = useState(0)
 
+  function aplicarFiltroRapido(filtrosNuevos: any) {
+    // Limpiar todos los filtros primero
+    setFechaInicio('')
+    setFechaFin('')
+    setPlataforma('todas')
+    setEstado('todos')
+    setEstadoRecepcion('todos')
+    setEstadoPrueba('todos')
+    setBusqueda('')
+    
+    // Aplicar los nuevos
+    if (filtrosNuevos.estadoRecepcion) setEstadoRecepcion(filtrosNuevos.estadoRecepcion)
+    if (filtrosNuevos.estadoPrueba) setEstadoPrueba(filtrosNuevos.estadoPrueba)
+    if (filtrosNuevos.estado) setEstado(filtrosNuevos.estado)
+    if (filtrosNuevos.fechaInicio) setFechaInicio(filtrosNuevos.fechaInicio)
+    if (filtrosNuevos.fechaFin) setFechaFin(filtrosNuevos.fechaFin)
+    
+    // Aplicar directamente sin esperar a los estados
+    onFilter(filtrosNuevos)
+    
+    // Contar filtros activos
+    const activos = Object.keys(filtrosNuevos).filter(k => filtrosNuevos[k]).length
+    setFiltrosActivos(activos)
+  }
+
   function aplicarFiltros() {
     const filtros = {
       fechaInicio,
@@ -128,40 +153,49 @@ export function DevolucionesGestionFiltro({
           {/* Accesos rápidos */}
           <div className="flex flex-wrap gap-2">
             <span className="text-sm text-muted-foreground flex items-center">Acceso rápido:</span>
-            <Button variant="outline" size="sm" onClick={() => {
-              setEstadoRecepcion('no_recibido')
-              setEstadoPrueba('todos')
-              setEstado('todos')
-              setTimeout(aplicarFiltros, 100)
-            }}>
+            <Button variant="outline" size="sm" onClick={() => aplicarFiltroRapido({ estadoRecepcion: 'no_recibido' })}>
               📦 En camino
             </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              setEstadoRecepcion('recibido')
-              setEstadoPrueba('todos')
-              setEstado('En devolución')
-              setTimeout(aplicarFiltros, 100)
-            }}>
+            <Button variant="outline" size="sm" onClick={() => aplicarFiltroRapido({ estadoRecepcion: 'recibido', estado: 'En devolución' })}>
               ⏳ Recibido - Sin definir
             </Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              setEstadoRecepcion('recibido')
-              setEstadoPrueba('pendiente_probar')
-              setEstado('todos')
-              setTimeout(aplicarFiltros, 100)
-            }}>
+            <Button variant="outline" size="sm" onClick={() => aplicarFiltroRapido({ estadoRecepcion: 'recibido', estadoPrueba: 'pendiente_probar' })}>
               🔍 Pendientes de probar
             </Button>
-            <Button variant="outline" size="sm" onClick={filtrarPendientes}>
+            <Button variant="outline" size="sm" onClick={() => aplicarFiltroRapido({ estado: 'En devolución' })}>
               En devolución
             </Button>
-            <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(7)}>
+            <Button variant="outline" size="sm" onClick={() => {
+              const hoy = new Date()
+              const inicio = new Date()
+              inicio.setDate(hoy.getDate() - 7)
+              aplicarFiltroRapido({ 
+                fechaInicio: inicio.toISOString().split('T')[0], 
+                fechaFin: hoy.toISOString().split('T')[0] 
+              })
+            }}>
               Últimos 7 días
             </Button>
-            <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(15)}>
+            <Button variant="outline" size="sm" onClick={() => {
+              const hoy = new Date()
+              const inicio = new Date()
+              inicio.setDate(hoy.getDate() - 15)
+              aplicarFiltroRapido({ 
+                fechaInicio: inicio.toISOString().split('T')[0], 
+                fechaFin: hoy.toISOString().split('T')[0] 
+              })
+            }}>
               Últimos 15 días
             </Button>
-            <Button variant="outline" size="sm" onClick={() => aplicarRangoRapido(30)}>
+            <Button variant="outline" size="sm" onClick={() => {
+              const hoy = new Date()
+              const inicio = new Date()
+              inicio.setDate(hoy.getDate() - 30)
+              aplicarFiltroRapido({ 
+                fechaInicio: inicio.toISOString().split('T')[0], 
+                fechaFin: hoy.toISOString().split('T')[0] 
+              })
+            }}>
               Últimos 30 días
             </Button>
           </div>
