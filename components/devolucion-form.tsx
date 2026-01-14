@@ -294,6 +294,7 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
 
   // Handler: onSubmit
   const internalOnSubmit = async (data: LocalDevolucionForm) => {
+    console.log('📝 SUBMIT INTERNO - Data:', data)
     setIsSubmittingLocal(true)
     try {
       // Si el estado final indica reembolso/cambio, exigir fechaCompletada
@@ -340,6 +341,13 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
   const usingExternal = typeof externalOnSubmit === "function"
   const onSubmit = usingExternal ? externalOnSubmit : internalOnSubmit
   const isSubmitting = externalIsSubmitting ?? isSubmittingLocal
+
+  // Debug: log errors on change
+  useEffect(() => {
+    if (Object.keys(errors).length > 0) {
+      console.log('🔴 ERRORES DE VALIDACIÓN:', errors)
+    }
+  }, [errors])
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -616,7 +624,20 @@ export function DevolucionForm({ devolucion, onSubmit: externalOnSubmit, isSubmi
               </div>
 
               <div className="flex gap-4 mt-6">
-                <Button type="submit" disabled={isSubmitting || (!isEditing && (!ventaSeleccionada || typeof watch("costoEnvioDevolucion") === 'undefined' || watch("costoEnvioDevolucion") === null))}>
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting || (!isEditing && (!ventaSeleccionada || typeof watch("costoEnvioDevolucion") === 'undefined' || watch("costoEnvioDevolucion") === null))}
+                  onClick={() => {
+                    console.log('🖱️ CLICK EN BOTÓN')
+                    console.log('isSubmitting:', isSubmitting)
+                    console.log('isEditing:', isEditing)
+                    console.log('externalIsSubmitting:', externalIsSubmitting)
+                    console.log('isSubmittingLocal:', isSubmittingLocal)
+                    console.log('ventaSeleccionada:', ventaSeleccionada)
+                    console.log('costoEnvioDevolucion:', watch("costoEnvioDevolucion"))
+                    console.log('Errores:', errors)
+                  }}
+                >
                   {isSubmitting
                     ? isEditing
                       ? "Actualizando..."

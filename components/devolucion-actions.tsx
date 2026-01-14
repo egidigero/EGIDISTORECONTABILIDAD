@@ -344,6 +344,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
                   devolucion={fetchedDevolucion} 
                   externalIsSubmitting={isSubmittingEdit}
                   onSubmit={async (data: any) => {
+                    console.log('📝 SUBMIT EXTERNO - Data recibida:', data)
                     setIsSubmittingEdit(true)
                     try {
                       const res = await updateDevolucion(devolucion.id, data)
