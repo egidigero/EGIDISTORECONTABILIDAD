@@ -192,8 +192,10 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   async function loadDevolucion() {
     if (!devolucion?.id) return
     setLoadingDevolucion(true)
+    console.log('🔍 Cargando devolución ID:', devolucion.id)
     try {
       const d = await getDevolucionById(devolucion.id)
+      console.log('✅ Devolución cargada:', d)
       setFetchedDevolucion(d)
       // Prefill local cost fields
       setCostoEnvioNuevoLocal(Number(d?.costo_envio_nuevo ?? d?.costoEnvioNuevo ?? 0))
@@ -336,7 +338,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
             <div>
               {loadingDevolucion ? (
                 <div className="p-6">Cargando...</div>
-              ) : (
+              ) : fetchedDevolucion ? (
                 <DevolucionForm devolucion={fetchedDevolucion} onSubmit={async (data: any) => {
                 try {
                   const res = await updateDevolucion(devolucion.id, data)
@@ -351,6 +353,10 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
                   toast({ title: 'Error', description: 'Ocurrió un error al actualizar la devolución.', variant: 'destructive' })
                 }
               }} />
+              ) : (
+                <div className="p-6 text-red-500">
+                  Error: No se pudo cargar la devolución. ID: {devolucion.id}
+                </div>
               )}
             </div>
           </DialogContent>
