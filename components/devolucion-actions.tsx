@@ -197,6 +197,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
     try {
       const d = await getDevolucionById(devolucion.id)
       console.log('✅ Devolución cargada:', d)
+      console.log('🔑 ventaId:', d?.ventaId, 'venta_id:', (d as any)?.venta_id, 'venta?.id:', d?.venta?.id)
       setFetchedDevolucion(d)
       // Prefill local cost fields
       setCostoEnvioNuevoLocal(Number(d?.costo_envio_nuevo ?? d?.costoEnvioNuevo ?? 0))
