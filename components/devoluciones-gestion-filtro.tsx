@@ -138,6 +138,14 @@ export function DevolucionesGestionFiltro({
             </Button>
             <Button variant="outline" size="sm" onClick={() => {
               setEstadoRecepcion('recibido')
+              setEstadoPrueba('todos')
+              setEstado('En devolución')
+              setTimeout(aplicarFiltros, 100)
+            }}>
+              ⏳ Recibido - Sin definir
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setEstadoRecepcion('recibido')
               setEstadoPrueba('pendiente_probar')
               setEstado('todos')
               setTimeout(aplicarFiltros, 100)
