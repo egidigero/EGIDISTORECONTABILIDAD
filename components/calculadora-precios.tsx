@@ -78,6 +78,11 @@ export function CalculadoraPrecios({
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
   const setOpen = onOpenChange || setInternalOpen
+
+  // Estado para mostrar/ocultar el histórico
+  const [showHistorico, setShowHistorico] = useState(false)
+  // Import dinámico para evitar SSR issues si aplica
+  const HistoricoPreciosProducto = React.useMemo(() => React.lazy(() => import("./historico-precios-producto")), [])
   
   const [parametros, setParametros] = useState<ParametrosCalculo>({
     plataforma: "ML",
@@ -264,7 +269,26 @@ export function CalculadoraPrecios({
             Calculadora de Precios y Márgenes
           </DialogTitle>
         </DialogHeader>
-        
+
+        {/* Bloque para abrir el histórico */}
+        <div className="mb-4">
+          <button
+            className="w-full flex items-center justify-between px-4 py-2 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded transition-colors font-medium text-yellow-800"
+            onClick={() => setShowHistorico((prev) => !prev)}
+            type="button"
+          >
+            <span>📈 Ver Histórico últimos 30 días</span>
+            <span>{showHistorico ? "▲" : "▼"}</span>
+          </button>
+          {showHistorico && (
+            <React.Suspense fallback={<div className="p-4 text-center text-muted-foreground">Cargando histórico...</div>}>
+              <div className="mt-4 border border-yellow-200 rounded bg-yellow-50 p-4">
+                <HistoricoPreciosProducto />
+              </div>
+            </React.Suspense>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Panel de configuración */}
           <div className="space-y-4">
