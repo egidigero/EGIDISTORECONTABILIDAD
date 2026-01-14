@@ -1673,7 +1673,10 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             }
           }
 
-          if (ajusteHoy !== 0) {
+          // DESHABILITADO: Este bloque es legacy y duplica el impacto de los deltas
+          // Los deltas ya manejan todo el impacto financiero en las liquidaciones
+          // Solo se deja el código de envíos que está más abajo
+          if (false && ajusteHoy !== 0) {
                 // Ensure we persist envio breakdown and total on finalization
                 try {
                   const envioOriginal = Number(merged.costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
