@@ -61,6 +61,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [resultadoPrueba, setResultadoPrueba] = useState<string>('')
   const [observacionesPrueba, setObservacionesPrueba] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false)
   
   const router = useRouter()
 
@@ -339,20 +340,27 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               {loadingDevolucion ? (
                 <div className="p-6">Cargando...</div>
               ) : fetchedDevolucion ? (
-                <DevolucionForm devolucion={fetchedDevolucion} onSubmit={async (data: any) => {
-                try {
-                  const res = await updateDevolucion(devolucion.id, data)
-                  if (res.success) {
-                    toast({ title: 'Devolución actualizada', description: 'Cambios guardados.' })
-                    setShowEditDialog(false)
-                    router.refresh()
-                  } else {
-                    toast({ title: 'Error', description: res.error || 'No se pudo actualizar la devolución.', variant: 'destructive' })
-                  }
-                } catch (err) {
-                  toast({ title: 'Error', description: 'Ocurrió un error al actualizar la devolución.', variant: 'destructive' })
-                }
-              }} />
+                <DevolucionForm 
+                  devolucion={fetchedDevolucion} 
+                  externalIsSubmitting={isSubmittingEdit}
+                  onSubmit={async (data: any) => {
+                    setIsSubmittingEdit(true)
+                    try {
+                      const res = await updateDevolucion(devolucion.id, data)
+                      if (res.success) {
+                        toast({ title: 'Devolución actualizada', description: 'Cambios guardados.' })
+                        setShowEditDialog(false)
+                        router.refresh()
+                      } else {
+                        toast({ title: 'Error', description: res.error || 'No se pudo actualizar la devolución.', variant: 'destructive' })
+                      }
+                    } catch (err) {
+                      toast({ title: 'Error', description: 'Ocurrió un error al actualizar la devolución.', variant: 'destructive' })
+                    } finally {
+                      setIsSubmittingEdit(false)
+                    }
+                  }} 
+                />
               ) : (
                 <div className="p-6 text-red-500">
                   Error: No se pudo cargar la devolución. ID: {devolucion.id}
