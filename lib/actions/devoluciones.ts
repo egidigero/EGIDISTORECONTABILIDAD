@@ -1559,24 +1559,25 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             aplicarRecalculo = ajusteHoy !== 0
           } else if (becameSinReembolso && !wasSinReembolso) {
             // Sin reembolso: es como que NO PASÓ NADA
-            // Solo liberar dinero retenido (si hay), sin pérdidas ni costos
-            // IMPORTANTE: Solo ejecutar este flujo cuando SE CONVIERTE en sin reembolso (no si ya lo era)
+            // Marcar producto como recuperado y actualizar estado para que no aparezca en camino ni permita registrar recepción
             console.log('[Sin reembolso] === INICIO FLUJO SIN REEMBOLSO ===')
             console.log('[Sin reembolso] Devolución ID:', id)
             console.log('[Sin reembolso] Venta:', { plataforma: (venta as any).plataforma, metodoPago: (venta as any).metodoPago })
             console.log('[Sin reembolso] merged.fechaAccion:', merged.fechaAccion)
             console.log('[Sin reembolso] merged.fechaCompletada:', merged.fechaCompletada)
-            
-            // Marcar sin impacto financiero
+
+            // Marcar sin impacto financiero y producto como recuperado
             try {
               const updateResult = await supabase.from('devoluciones').update({ 
                 monto_reembolsado: 0,
-                producto_recuperable: false,
+                producto_recuperable: true, // Marcar como recuperado
                 costo_envio_original: 0,
                 costo_envio_devolucion: 0,
-                costo_envio_nuevo: 0
+                costo_envio_nuevo: 0,
+                estado: 'Finalizada', // Estado para que no aparezca en camino ni permita registrar recepción
+                fecha_recepcion: null // Deshabilitar registro de recepción
               }).eq('id', id)
-              console.log('[Sin reembolso] ✓ Campos actualizados a 0:', updateResult.error ? updateResult.error : 'OK')
+              console.log('[Sin reembolso] ✓ Campos actualizados a 0 y recuperado:', updateResult.error ? updateResult.error : 'OK')
             } catch (snErr) {
               console.error('[Sin reembolso] ✗ Error actualizando campos:', snErr)
             }
@@ -1585,12 +1586,12 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             try {
               const plataforma = (venta as any).plataforma ?? null
               const metodoPago = (venta as any).metodoPago ?? null
-              
+
               console.log('[Sin reembolso] Verificando plataforma ML:', { plataforma, metodoPago })
-              
+
               if (plataforma === 'ML' || metodoPago === 'MercadoPago') {
                 console.log('[Sin reembolso] ✓ Es ML/MercadoPago - buscando delta reclamo...')
-                
+
                 // Buscar si hay dinero retenido previamente
                 const { data: deltaReclamo, error: deltaError } = await supabase
                   .from('devoluciones_deltas')
@@ -1779,7 +1780,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                             // Aplicar la diferencia en la liquidación de HOY (no la fecha de impacto contable)
                             const fechaHoyActual = new Date().toISOString().split('T')[0]
                             const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
-                            if (!liqErr && liq) {
+                            if (!liqErr && liq != null) {
                               const currentTn = Number(liq.tn_a_liquidar ?? 0)
                               const nuevoTn = Math.max(0, currentTn - deltaToApply)
                               try {
@@ -1817,7 +1818,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                               .order('created_at', { ascending: false })
                               .limit(1)
                               .single()
-                            if (!deltaErr && deltaRow && deltaRow.fecha_impacto) impactoFecha = deltaRow.fecha_impacto
+                            if (!deltaErr && deltaRow != null && deltaRow.fecha_impacto) impactoFecha = deltaRow.fecha_impacto
                           } catch (pfErr) {
                             // ignore fetch errors and fall back to previous sources
                           }
@@ -1828,7 +1829,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                                 .select('fecha_reclamo, fecha_completada, created_at')
                                 .eq('id', updated?.id ?? (merged as any).id ?? id)
                                 .single()
-                              if (devRow) impactoFecha = devRow.fecha_reclamo ?? devRow.fecha_completada ?? devRow.created_at
+                              if (devRow != null) impactoFecha = devRow.fecha_reclamo ?? devRow.fecha_completada ?? devRow.created_at
                             } catch (_) {
                               // ignore
                             }
