@@ -1,3 +1,4 @@
+"use client"
 import { useState } from "react"
 import { ProductoForm } from "./producto-form"
 
