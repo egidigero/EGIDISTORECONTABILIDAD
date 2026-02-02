@@ -194,47 +194,55 @@ export async function getDevoluciones() {
     }
     // Normalize rows to camelCase so front-end receives stable keys
     try {
-      return (data || []).map(d => {
-        const cam: any = toCamelCase(d)
-        // Provide compatibility aliases used by the UI
-        cam.numeroDevolucion = cam.numeroDevolucion ?? cam.idDevolucion ?? cam.id_devolucion ?? cam.id ?? undefined
-        cam.numeroSeguimiento = cam.numeroSeguimiento ?? cam.numero_seguimiento ?? undefined
-  // Normalize date fields to ISO strings so frontend can safely parse/display them
-        try {
-          const toIso = (v: any) => {
-            if (v === null || typeof v === 'undefined') return null
-            if (v instanceof Date) return v.toISOString()
-            if (typeof v === 'string') {
-              // Common Postgres format: 'YYYY-MM-DD HH:MM:SS' (no T, no Z)
-              // Normalize to ISO by replacing space with 'T' and appending 'Z'
-              const spaceDateMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(v)
-              const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(v)
-              let candidate = v
-              if (spaceDateMatch) candidate = v.replace(' ', 'T') + 'Z'
-              else if (dateOnlyMatch) candidate = v + 'T00:00:00Z'
-              const parsed = new Date(candidate)
+      return (data || [])
+        // Excluir ventas entregadas con estado 'Sin reembolso' del cálculo de en camino
+        .filter(d => {
+          // Si la devolución está entregada y tiene tipo_resolucion 'Sin reembolso', excluir
+          const entregada = d.estado === 'Entregada' || d.estado === 'Finalizada';
+          const sinReembolso = d.tipo_resolucion === 'Sin reembolso' || (d.tipoResolucion && d.tipoResolucion === 'Sin reembolso');
+          return !(entregada && sinReembolso);
+        })
+        .map(d => {
+          const cam: any = toCamelCase(d)
+          // Provide compatibility aliases used by the UI
+          cam.numeroDevolucion = cam.numeroDevolucion ?? cam.idDevolucion ?? cam.id_devolucion ?? cam.id ?? undefined
+          cam.numeroSeguimiento = cam.numeroSeguimiento ?? cam.numero_seguimiento ?? undefined
+          // Normalize date fields to ISO strings so frontend can safely parse/display them
+          try {
+            const toIso = (v: any) => {
+              if (v === null || typeof v === 'undefined') return null
+              if (v instanceof Date) return v.toISOString()
+              if (typeof v === 'string') {
+                // Common Postgres format: 'YYYY-MM-DD HH:MM:SS' (no T, no Z)
+                // Normalize to ISO by replacing space with 'T' and appending 'Z'
+                const spaceDateMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(v)
+                const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(v)
+                let candidate = v
+                if (spaceDateMatch) candidate = v.replace(' ', 'T') + 'Z'
+                else if (dateOnlyMatch) candidate = v + 'T00:00:00Z'
+                const parsed = new Date(candidate)
+                return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+              }
+              // If it's another object, try the generic parser
+              const parsed = new Date(v as any)
               return isNaN(parsed.getTime()) ? null : parsed.toISOString()
             }
-            // If it's another object, try the generic parser
-            const parsed = new Date(v as any)
-            return isNaN(parsed.getTime()) ? null : parsed.toISOString()
+            cam.fechaCompra = toIso(cam.fechaCompra ?? cam.fecha_compra)
+            cam.fechaReclamo = toIso(cam.fechaReclamo ?? cam.fecha_reclamo)
+            cam.fechaCompletada = toIso(cam.fechaCompletada ?? cam.fecha_completada)
+            cam.fechaRecepcion = toIso(cam.fechaRecepcion ?? cam.fecha_recepcion)
+            cam.fechaPrueba = toIso(cam.fechaPrueba ?? cam.fecha_prueba)
+          } catch (dateErr) {
+            // swallow — we'll leave original values if normalization fails
           }
-          cam.fechaCompra = toIso(cam.fechaCompra ?? cam.fecha_compra)
-          cam.fechaReclamo = toIso(cam.fechaReclamo ?? cam.fecha_reclamo)
-          cam.fechaCompletada = toIso(cam.fechaCompletada ?? cam.fecha_completada)
-          cam.fechaRecepcion = toIso(cam.fechaRecepcion ?? cam.fecha_recepcion)
-          cam.fechaPrueba = toIso(cam.fechaPrueba ?? cam.fecha_prueba)
-        } catch (dateErr) {
-          // swallow — we'll leave original values if normalization fails
-        }
-        // Provide a single displayName that the UI can use to avoid showing duplicates
-        try {
-          cam.displayName = cam.comprador ?? cam.nombreContacto ?? cam.saleCode ?? null
-        } catch (e) {
-          cam.displayName = cam.comprador ?? cam.nombreContacto ?? null
-        }
-        return cam
-      })
+          // Provide a single displayName that the UI can use to avoid showing duplicates
+          try {
+            cam.displayName = cam.comprador ?? cam.nombreContacto ?? cam.saleCode ?? null
+          } catch (e) {
+            cam.displayName = cam.comprador ?? cam.nombreContacto ?? null
+          }
+          return cam
+        })
     } catch (normErr) {
       // If normalization fails, still return raw data to avoid breaking callers
       console.warn('getDevoluciones: normalization failed, returning raw rows', normErr)
@@ -1781,7 +1789,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                             const fechaHoyActual = new Date().toISOString().split('T')[0]
                             const { data: liq, error: liqErr } = await supabase.from('liquidaciones').select('tn_a_liquidar').eq('fecha', fechaHoyActual).single()
                             if (!liqErr && liq != null) {
-                              const currentTn = Number(liq.tn_a_liquidar ?? 0)
+                              const currentTn = (liq != null && typeof liq?.tn_a_liquidar !== 'undefined') ? Number(liq?.tn_a_liquidar) : 0
                               const nuevoTn = Math.max(0, currentTn - deltaToApply)
                               try {
                                 await supabase.from('liquidaciones').update({ tn_a_liquidar: nuevoTn }).eq('fecha', fechaHoyActual)
@@ -1818,7 +1826,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                               .order('created_at', { ascending: false })
                               .limit(1)
                               .single()
-                            if (!deltaErr && deltaRow != null && deltaRow.fecha_impacto) impactoFecha = deltaRow.fecha_impacto
+                            if (!deltaErr && deltaRow != null && typeof deltaRow?.fecha_impacto !== 'undefined') impactoFecha = deltaRow?.fecha_impacto
                           } catch (pfErr) {
                             // ignore fetch errors and fall back to previous sources
                           }
@@ -1829,7 +1837,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                                 .select('fecha_reclamo, fecha_completada, created_at')
                                 .eq('id', updated?.id ?? (merged as any).id ?? id)
                                 .single()
-                              if (devRow != null) impactoFecha = devRow.fecha_reclamo ?? devRow.fecha_completada ?? devRow.created_at
+                              if (devRow != null && (typeof devRow?.fecha_reclamo !== 'undefined' || typeof devRow?.fecha_completada !== 'undefined' || typeof devRow?.created_at !== 'undefined')) impactoFecha = devRow?.fecha_reclamo ?? devRow?.fecha_completada ?? devRow?.created_at
                             } catch (_) {
                               // ignore
                             }
