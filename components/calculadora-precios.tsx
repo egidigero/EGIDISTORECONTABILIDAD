@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { Calculator, TrendingUp, BarChart3, List } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, LineChart, Line, ReferenceLine } from "recharts"
+import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 
 interface CalculadoraPreciosProps {
   costoProducto: number
@@ -64,6 +66,17 @@ interface ResultadoCalculo {
   margenNeto: number
   margenSobrePrecio: number
   margenSobreCosto: number
+}
+
+interface DatosReales30Dias {
+  precioVentaPromedio: number
+  costoPromedio: number
+  comisionPromedio: number
+  envioPromedio: number
+  adsPromedio: number
+  devolucionPromedio: number
+  totalVentas: number
+  cantidadDevoluciones: number
 }
 
 export function CalculadoraPrecios({ 
@@ -129,6 +142,11 @@ export function CalculadoraPrecios({
   const [loadingTarifa, setLoadingTarifa] = useState(false)
   const [vistaGrafico, setVistaGrafico] = useState(false)
   const [showChart, setShowChart] = useState(false)
+  
+  // Estado para modo análisis de últimos 30 días
+  const [modoAnalisis30Dias, setModoAnalisis30Dias] = useState(false)
+  const [datosReales30Dias, setDatosReales30Dias] = useState<DatosReales30Dias | null>(null)
+  const [loadingDatosReales, setLoadingDatosReales] = useState(false)
 
   // Cargar tarifa cuando cambien los parámetros de plataforma
   useEffect(() => {
@@ -153,6 +171,48 @@ export function CalculadoraPrecios({
 
     cargarTarifa()
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion])
+
+  // Cargar datos reales de últimos 30 días cuando se active el modo
+  useEffect(() => {
+    async function cargarDatosReales() {
+      if (!modoAnalisis30Dias) {
+        setDatosReales30Dias(null)
+        return
+      }
+      
+      setLoadingDatosReales(true)
+      try {
+        const datos = await getCostosEstimados30Dias()
+        
+        // Calcular promedios basados en datos reales
+        const datosCalculados: DatosReales30Dias = {
+          precioVentaPromedio: 0, // TODO: calcular desde ventas
+          costoPromedio: costoProducto, // Por ahora usar el costo del producto
+          comisionPromedio: 0, // TODO: calcular desde ventas
+          envioPromedio: 0, // TODO: calcular desde ventas
+          adsPromedio: datos.costoAdsPorVenta,
+          devolucionPromedio: datos.costoDevolucionesPorVenta,
+          totalVentas: datos.totalVentas,
+          cantidadDevoluciones: datos.cantidadDevoluciones
+        }
+        
+        setDatosReales30Dias(datosCalculados)
+        
+        // Actualizar parámetros con los promedios
+        setParametros(prev => ({
+          ...prev,
+          costoAds: datosCalculados.adsPromedio,
+          costoDevoluciones: datosCalculados.devolucionPromedio
+        }))
+      } catch (error) {
+        console.error("Error cargando datos reales de 30 días:", error)
+      } finally {
+        setLoadingDatosReales(false)
+      }
+    }
+    
+    cargarDatosReales()
+  }, [modoAnalisis30Dias, costoProducto])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
@@ -273,6 +333,47 @@ export function CalculadoraPrecios({
             Calculadora de Precios y Márgenes
           </DialogTitle>
         </DialogHeader>
+        
+        {/* Toggle para modo análisis de últimos 30 días */}
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Activity className="w-5 h-5 text-blue-600" />
+                <div>
+                  <Label htmlFor="modo-analisis" className="text-base font-semibold cursor-pointer">
+                    Análisis con datos reales (últimos 30 días)
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Usa promedios reales de ventas, comisiones, envíos, ADS y devoluciones
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="modo-analisis"
+                checked={modoAnalisis30Dias}
+                onCheckedChange={setModoAnalisis30Dias}
+              />
+            </div>
+            {loadingDatosReales && (
+              <div className="mt-3 text-sm text-blue-600">Cargando datos reales...</div>
+            )}
+            {modoAnalisis30Dias && datosReales30Dias && (
+              <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200 space-y-2 text-sm">
+                <div className="font-semibold text-blue-900">Datos cargados:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>📊 Total ventas: <span className="font-bold">{datosReales30Dias.totalVentas}</span></div>
+                  <div>📦 Devoluciones: <span className="font-bold">{datosReales30Dias.cantidadDevoluciones}</span></div>
+                  <div>💰 ADS promedio: <span className="font-bold">${datosReales30Dias.adsPromedio.toFixed(2)}</span></div>
+                  <div>↩️ Devolución promedio: <span className="font-bold">${datosReales30Dias.devolucionPromedio.toFixed(2)}</span></div>
+                </div>
+                <div className="pt-2 border-t border-blue-200 text-blue-700">
+                  💡 Cambia el precio de venta para ver cómo impacta en tu margen real
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Bloque para abrir el histórico */}
         <div className="mb-4">

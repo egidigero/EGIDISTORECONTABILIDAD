@@ -74,7 +74,13 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
       } else if (filtros.estadoRecepcion === 'no_recibido') {
         resultado = resultado.filter(dev => {
           const fechaRecepcion = dev.fecha_recepcion || dev.fechaRecepcion
-          return !fechaRecepcion
+          const estado = dev.estado || ''
+          const tipoResolucion = dev.tipo_resolucion || dev.tipoResolucion || ''
+          
+          // Excluir las que ya están entregadas/finalizadas sin reembolso
+          const esEntregadaSinReembolso = (estado === 'Entregada' || estado === 'Finalizada') && tipoResolucion === 'Sin reembolso'
+          
+          return !fechaRecepcion && !esEntregadaSinReembolso
         })
       }
     }
