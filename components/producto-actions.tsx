@@ -119,9 +119,6 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           if (onUpdate) onUpdate()
         }} />
       )}
-      {showCalculadora && (
-        <CalculadoraPrecios producto={producto} onClose={() => setShowCalculadora(false)} />
-      )}
       {/* Modal de movimientos */}
       <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
         <DialogContent className="max-w-2xl">
@@ -215,6 +212,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         onOpenChange={setShowCalculadora}
         onPrecioCalculado={handlePrecioCalculado}
         trigger={<div style={{ display: 'none' }} />}
+        productoId={producto.id}
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

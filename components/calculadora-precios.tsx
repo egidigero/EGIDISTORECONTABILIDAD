@@ -25,6 +25,7 @@ interface CalculadoraPreciosProps {
     costoDevolucionesPorVenta: number
     costoAdsPorVenta: number
   }
+  productoId?: number
 }
 
 interface ParametrosCalculo {
@@ -77,6 +78,7 @@ interface DatosReales30Dias {
   devolucionPromedio: number
   totalVentas: number
   cantidadDevoluciones: number
+  roas: number
 }
 
 export function CalculadoraPrecios({ 
@@ -86,20 +88,12 @@ export function CalculadoraPrecios({
   trigger,
   open: controlledOpen,
   onOpenChange,
-  costosEstimados
+  costosEstimados,
+  productoId
 }: CalculadoraPreciosProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
   const setOpen = onOpenChange || setInternalOpen
-
-  // Estado para mostrar/ocultar el histórico
-  const [showHistorico, setShowHistorico] = useState(false)
-  // Import dinámico para evitar SSR issues si aplica
-  const HistoricoPreciosProducto = React.useMemo(() => React.lazy(() => import("./historico-precios-producto")), [])
-
-  // Permitir recibir productoId si viene como prop (para contexto de producto)
-  // @ts-ignore: por compatibilidad con distintos usos
-  const productoId = (typeof (arguments[0]?.producto) === 'object' && arguments[0]?.producto?.id) || arguments[0]?.productoId
   
   const [parametros, setParametros] = useState<ParametrosCalculo>({
     plataforma: "ML",
@@ -182,18 +176,19 @@ export function CalculadoraPrecios({
       
       setLoadingDatosReales(true)
       try {
-        const datos = await getCostosEstimados30Dias()
+        const datos = await getCostosEstimados30Dias(productoId)
         
         // Calcular promedios basados en datos reales
         const datosCalculados: DatosReales30Dias = {
-          precioVentaPromedio: 0, // TODO: calcular desde ventas
-          costoPromedio: costoProducto, // Por ahora usar el costo del producto
-          comisionPromedio: 0, // TODO: calcular desde ventas
-          envioPromedio: 0, // TODO: calcular desde ventas
-          adsPromedio: datos.costoAdsPorVenta,
-          devolucionPromedio: datos.costoDevolucionesPorVenta,
-          totalVentas: datos.totalVentas,
-          cantidadDevoluciones: datos.cantidadDevoluciones
+          precioVentaPromedio: datos.precioVentaPromedio || 0,
+          costoPromedio: costoProducto,
+          comisionPromedio: datos.comisionPromedio || 0,
+          envioPromedio: datos.envioPromedio || 0,
+          adsPromedio: datos.costoAdsPorVenta || 0,
+          devolucionPromedio: datos.costoDevolucionesPorVenta || 0,
+          totalVentas: datos.totalVentas || 0,
+          cantidadDevoluciones: datos.cantidadDevoluciones || 0,
+          roas: datos.roas || 0
         }
         
         setDatosReales30Dias(datosCalculados)
@@ -201,8 +196,10 @@ export function CalculadoraPrecios({
         // Actualizar parámetros con los promedios
         setParametros(prev => ({
           ...prev,
+          costoEnvio: datosCalculados.envioPromedio,
           costoAds: datosCalculados.adsPromedio,
-          costoDevoluciones: datosCalculados.devolucionPromedio
+          costoDevoluciones: datosCalculados.devolucionPromedio,
+          roas: datosCalculados.roas > 0 ? datosCalculados.roas : prev.roas
         }))
       } catch (error) {
         console.error("Error cargando datos reales de 30 días:", error)
@@ -212,7 +209,7 @@ export function CalculadoraPrecios({
     }
     
     cargarDatosReales()
-  }, [modoAnalisis30Dias, costoProducto])
+  }, [modoAnalisis30Dias, costoProducto, productoId])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
@@ -360,12 +357,16 @@ export function CalculadoraPrecios({
             )}
             {modoAnalisis30Dias && datosReales30Dias && (
               <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200 space-y-2 text-sm">
-                <div className="font-semibold text-blue-900">Datos cargados:</div>
+                <div className="font-semibold text-blue-900">Datos cargados de últimos 30 días:</div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>📊 Total ventas: <span className="font-bold">{datosReales30Dias.totalVentas}</span></div>
                   <div>📦 Devoluciones: <span className="font-bold">{datosReales30Dias.cantidadDevoluciones}</span></div>
-                  <div>💰 ADS promedio: <span className="font-bold">${datosReales30Dias.adsPromedio.toFixed(2)}</span></div>
-                  <div>↩️ Devolución promedio: <span className="font-bold">${datosReales30Dias.devolucionPromedio.toFixed(2)}</span></div>
+                  <div>💰 Precio venta prom: <span className="font-bold">${datosReales30Dias.precioVentaPromedio.toFixed(2)}</span></div>
+                  <div>🏷️ Comisión prom: <span className="font-bold">${datosReales30Dias.comisionPromedio.toFixed(2)}</span></div>
+                  <div>📮 Envío prom: <span className="font-bold">${datosReales30Dias.envioPromedio.toFixed(2)}</span></div>
+                  <div>📢 ADS prom: <span className="font-bold">${datosReales30Dias.adsPromedio.toFixed(2)}</span></div>
+                  <div>↩️ Devolución prom: <span className="font-bold">${datosReales30Dias.devolucionPromedio.toFixed(2)}</span></div>
+                  <div>📈 ROAS: <span className="font-bold">{datosReales30Dias.roas.toFixed(2)}x</span></div>
                 </div>
                 <div className="pt-2 border-t border-blue-200 text-blue-700">
                   💡 Cambia el precio de venta para ver cómo impacta en tu margen real
@@ -374,25 +375,6 @@ export function CalculadoraPrecios({
             )}
           </CardContent>
         </Card>
-
-        {/* Bloque para abrir el histórico */}
-        <div className="mb-4">
-          <button
-            className="w-full flex items-center justify-between px-4 py-2 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded transition-colors font-medium text-yellow-800"
-            onClick={() => setShowHistorico((prev) => !prev)}
-            type="button"
-          >
-            <span>📈 Ver Histórico últimos 30 días</span>
-            <span>{showHistorico ? "▲" : "▼"}</span>
-          </button>
-          {showHistorico && (
-            <React.Suspense fallback={<div className="p-4 text-center text-muted-foreground">Cargando histórico...</div>}>
-              <div className="mt-4 border border-yellow-200 rounded bg-yellow-50 p-4">
-                <HistoricoPreciosProducto productoId={productoId} />
-              </div>
-            </React.Suspense>
-          )}
-        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Panel de configuración */}
@@ -517,7 +499,13 @@ export function CalculadoraPrecios({
                       costoEnvio: parseFloat(e.target.value) || 0 
                     }))}
                     placeholder="Costo del envío"
+                    disabled={modoAnalisis30Dias}
                   />
+                  {modoAnalisis30Dias && datosReales30Dias && (
+                    <div className="text-xs text-blue-600">
+                      ✓ Usando promedio real: ${datosReales30Dias.envioPromedio.toFixed(2)}
+                    </div>
+                  )}
                 </div>
                 {/* Solo mostrar comisión manual si corresponde, y forzarla a obligatoria en TN+MercadoPago+Transferencia */}
                 {parametros.usarComisionManual && (
@@ -577,12 +565,19 @@ export function CalculadoraPrecios({
                         costoDevoluciones: parseFloat(e.target.value) || 0 
                       }))}
                       placeholder="0.00"
+                      disabled={modoAnalisis30Dias}
                     />
-                    <div className="text-xs text-muted-foreground">
-                      {costosEstimados && costosEstimados.costoDevolucionesPorVenta > 0 && (
-                        <>Estimado: ${costosEstimados.costoDevolucionesPorVenta.toFixed(2)}</>
-                      )}
-                    </div>
+                    {modoAnalisis30Dias && datosReales30Dias ? (
+                      <div className="text-xs text-blue-600">
+                        ✓ Usando promedio real: ${datosReales30Dias.devolucionPromedio.toFixed(2)}
+                      </div>
+                    ) : (
+                      costosEstimados && costosEstimados.costoDevolucionesPorVenta > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          Estimado: ${costosEstimados.costoDevolucionesPorVenta.toFixed(2)}
+                        </div>
+                      )
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -598,12 +593,19 @@ export function CalculadoraPrecios({
                         costoAds: parseFloat(e.target.value) || 0 
                       }))}
                       placeholder="0.00"
+                      disabled={modoAnalisis30Dias}
                     />
-                    <div className="text-xs text-muted-foreground">
-                      {costosEstimados && costosEstimados.costoAdsPorVenta > 0 && (
-                        <>Estimado: ${costosEstimados.costoAdsPorVenta.toFixed(2)}</>
-                      )}
-                    </div>
+                    {modoAnalisis30Dias && datosReales30Dias ? (
+                      <div className="text-xs text-blue-600">
+                        ✓ Usando promedio real: ${datosReales30Dias.adsPromedio.toFixed(2)}
+                      </div>
+                    ) : (
+                      costosEstimados && costosEstimados.costoAdsPorVenta > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          Estimado: ${costosEstimados.costoAdsPorVenta.toFixed(2)}
+                        </div>
+                      )
+                    )}
                   </div>
                   
                   {(parametros.costoDevoluciones > 0 || parametros.costoAds > 0) && (

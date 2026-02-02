@@ -2257,7 +2257,7 @@ export async function getEstadisticasDevoluciones(
 }
 
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
-export async function getCostosEstimados30Dias() {
+export async function getCostosEstimados30Dias(productoId?: string) {
   try {
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
@@ -2270,19 +2270,26 @@ export async function getCostosEstimados30Dias() {
       .neq('estado', 'Rechazada')
       .gte('fecha_compra', fechaInicio)
 
-    // Obtener ventas de los últimos 30 días
-    let ventasQuery = supabase.from('ventas').select('id', { count: 'exact', head: true })
+    // Obtener ventas de los últimos 30 días (filtrar por producto si se proporciona)
+    let ventasQuery = supabase.from('ventas').select('*')
     try {
       ventasQuery = ventasQuery.gte('fecha', fechaInicio)
     } catch {
       ventasQuery = ventasQuery.gte('created_at', fechaInicio)
     }
-    const { count: totalVentas } = await ventasQuery
+    
+    // Filtrar por producto si se proporciona
+    if (productoId) {
+      ventasQuery = ventasQuery.eq('producto_id', productoId)
+    }
+    
+    const { data: ventas } = await ventasQuery
+    const totalVentas = ventas?.length || 0
 
     // Calcular pérdida total por devoluciones
     const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
     const cantidadDevoluciones = devoluciones?.length || 0
-    const ventasSinDevoluciones = (totalVentas || 0) - cantidadDevoluciones
+    const ventasSinDevoluciones = totalVentas - cantidadDevoluciones
 
     // Calcular costo de incidencia por venta
     const costoDevolucionesPorVenta = ventasSinDevoluciones > 0 
@@ -2292,25 +2299,57 @@ export async function getCostosEstimados30Dias() {
     // Obtener gasto en ADS de los últimos 30 días
     const { data: gastosAds } = await supabase
       .from('gastos_ingresos')
-      .select('monto')
+      .select('monto_ars, montoARS, monto')
       .eq('tipo', 'Gasto')
-      .ilike('categoria', '%publicidad%')
+      .or('categoria.ilike.%publicidad%,categoria.ilike.%ads%,categoria.ilike.%marketing%')
       .gte('fecha', fechaInicio)
 
-    const totalGastosAds = gastosAds?.reduce((sum, g) => sum + (Number(g.monto) || 0), 0) || 0
+    const totalGastosAds = gastosAds?.reduce((sum, g) => {
+      const monto = Number(g.monto_ars || g.montoARS || g.monto) || 0
+      return sum + monto
+    }, 0) || 0
     
     // Calcular costo de ADS por venta
-    const costoAdsPorVenta = (totalVentas || 0) > 0 
-      ? totalGastosAds / (totalVentas || 1)
+    const costoAdsPorVenta = totalVentas > 0 
+      ? totalGastosAds / totalVentas
       : 0
+
+    // Calcular envío promedio (total envíos / cantidad de ventas)
+    const totalEnvios = ventas?.reduce((sum, v) => sum + (Number(v.costo_envio || v.costoEnvio) || 0), 0) || 0
+    const envioPromedio = totalVentas > 0 ? totalEnvios / totalVentas : 0
+
+    // Calcular comisiones promedio
+    const totalComisiones = ventas?.reduce((sum, v) => {
+      const comision = Number(v.comision || v.comisionPlataforma) || 0
+      return sum + comision
+    }, 0) || 0
+    const comisionPromedio = totalVentas > 0 ? totalComisiones / totalVentas : 0
+
+    // Calcular precio de venta promedio
+    const totalPrecioVenta = ventas?.reduce((sum, v) => {
+      const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
+      return sum + precio
+    }, 0) || 0
+    const precioVentaPromedio = totalVentas > 0 ? totalPrecioVenta / totalVentas : 0
+
+    // Calcular ROAS de los últimos 30 días
+    const totalIngresoVentas = ventas?.reduce((sum, v) => {
+      const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
+      return sum + precio
+    }, 0) || 0
+    const roas = totalGastosAds > 0 ? totalIngresoVentas / totalGastosAds : 0
 
     return {
       costoDevolucionesPorVenta,
       costoAdsPorVenta,
-      totalVentas: totalVentas || 0,
+      totalVentas,
       cantidadDevoluciones,
       perdidaTotalDevoluciones,
-      totalGastosAds
+      totalGastosAds,
+      envioPromedio,
+      comisionPromedio,
+      precioVentaPromedio,
+      roas
     }
   } catch (error) {
     console.error("Error al obtener costos estimados:", error)
@@ -2320,7 +2359,11 @@ export async function getCostosEstimados30Dias() {
       totalVentas: 0,
       cantidadDevoluciones: 0,
       perdidaTotalDevoluciones: 0,
-      totalGastosAds: 0
+      totalGastosAds: 0,
+      envioPromedio: 0,
+      comisionPromedio: 0,
+      precioVentaPromedio: 0,
+      roas: 0
     }
   }
 }
