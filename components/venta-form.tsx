@@ -159,6 +159,20 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     }
   }, [venta, setValue])
 
+  // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
+  useEffect(() => {
+    if (watchPlataforma === "ML") {
+      // Forzar MercadoPago
+      if (watchMetodoPago !== "MercadoPago") {
+        setValue("metodoPago", "MercadoPago")
+      }
+      // Si la condición es Transferencia, cambiarla a Normal
+      if (watchCondicion === "Transferencia") {
+        setValue("condicion", "Normal")
+      }
+    }
+  }, [watchPlataforma, watchMetodoPago, watchCondicion, setValue])
+
   // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interés
   useEffect(() => {
     if (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin interés") {
@@ -480,7 +494,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
 
                 <div className="space-y-2">
                   <Label>Método de Pago</Label>
-                  <Select value={watch("metodoPago")} onValueChange={(value) => setValue("metodoPago", value as any)}>
+                  <Select 
+                    value={watch("metodoPago")} 
+                    onValueChange={(value) => setValue("metodoPago", value as any)}
+                    disabled={watchPlataforma === "ML"}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona un método" />
                     </SelectTrigger>
@@ -492,6 +510,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {watchPlataforma === "ML" && (
+                    <p className="text-xs text-muted-foreground">Mercado Libre solo acepta Mercado Pago</p>
+                  )}
                   {errors.metodoPago && <p className="text-sm text-destructive">{errors.metodoPago.message}</p>}
                 </div>
 
@@ -502,13 +523,18 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       <SelectValue placeholder="Selecciona una condición" />
                     </SelectTrigger>
                     <SelectContent>
-                      {condicionOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
+                      {condicionOptions
+                        .filter(option => watchPlataforma === "ML" ? option.value !== "Transferencia" : true)
+                        .map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
+                  {watchPlataforma === "ML" && (
+                    <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin interés y Normal</p>
+                  )}
                   {errors.condicion && <p className="text-sm text-destructive">{errors.condicion.message}</p>}
                 </div>
 

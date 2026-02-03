@@ -121,6 +121,20 @@ export function CalculadoraPrecios({
     }
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion]);
 
+  // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
+  useEffect(() => {
+    if (parametros.plataforma === "ML") {
+      setParametros(prev => {
+        const updates: any = { metodoPago: "MercadoPago" };
+        // Si la condición es Transferencia, cambiarla a Normal
+        if (prev.condicion === "Transferencia") {
+          updates.condicion = "Normal";
+        }
+        return { ...prev, ...updates };
+      });
+    }
+  }, [parametros.plataforma]);
+
   // Actualizar costos estimados cuando cambien
   useEffect(() => {
     if (costosEstimados) {
@@ -409,6 +423,7 @@ export function CalculadoraPrecios({
                     onValueChange={(value: "PagoNube" | "MercadoPago") => 
                       setParametros(prev => ({ ...prev, metodoPago: value }))
                     }
+                    disabled={parametros.plataforma === "ML"}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -418,6 +433,9 @@ export function CalculadoraPrecios({
                       <SelectItem value="MercadoPago">Mercado Pago</SelectItem>
                     </SelectContent>
                   </Select>
+                  {parametros.plataforma === "ML" && (
+                    <p className="text-xs text-muted-foreground">Mercado Libre solo acepta Mercado Pago</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -432,11 +450,16 @@ export function CalculadoraPrecios({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Transferencia">Transferencia</SelectItem>
+                      {parametros.plataforma === "TN" && (
+                        <SelectItem value="Transferencia">Transferencia</SelectItem>
+                      )}
                       <SelectItem value="Cuotas sin interés">Cuotas sin interés</SelectItem>
                       <SelectItem value="Normal">Normal</SelectItem>
                     </SelectContent>
                   </Select>
+                  {parametros.plataforma === "ML" && (
+                    <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin interés y Normal</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
