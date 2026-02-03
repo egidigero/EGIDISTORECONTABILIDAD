@@ -2275,7 +2275,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const { data: devolucionesTotales } = await supabase
       .from('devoluciones_resumen')
       .select('producto_sku, plataforma, tipo_resolucion, estado')
-      .gte('fecha_compra', fechaInicio)
+      .gte('fecha_reclamo', fechaInicio)
       .limit(5)
     console.log('[getCostosEstimados30Dias] Muestra de devoluciones totales (sin filtros):', devolucionesTotales)
 
@@ -2285,7 +2285,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select('*')
       .neq('estado', 'Rechazada')
       .neq('tipo_resolucion', 'Sin reembolso')
-      .gte('fecha_compra', fechaInicio)
+      .gte('fecha_reclamo', fechaInicio)
     
     if (productoSku) {
       devolucionesQuery = devolucionesQuery.eq('producto_sku', productoSku)
@@ -2327,13 +2327,16 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const cantidadDevoluciones = devoluciones?.length || 0
     const unidadesVendidasNoDevueltas = totalVentas - cantidadDevoluciones
 
-    // Calcular pérdida total por devoluciones
+    // Calcular pérdida total por devoluciones del modelo específico
     const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
 
-    // Calcular costo de incidencia de devoluciones: pérdidas totales / unidades vendidas no devueltas
+    // Calcular costo de incidencia de devoluciones específico del modelo:
+    // Pérdidas totales del modelo / unidades vendidas no devueltas del modelo
     const costoDevolucionesPorVenta = unidadesVendidasNoDevueltas > 0 
       ? perdidaTotalDevoluciones / unidadesVendidasNoDevueltas
       : 0
+    
+    console.log('[getCostosEstimados30Dias] Pérdidas totales devoluciones:', perdidaTotalDevoluciones, 'Unidades vendidas no devueltas:', unidadesVendidasNoDevueltas, 'Costo por venta:', costoDevolucionesPorVenta)
 
     // Primero verificar si hay gastos en general
     const { data: gastosTotales } = await supabase
@@ -2347,7 +2350,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Obtener gasto en ADS de los últimos 30 días
     const { data: gastosAds, error: errorAds } = await supabase
       .from('gastos_ingresos')
-      .select('montoARS, monto, categoria, fecha')
+      .select('montoARS, categoria, fecha')
       .eq('tipo', 'Gasto')
       .or('categoria.ilike.%publicidad%,categoria.ilike.%ads%,categoria.ilike.%marketing%')
       .gte('fecha', fechaInicio)
@@ -2358,20 +2361,19 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
 
     const totalGastosAds = gastosAds?.reduce((sum, g) => {
-      const monto = Number(g.montoARS || g.monto) || 0
+      const monto = Number(g.montoARS) || 0
       return sum + monto
     }, 0) || 0
     
     console.log('[getCostosEstimados30Dias] Total gastos ADS:', totalGastosAds)
-    
-    // Calcular costo de ADS por unidad vendida no devuelta
-    const costoAdsPorVenta = unidadesVendidasNoDevueltas > 0 
-      ? totalGastosAds / unidadesVendidasNoDevueltas
-      : 0
 
     // Calcular envío promedio (total envíos / cantidad de ventas) por plataforma
-    const totalEnvios = ventas?.reduce((sum, v) => sum + (Number(v.costo_envio || v.costoEnvio) || 0), 0) || 0
+    const totalEnvios = ventas?.reduce((sum, v) => {
+      const envio = Number(v.cargoEnvioCosto || v.cargo_envio_costo || v.costo_envio || v.costoEnvio) || 0
+      return sum + envio
+    }, 0) || 0
     const envioPromedio = totalVentas > 0 ? totalEnvios / totalVentas : 0
+    console.log('[getCostosEstimados30Dias] Total envios:', totalEnvios, 'Envio promedio:', envioPromedio)
 
     // Calcular precio de venta promedio por plataforma
     const totalPrecioVenta = ventas?.reduce((sum, v) => {
@@ -2386,6 +2388,14 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       return sum + precio
     }, 0) || 0
     const roas = totalGastosAds > 0 ? totalIngresoVentas / totalGastosAds : 0
+    
+    // Calcular costo de ADS por venta usando ROAS general
+    // Si tengo ROAS, puedo calcular cuánto gasto en ADS por cada venta
+    const costoAdsPorVenta = roas > 0 && totalVentas > 0
+      ? totalGastosAds / totalVentas
+      : 0
+    
+    console.log('[getCostosEstimados30Dias] ROAS:', roas, 'Costo ADS por venta:', costoAdsPorVenta)
 
     const resultado = {
       costoDevolucionesPorVenta,
