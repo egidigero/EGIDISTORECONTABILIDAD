@@ -2279,7 +2279,7 @@ export async function getCostosEstimados30Dias(productoId?: number) {
       .gte('fecha_compra', fechaInicio)
     
     if (productoId) {
-      devolucionesQuery = devolucionesQuery.eq('producto_id', productoId)
+      devolucionesQuery = devolucionesQuery.eq('producto_sku', productoId)
     }
     
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
@@ -2290,7 +2290,7 @@ export async function getCostosEstimados30Dias(productoId?: number) {
     
     // Filtrar por producto si se proporciona
     if (productoId) {
-      ventasQuery = ventasQuery.eq('producto_id', productoId)
+      ventasQuery = ventasQuery.eq('productoId', productoId)
     }
     
     const { data: ventas, error: errorVentas } = await ventasQuery
