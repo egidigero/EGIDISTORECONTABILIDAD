@@ -2269,6 +2269,8 @@ export async function getCostosEstimados30Dias(productoId?: number) {
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
 
+    console.log('[getCostosEstimados30Dias] Buscando datos desde:', fechaInicio, 'productoId:', productoId)
+
     // Obtener devoluciones de los últimos 30 días (excluir rechazadas y filtrar por producto si se proporciona)
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
@@ -2280,22 +2282,19 @@ export async function getCostosEstimados30Dias(productoId?: number) {
       devolucionesQuery = devolucionesQuery.eq('producto_id', productoId)
     }
     
-    const { data: devoluciones } = await devolucionesQuery
+    const { data: devoluciones, error: errorDev } = await devolucionesQuery
+    console.log('[getCostosEstimados30Dias] Devoluciones encontradas:', devoluciones?.length, 'error:', errorDev)
 
     // Obtener ventas de los últimos 30 días (filtrar por producto si se proporciona)
-    let ventasQuery = supabase.from('ventas').select('*')
-    try {
-      ventasQuery = ventasQuery.gte('fecha', fechaInicio)
-    } catch {
-      ventasQuery = ventasQuery.gte('created_at', fechaInicio)
-    }
+    let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio)
     
     // Filtrar por producto si se proporciona
     if (productoId) {
       ventasQuery = ventasQuery.eq('producto_id', productoId)
     }
     
-    const { data: ventas } = await ventasQuery
+    const { data: ventas, error: errorVentas } = await ventasQuery
+    console.log('[getCostosEstimados30Dias] Ventas encontradas:', ventas?.length, 'error:', errorVentas)
     const totalVentas = ventas?.length || 0
 
     // Calcular pérdida total por devoluciones
@@ -2344,7 +2343,7 @@ export async function getCostosEstimados30Dias(productoId?: number) {
     }, 0) || 0
     const roas = totalGastosAds > 0 ? totalIngresoVentas / totalGastosAds : 0
 
-    return {
+    const resultado = {
       costoDevolucionesPorVenta,
       costoAdsPorVenta,
       totalVentas,
@@ -2355,8 +2354,12 @@ export async function getCostosEstimados30Dias(productoId?: number) {
       precioVentaPromedio,
       roas
     }
+
+    console.log('[getCostosEstimados30Dias] Resultado:', resultado)
+
+    return resultado
   } catch (error) {
-    console.error("Error al obtener costos estimados:", error)
+    console.error("[getCostosEstimados30Dias] Error al obtener costos estimados:", error)
     return {
       costoDevolucionesPorVenta: 0,
       costoAdsPorVenta: 0,
