@@ -208,10 +208,15 @@ export function CalculadoraPrecios({
         setDatosReales30Dias(datosCalculados)
         
         // Actualizar parámetros con los promedios
+        // Para ADS, si tenemos ROAS, calculamos el costo basado en el precio de venta actual
+        const costoAdsCalculado = datosCalculados.roas > 0 
+          ? parametros.precioVenta / datosCalculados.roas
+          : datosCalculados.adsPromedio
+        
         setParametros(prev => ({
           ...prev,
           costoEnvio: datosCalculados.envioPromedio,
-          costoAds: datosCalculados.adsPromedio,
+          costoAds: costoAdsCalculado,
           costoDevoluciones: datosCalculados.devolucionPromedio,
           roas: datosCalculados.roas > 0 ? datosCalculados.roas : prev.roas
         }))
@@ -224,6 +229,17 @@ export function CalculadoraPrecios({
     
     cargarDatosReales()
   }, [modoAnalisis30Dias, costoProducto, productoId, productoSku, parametros.plataforma])
+
+  // Recalcular costo de ADS cuando cambia el precio de venta (si tenemos ROAS)
+  useEffect(() => {
+    if (modoAnalisis30Dias && datosReales30Dias && datosReales30Dias.roas > 0 && parametros.precioVenta > 0) {
+      const costoAdsCalculado = parametros.precioVenta / datosReales30Dias.roas
+      setParametros(prev => ({
+        ...prev,
+        costoAds: costoAdsCalculado
+      }))
+    }
+  }, [parametros.precioVenta, datosReales30Dias?.roas, modoAnalisis30Dias])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
@@ -377,9 +393,8 @@ export function CalculadoraPrecios({
                   <div>📦 Devoluciones: <span className="font-bold">{datosReales30Dias.cantidadDevoluciones}</span></div>
                   <div>💰 Precio venta prom: <span className="font-bold">${datosReales30Dias.precioVentaPromedio.toFixed(2)}</span></div>
                   <div>📮 Envío prom: <span className="font-bold">${datosReales30Dias.envioPromedio.toFixed(2)}</span></div>
-                  <div>📢 ADS prom: <span className="font-bold">${datosReales30Dias.adsPromedio.toFixed(2)}</span></div>
+                  <div>� ROAS: <span className="font-bold">{datosReales30Dias.roas.toFixed(2)}x</span></div>
                   <div>↩️ Devolución prom: <span className="font-bold">${datosReales30Dias.devolucionPromedio.toFixed(2)}</span></div>
-                  <div>📈 ROAS: <span className="font-bold">{datosReales30Dias.roas.toFixed(2)}x</span></div>
                 </div>
                 <div className="pt-2 border-t border-blue-200 text-blue-700">
                   💡 Las comisiones se calculan según la tarifa seleccionada. Cambia el precio de venta para ver el impacto en tu margen real
@@ -617,9 +632,9 @@ export function CalculadoraPrecios({
                       placeholder="0.00"
                       disabled={modoAnalisis30Dias}
                     />
-                    {modoAnalisis30Dias && datosReales30Dias ? (
+                    {modoAnalisis30Dias && datosReales30Dias && datosReales30Dias.roas > 0 ? (
                       <div className="text-xs text-blue-600">
-                        ✓ Usando promedio real: ${datosReales30Dias.adsPromedio.toFixed(2)}
+                        ✓ Calculado con ROAS {datosReales30Dias.roas.toFixed(2)}x: ${parametros.costoAds.toFixed(2)}
                       </div>
                     ) : (
                       costosEstimados && costosEstimados.costoAdsPorVenta > 0 && (

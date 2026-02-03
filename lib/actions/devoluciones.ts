@@ -2275,17 +2275,18 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const { data: devolucionesTotales } = await supabase
       .from('devoluciones_resumen')
       .select('producto_sku, plataforma, tipo_resolucion, estado')
-      .gte('fecha_reclamo', fechaInicio)
+      .gte('fecha_compra', fechaInicio)
       .limit(5)
     console.log('[getCostosEstimados30Dias] Muestra de devoluciones totales (sin filtros):', devolucionesTotales)
 
     // Obtener devoluciones de los últimos 30 días (excluir rechazadas y sin reembolso, filtrar por producto y plataforma si se proporciona)
+    // IMPORTANTE: Usamos fecha_compra para que coincida con el período de ventas, así comparamos manzanas con manzanas
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
       .neq('tipo_resolucion', 'Sin reembolso')
-      .gte('fecha_reclamo', fechaInicio)
+      .gte('fecha_compra', fechaInicio)
     
     if (productoSku) {
       devolucionesQuery = devolucionesQuery.eq('producto_sku', productoSku)
