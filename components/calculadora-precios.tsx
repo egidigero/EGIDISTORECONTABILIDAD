@@ -72,7 +72,6 @@ interface ResultadoCalculo {
 interface DatosReales30Dias {
   precioVentaPromedio: number
   costoPromedio: number
-  comisionPromedio: number
   envioPromedio: number
   adsPromedio: number
   devolucionPromedio: number
@@ -182,7 +181,6 @@ export function CalculadoraPrecios({
         const datosCalculados: DatosReales30Dias = {
           precioVentaPromedio: datos.precioVentaPromedio || 0,
           costoPromedio: costoProducto,
-          comisionPromedio: datos.comisionPromedio || 0,
           envioPromedio: datos.envioPromedio || 0,
           adsPromedio: datos.costoAdsPorVenta || 0,
           devolucionPromedio: datos.costoDevolucionesPorVenta || 0,
@@ -362,14 +360,13 @@ export function CalculadoraPrecios({
                   <div>📊 Total ventas: <span className="font-bold">{datosReales30Dias.totalVentas}</span></div>
                   <div>📦 Devoluciones: <span className="font-bold">{datosReales30Dias.cantidadDevoluciones}</span></div>
                   <div>💰 Precio venta prom: <span className="font-bold">${datosReales30Dias.precioVentaPromedio.toFixed(2)}</span></div>
-                  <div>🏷️ Comisión prom: <span className="font-bold">${datosReales30Dias.comisionPromedio.toFixed(2)}</span></div>
                   <div>📮 Envío prom: <span className="font-bold">${datosReales30Dias.envioPromedio.toFixed(2)}</span></div>
                   <div>📢 ADS prom: <span className="font-bold">${datosReales30Dias.adsPromedio.toFixed(2)}</span></div>
                   <div>↩️ Devolución prom: <span className="font-bold">${datosReales30Dias.devolucionPromedio.toFixed(2)}</span></div>
                   <div>📈 ROAS: <span className="font-bold">{datosReales30Dias.roas.toFixed(2)}x</span></div>
                 </div>
                 <div className="pt-2 border-t border-blue-200 text-blue-700">
-                  💡 Cambia el precio de venta para ver cómo impacta en tu margen real
+                  💡 Las comisiones se calculan según la tarifa seleccionada. Cambia el precio de venta para ver el impacto en tu margen real
                 </div>
               </div>
             )}

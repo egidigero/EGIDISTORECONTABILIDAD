@@ -195,12 +195,18 @@ export async function getDevoluciones() {
     // Normalize rows to camelCase so front-end receives stable keys
     try {
       return (data || [])
-        // Excluir ventas entregadas con estado 'Sin reembolso' del cálculo de en camino
+        // Excluir devoluciones 'Sin reembolso' de estados en camino y finalizados
         .filter(d => {
-          // Si la devolución está entregada y tiene tipo_resolucion 'Sin reembolso', excluir
-          const entregada = d.estado === 'Entregada' || d.estado === 'Finalizada';
           const sinReembolso = d.tipo_resolucion === 'Sin reembolso' || (d.tipoResolucion && d.tipoResolucion === 'Sin reembolso');
-          return !(entregada && sinReembolso);
+          if (!sinReembolso) return true; // Si no es sin reembolso, incluir siempre
+          
+          // Si es sin reembolso, excluir si está:
+          // 1. Finalizada o Entregada
+          const finalizada = d.estado === 'Entregada' || d.estado === 'Finalizada';
+          // 2. En camino (Pendiente/En devolución/Aceptada en camino sin fecha de recepción)
+          const enCamino = (d.estado === 'Pendiente' || d.estado === 'En devolución' || d.estado === 'Aceptada en camino') && !d.fecha_recepcion && !d.fechaRecepcion;
+          
+          return !(finalizada || enCamino);
         })
         .map(d => {
           const cam: any = toCamelCase(d)
@@ -2257,18 +2263,24 @@ export async function getEstadisticasDevoluciones(
 }
 
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
-export async function getCostosEstimados30Dias(productoId?: string) {
+export async function getCostosEstimados30Dias(productoId?: number) {
   try {
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
 
-    // Obtener devoluciones de los últimos 30 días (excluir rechazadas)
-    const { data: devoluciones } = await supabase
+    // Obtener devoluciones de los últimos 30 días (excluir rechazadas y filtrar por producto si se proporciona)
+    let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
       .gte('fecha_compra', fechaInicio)
+    
+    if (productoId) {
+      devolucionesQuery = devolucionesQuery.eq('producto_id', productoId)
+    }
+    
+    const { data: devoluciones } = await devolucionesQuery
 
     // Obtener ventas de los últimos 30 días (filtrar por producto si se proporciona)
     let ventasQuery = supabase.from('ventas').select('*')
@@ -2318,13 +2330,6 @@ export async function getCostosEstimados30Dias(productoId?: string) {
     const totalEnvios = ventas?.reduce((sum, v) => sum + (Number(v.costo_envio || v.costoEnvio) || 0), 0) || 0
     const envioPromedio = totalVentas > 0 ? totalEnvios / totalVentas : 0
 
-    // Calcular comisiones promedio
-    const totalComisiones = ventas?.reduce((sum, v) => {
-      const comision = Number(v.comision || v.comisionPlataforma) || 0
-      return sum + comision
-    }, 0) || 0
-    const comisionPromedio = totalVentas > 0 ? totalComisiones / totalVentas : 0
-
     // Calcular precio de venta promedio
     const totalPrecioVenta = ventas?.reduce((sum, v) => {
       const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
@@ -2347,7 +2352,6 @@ export async function getCostosEstimados30Dias(productoId?: string) {
       perdidaTotalDevoluciones,
       totalGastosAds,
       envioPromedio,
-      comisionPromedio,
       precioVentaPromedio,
       roas
     }
@@ -2361,7 +2365,6 @@ export async function getCostosEstimados30Dias(productoId?: string) {
       perdidaTotalDevoluciones: 0,
       totalGastosAds: 0,
       envioPromedio: 0,
-      comisionPromedio: 0,
       precioVentaPromedio: 0,
       roas: 0
     }
