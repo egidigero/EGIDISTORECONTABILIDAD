@@ -2271,6 +2271,14 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
 
     console.log('[getCostosEstimados30Dias] Buscando datos desde:', fechaInicio, 'productoId:', productoId, 'plataforma:', plataforma)
 
+    // Primero verificar si hay devoluciones sin filtros
+    const { data: devolucionesTotales } = await supabase
+      .from('devoluciones_resumen')
+      .select('producto_sku, plataforma, tipo_resolucion, estado')
+      .gte('fecha_compra', fechaInicio)
+      .limit(5)
+    console.log('[getCostosEstimados30Dias] Muestra de devoluciones totales (sin filtros):', devolucionesTotales)
+
     // Obtener devoluciones de los últimos 30 días (excluir rechazadas y sin reembolso, filtrar por producto y plataforma si se proporciona)
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
@@ -2289,6 +2297,9 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
     console.log('[getCostosEstimados30Dias] Devoluciones encontradas:', devoluciones?.length, 'error:', errorDev)
+    if (devoluciones && devoluciones.length > 0) {
+      console.log('[getCostosEstimados30Dias] Muestra de devoluciones filtradas:', devoluciones.slice(0, 2))
+    }
 
     // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma si se proporciona)
     let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio)
@@ -2315,18 +2326,34 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       ? perdidaTotalDevoluciones / unidadesVendidasNoDevueltas
       : 0
 
-    // Obtener gasto en ADS de los últimos 30 días
-    const { data: gastosAds } = await supabase
+    // Primero verificar si hay gastos en general
+    const { data: gastosTotales } = await supabase
       .from('gastos_ingresos')
-      .select('monto_ars, montoARS, monto')
+      .select('categoria, tipo, fecha')
+      .eq('tipo', 'Gasto')
+      .gte('fecha', fechaInicio)
+      .limit(5)
+    console.log('[getCostosEstimados30Dias] Muestra de gastos totales:', gastosTotales)
+
+    // Obtener gasto en ADS de los últimos 30 días
+    const { data: gastosAds, error: errorAds } = await supabase
+      .from('gastos_ingresos')
+      .select('monto_ars, montoARS, monto, categoria, fecha')
       .eq('tipo', 'Gasto')
       .or('categoria.ilike.%publicidad%,categoria.ilike.%ads%,categoria.ilike.%marketing%')
       .gte('fecha', fechaInicio)
+
+    console.log('[getCostosEstimados30Dias] Gastos ADS encontrados:', gastosAds?.length, 'error:', errorAds)
+    if (gastosAds && gastosAds.length > 0) {
+      console.log('[getCostosEstimados30Dias] Muestra de gastos ADS:', gastosAds.slice(0, 3))
+    }
 
     const totalGastosAds = gastosAds?.reduce((sum, g) => {
       const monto = Number(g.monto_ars || g.montoARS || g.monto) || 0
       return sum + monto
     }, 0) || 0
+    
+    console.log('[getCostosEstimados30Dias] Total gastos ADS:', totalGastosAds)
     
     // Calcular costo de ADS por unidad vendida no devuelta
     const costoAdsPorVenta = unidadesVendidasNoDevueltas > 0 

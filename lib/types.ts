@@ -236,6 +236,7 @@ export interface VentaFilters {
   metodoPago?: MetodoPago
   condicion?: Condicion
   estadoEnvio?: EstadoEnvio
+  productoId?: number
   comprador?: string
   externalOrderId?: string
 }

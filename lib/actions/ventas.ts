@@ -21,6 +21,7 @@ export async function getVentas(filters?: VentaFilters) {
     if (filters?.plataforma) query = query.eq("plataforma", filters.plataforma);
     if (filters?.metodoPago) query = query.eq("metodoPago", filters.metodoPago);
     if (filters?.estadoEnvio) query = query.eq("estadoEnvio", filters.estadoEnvio);
+    if (filters?.productoId) query = query.eq("productoId", filters.productoId);
     if (filters?.comprador) query = query.ilike("comprador", `%${filters.comprador}%`);
     if (filters?.externalOrderId) query = query.or(`externalOrderId.ilike.%${filters.externalOrderId}%,saleCode.ilike.%${filters.externalOrderId}%`);
 

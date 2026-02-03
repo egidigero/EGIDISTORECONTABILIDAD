@@ -39,6 +39,7 @@ export async function VentasTable({ searchParams }: VentasTableProps) {
   if (params.plataforma) filters.plataforma = params.plataforma as any
   if (params.metodoPago) filters.metodoPago = params.metodoPago as any
   if (params.estadoEnvio) filters.estadoEnvio = params.estadoEnvio as any
+  if (params.productoId) filters.productoId = parseInt(params.productoId as string, 10)
   if (params.comprador) filters.comprador = params.comprador as string
   if (params.externalOrderId) filters.externalOrderId = params.externalOrderId as string
 

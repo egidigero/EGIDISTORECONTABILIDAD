@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Filter, X } from "lucide-react"
+import { getProductos } from "@/lib/actions/productos"
 
 const plataformaOptions = [
   { value: "TN", label: "Tienda Nube" },
@@ -34,6 +35,7 @@ export function VentasFilters() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [showFilters, setShowFilters] = useState(false)
+  const [productos, setProductos] = useState<any[]>([])
 
   const [filters, setFilters] = useState({
     fechaDesde: searchParams.get("fechaDesde") || "",
@@ -41,9 +43,22 @@ export function VentasFilters() {
     plataforma: searchParams.get("plataforma") || "all",
     metodoPago: searchParams.get("metodoPago") || "all",
     estadoEnvio: searchParams.get("estadoEnvio") || "all",
+    productoId: searchParams.get("productoId") || "all",
     comprador: searchParams.get("comprador") || "",
     externalOrderId: searchParams.get("externalOrderId") || "",
   })
+
+  useEffect(() => {
+    async function cargarProductos() {
+      try {
+        const data = await getProductos()
+        setProductos(data || [])
+      } catch (error) {
+        console.error('Error cargando productos:', error)
+      }
+    }
+    cargarProductos()
+  }, [])
 
   const applyFilters = () => {
     const params = new URLSearchParams()
@@ -64,6 +79,7 @@ export function VentasFilters() {
       plataforma: "all",
       metodoPago: "all",
       estadoEnvio: "all",
+      productoId: "all",
       comprador: "",
       externalOrderId: "",
     })
@@ -170,6 +186,26 @@ export function VentasFilters() {
                     {estadoEnvioOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Producto</Label>
+                <Select
+                  value={filters.productoId}
+                  onValueChange={(value) => setFilters({ ...filters, productoId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos los productos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los productos</SelectItem>
+                    {productos.map((producto) => (
+                      <SelectItem key={producto.id} value={producto.id.toString()}>
+                        {producto.nombre} - SKU: {producto.sku}
                       </SelectItem>
                     ))}
                   </SelectContent>
