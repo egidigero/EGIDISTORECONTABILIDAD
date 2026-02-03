@@ -2296,7 +2296,11 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
     
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
+    console.log('[getCostosEstimados30Dias] Query devoluciones con productoId:', productoId, 'plataforma:', plataforma)
     console.log('[getCostosEstimados30Dias] Devoluciones encontradas:', devoluciones?.length, 'error:', errorDev)
+    if (errorDev) {
+      console.error('[getCostosEstimados30Dias] Error completo devoluciones:', JSON.stringify(errorDev))
+    }
     if (devoluciones && devoluciones.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra de devoluciones filtradas:', devoluciones.slice(0, 2))
     }
@@ -2306,14 +2310,19 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     if (productoId) {
       ventasQuery = ventasQuery.eq('productoId', productoId)
+      console.log('[getCostosEstimados30Dias] Filtrando ventas por productoId:', productoId)
     }
     
     if (plataforma) {
       ventasQuery = ventasQuery.eq('plataforma', plataforma)
+      console.log('[getCostosEstimados30Dias] Filtrando ventas por plataforma:', plataforma)
     }
     
     const { data: ventas, error: errorVentas } = await ventasQuery
     console.log('[getCostosEstimados30Dias] Ventas encontradas:', ventas?.length, 'error:', errorVentas)
+    if (errorVentas) {
+      console.error('[getCostosEstimados30Dias] Error completo ventas:', JSON.stringify(errorVentas))
+    }
     const totalVentas = ventas?.length || 0
     const cantidadDevoluciones = devoluciones?.length || 0
     const unidadesVendidasNoDevueltas = totalVentas - cantidadDevoluciones
