@@ -2382,16 +2382,30 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const precioVentaPromedio = totalVentas > 0 ? totalPrecioVenta / totalVentas : 0
 
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
-    const { data: todasVentas } = await supabase
+    // Usar la misma fórmula que EERR: ROAS = Ventas totales / Publicidad
+    const { data: todasVentasRoas } = await supabase
       .from('ventas')
-      .select('pv_bruto, pvBruto, precio_venta')
+      .select('pvBruto, pv_bruto')
       .gte('fecha', fechaInicio)
     
-    const totalIngresoVentasGeneral = todasVentas?.reduce((sum, v) => {
-      const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
+    console.log('📊 ROAS Query:', {
+      fechaInicio,
+      totalVentas: todasVentasRoas?.length,
+      primeras5: todasVentasRoas?.slice(0, 5)
+    })
+    
+    const totalVentasBruto = todasVentasRoas?.reduce((sum, v) => {
+      const precio = Number(v.pvBruto || v.pv_bruto) || 0
       return sum + precio
     }, 0) || 0
-    const roas = totalGastosAds > 0 ? totalIngresoVentasGeneral / totalGastosAds : 0
+    
+    console.log('💰 Cálculo ROAS:', {
+      totalVentasBruto,
+      totalGastosAds,
+      roas: totalGastosAds > 0 ? totalVentasBruto / totalGastosAds : 0
+    })
+    
+    const roas = totalGastosAds > 0 ? totalVentasBruto / totalGastosAds : 0
     
     // Calcular costo de ADS por venta usando ROAS general
     // Si tengo ROAS, puedo calcular cuánto gasto en ADS por cada venta
