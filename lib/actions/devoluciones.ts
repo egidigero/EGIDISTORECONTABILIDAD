@@ -2383,29 +2383,33 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
 
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
     // Usar la misma fórmula que EERR: ROAS = Ventas totales / Publicidad
-    const { data: todasVentasRoas } = await supabase
+    console.log('🔍 Consultando TODAS las ventas desde:', fechaInicio)
+    
+    const { data: todasVentasRoas, error: errorVentasRoas } = await supabase
       .from('ventas')
-      .select('pvBruto, pv_bruto')
+      .select('pvBruto')
       .gte('fecha', fechaInicio)
     
-    console.log('📊 ROAS Query:', {
-      fechaInicio,
-      totalVentas: todasVentasRoas?.length,
-      primeras5: todasVentasRoas?.slice(0, 5)
-    })
+    console.log('📊 ROAS - Total ventas encontradas:', todasVentasRoas?.length, 'error:', errorVentasRoas)
+    
+    if (errorVentasRoas) {
+      console.error('❌ Error en query de ventas para ROAS:', errorVentasRoas)
+    }
+    
+    if (todasVentasRoas && todasVentasRoas.length > 0) {
+      console.log('📊 ROAS - Primeras 5 ventas:', todasVentasRoas.slice(0, 5).map(v => ({ pvBruto: v.pvBruto })))
+    } else {
+      console.log('⚠️ No se encontraron ventas para ROAS')
+    }
     
     const totalVentasBruto = todasVentasRoas?.reduce((sum, v) => {
-      const precio = Number(v.pvBruto || v.pv_bruto) || 0
+      const precio = Number(v.pvBruto) || 0
       return sum + precio
     }, 0) || 0
     
-    console.log('💰 Cálculo ROAS:', {
-      totalVentasBruto,
-      totalGastosAds,
-      roas: totalGastosAds > 0 ? totalVentasBruto / totalGastosAds : 0
-    })
-    
     const roas = totalGastosAds > 0 ? totalVentasBruto / totalGastosAds : 0
+    
+    console.log('💰 ROAS - Total ventas bruto:', totalVentasBruto, 'Total ADS:', totalGastosAds, 'ROAS calculado:', roas)
     
     // Calcular costo de ADS por venta usando ROAS general
     // Si tengo ROAS, puedo calcular cuánto gasto en ADS por cada venta
