@@ -2263,48 +2263,56 @@ export async function getEstadisticasDevoluciones(
 }
 
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
-export async function getCostosEstimados30Dias(productoId?: number) {
+export async function getCostosEstimados30Dias(productoId?: number, plataforma?: 'TN' | 'ML') {
   try {
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
 
-    console.log('[getCostosEstimados30Dias] Buscando datos desde:', fechaInicio, 'productoId:', productoId)
+    console.log('[getCostosEstimados30Dias] Buscando datos desde:', fechaInicio, 'productoId:', productoId, 'plataforma:', plataforma)
 
-    // Obtener devoluciones de los últimos 30 días (excluir rechazadas y filtrar por producto si se proporciona)
+    // Obtener devoluciones de los últimos 30 días (excluir rechazadas y sin reembolso, filtrar por producto y plataforma si se proporciona)
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
+      .neq('tipo_resolucion', 'Sin reembolso')
       .gte('fecha_compra', fechaInicio)
     
     if (productoId) {
       devolucionesQuery = devolucionesQuery.eq('producto_sku', productoId)
     }
     
+    if (plataforma) {
+      devolucionesQuery = devolucionesQuery.eq('plataforma', plataforma)
+    }
+    
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
     console.log('[getCostosEstimados30Dias] Devoluciones encontradas:', devoluciones?.length, 'error:', errorDev)
 
-    // Obtener ventas de los últimos 30 días (filtrar por producto si se proporciona)
+    // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma si se proporciona)
     let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio)
     
-    // Filtrar por producto si se proporciona
     if (productoId) {
       ventasQuery = ventasQuery.eq('productoId', productoId)
+    }
+    
+    if (plataforma) {
+      ventasQuery = ventasQuery.eq('plataforma', plataforma)
     }
     
     const { data: ventas, error: errorVentas } = await ventasQuery
     console.log('[getCostosEstimados30Dias] Ventas encontradas:', ventas?.length, 'error:', errorVentas)
     const totalVentas = ventas?.length || 0
+    const cantidadDevoluciones = devoluciones?.length || 0
+    const unidadesVendidasNoDevueltas = totalVentas - cantidadDevoluciones
 
     // Calcular pérdida total por devoluciones
     const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
-    const cantidadDevoluciones = devoluciones?.length || 0
-    const ventasSinDevoluciones = totalVentas - cantidadDevoluciones
 
-    // Calcular costo de incidencia por venta
-    const costoDevolucionesPorVenta = ventasSinDevoluciones > 0 
-      ? perdidaTotalDevoluciones / ventasSinDevoluciones 
+    // Calcular costo de incidencia de devoluciones: pérdidas totales / unidades vendidas no devueltas
+    const costoDevolucionesPorVenta = unidadesVendidasNoDevueltas > 0 
+      ? perdidaTotalDevoluciones / unidadesVendidasNoDevueltas
       : 0
 
     // Obtener gasto en ADS de los últimos 30 días
@@ -2320,16 +2328,16 @@ export async function getCostosEstimados30Dias(productoId?: number) {
       return sum + monto
     }, 0) || 0
     
-    // Calcular costo de ADS por venta
-    const costoAdsPorVenta = totalVentas > 0 
-      ? totalGastosAds / totalVentas
+    // Calcular costo de ADS por unidad vendida no devuelta
+    const costoAdsPorVenta = unidadesVendidasNoDevueltas > 0 
+      ? totalGastosAds / unidadesVendidasNoDevueltas
       : 0
 
-    // Calcular envío promedio (total envíos / cantidad de ventas)
+    // Calcular envío promedio (total envíos / cantidad de ventas) por plataforma
     const totalEnvios = ventas?.reduce((sum, v) => sum + (Number(v.costo_envio || v.costoEnvio) || 0), 0) || 0
     const envioPromedio = totalVentas > 0 ? totalEnvios / totalVentas : 0
 
-    // Calcular precio de venta promedio
+    // Calcular precio de venta promedio por plataforma
     const totalPrecioVenta = ventas?.reduce((sum, v) => {
       const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
       return sum + precio
@@ -2348,6 +2356,7 @@ export async function getCostosEstimados30Dias(productoId?: number) {
       costoAdsPorVenta,
       totalVentas,
       cantidadDevoluciones,
+      unidadesVendidasNoDevueltas,
       perdidaTotalDevoluciones,
       totalGastosAds,
       envioPromedio,

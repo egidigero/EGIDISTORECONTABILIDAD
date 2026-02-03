@@ -175,7 +175,7 @@ export function CalculadoraPrecios({
       
       setLoadingDatosReales(true)
       try {
-        const datos = await getCostosEstimados30Dias(productoId)
+        const datos = await getCostosEstimados30Dias(productoId, parametros.plataforma)
         
         // Calcular promedios basados en datos reales
         const datosCalculados: DatosReales30Dias = {
@@ -207,7 +207,7 @@ export function CalculadoraPrecios({
     }
     
     cargarDatosReales()
-  }, [modoAnalisis30Dias, costoProducto, productoId])
+  }, [modoAnalisis30Dias, costoProducto, productoId, parametros.plataforma])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
