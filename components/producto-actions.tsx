@@ -213,6 +213,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         onPrecioCalculado={handlePrecioCalculado}
         trigger={<div style={{ display: 'none' }} />}
         productoId={producto.id}
+        productoSku={producto.sku}
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

@@ -152,6 +152,7 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
                 precioVentaInicial={watch("precio_venta") || 0}
                 onPrecioCalculado={(precio) => setValue("precio_venta", precio)}
                 productoId={producto?.id ? parseInt(producto.id) : undefined}
+                productoSku={watch("sku") || producto?.sku}
                 trigger={
                   <Button variant="outline" size="sm" type="button">
                     Calculadora

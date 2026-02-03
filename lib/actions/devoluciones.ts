@@ -2263,7 +2263,7 @@ export async function getEstadisticasDevoluciones(
 }
 
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
-export async function getCostosEstimados30Dias(productoId?: number, plataforma?: 'TN' | 'ML') {
+export async function getCostosEstimados30Dias(productoId?: number, plataforma?: 'TN' | 'ML', productoSku?: string) {
   try {
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
@@ -2287,8 +2287,8 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .neq('tipo_resolucion', 'Sin reembolso')
       .gte('fecha_compra', fechaInicio)
     
-    if (productoId) {
-      devolucionesQuery = devolucionesQuery.eq('producto_sku', productoId)
+    if (productoSku) {
+      devolucionesQuery = devolucionesQuery.eq('producto_sku', productoSku)
     }
     
     if (plataforma) {
@@ -2347,7 +2347,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Obtener gasto en ADS de los últimos 30 días
     const { data: gastosAds, error: errorAds } = await supabase
       .from('gastos_ingresos')
-      .select('monto_ars, montoARS, monto, categoria, fecha')
+      .select('montoARS, monto, categoria, fecha')
       .eq('tipo', 'Gasto')
       .or('categoria.ilike.%publicidad%,categoria.ilike.%ads%,categoria.ilike.%marketing%')
       .gte('fecha', fechaInicio)
@@ -2358,7 +2358,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
 
     const totalGastosAds = gastosAds?.reduce((sum, g) => {
-      const monto = Number(g.monto_ars || g.montoARS || g.monto) || 0
+      const monto = Number(g.montoARS || g.monto) || 0
       return sum + monto
     }, 0) || 0
     

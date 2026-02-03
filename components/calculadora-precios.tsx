@@ -26,6 +26,7 @@ interface CalculadoraPreciosProps {
     costoAdsPorVenta: number
   }
   productoId?: number
+  productoSku?: string
 }
 
 interface ParametrosCalculo {
@@ -88,7 +89,8 @@ export function CalculadoraPrecios({
   open: controlledOpen,
   onOpenChange,
   costosEstimados,
-  productoId
+  productoId,
+  productoSku
 }: CalculadoraPreciosProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
@@ -175,7 +177,7 @@ export function CalculadoraPrecios({
       
       setLoadingDatosReales(true)
       try {
-        const datos = await getCostosEstimados30Dias(productoId, parametros.plataforma)
+        const datos = await getCostosEstimados30Dias(productoId, parametros.plataforma, productoSku)
         
         // Calcular promedios basados en datos reales
         const datosCalculados: DatosReales30Dias = {
@@ -207,7 +209,7 @@ export function CalculadoraPrecios({
     }
     
     cargarDatosReales()
-  }, [modoAnalisis30Dias, costoProducto, productoId, parametros.plataforma])
+  }, [modoAnalisis30Dias, costoProducto, productoId, productoSku, parametros.plataforma])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
