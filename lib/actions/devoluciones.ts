@@ -2269,44 +2269,44 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
 
-    console.log('[getCostosEstimados30Dias] Buscando datos desde:', fechaInicio, 'productoId:', productoId, 'plataforma:', plataforma)
+    // Para devoluciones, usar 60 días para tener mejor muestra
+    const hace60Dias = new Date()
+    hace60Dias.setDate(hace60Dias.getDate() - 60)
+    const fechaInicioDevoluciones = hace60Dias.toISOString().split('T')[0]
 
-    // Primero verificar si hay devoluciones sin filtros
-    const { data: devolucionesTotales } = await supabase
-      .from('devoluciones_resumen')
-      .select('producto_sku, plataforma, tipo_resolucion, estado')
-      .gte('fecha_compra', fechaInicio)
-      .limit(5)
-    console.log('[getCostosEstimados30Dias] Muestra de devoluciones totales (sin filtros):', devolucionesTotales)
+    console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'plataforma:', plataforma)
 
-    // Obtener devoluciones de los últimos 30 días (excluir rechazadas y sin reembolso, filtrar por producto y plataforma si se proporciona)
-    // IMPORTANTE: Usamos fecha_compra para que coincida con el período de ventas, así comparamos manzanas con manzanas
+    // Obtener devoluciones de los últimos 60 días (SIN FILTRAR POR PLATAFORMA - dato general)
+    // Excluir rechazadas y sin reembolso, filtrar solo por producto si se proporciona
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
       .neq('tipo_resolucion', 'Sin reembolso')
-      .gte('fecha_compra', fechaInicio)
+      .gte('fecha_compra', fechaInicioDevoluciones)
     
     if (productoSku) {
       devolucionesQuery = devolucionesQuery.eq('producto_sku', productoSku)
     }
-    
-    if (plataforma) {
-      devolucionesQuery = devolucionesQuery.eq('plataforma', plataforma)
-    }
+    // NO filtrar por plataforma - queremos dato general
     
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
-    console.log('[getCostosEstimados30Dias] Query devoluciones con productoId:', productoId, 'plataforma:', plataforma)
-    console.log('[getCostosEstimados30Dias] Devoluciones encontradas:', devoluciones?.length, 'error:', errorDev)
+    console.log('[getCostosEstimados30Dias] Devoluciones (60d) encontradas:', devoluciones?.length, 'error:', errorDev)
     if (errorDev) {
       console.error('[getCostosEstimados30Dias] Error completo devoluciones:', JSON.stringify(errorDev))
     }
-    if (devoluciones && devoluciones.length > 0) {
-      console.log('[getCostosEstimados30Dias] Muestra de devoluciones filtradas:', devoluciones.slice(0, 2))
-    }
 
-    // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma si se proporciona)
+    // Obtener ventas de los últimos 60 días (SIN FILTRAR POR PLATAFORMA) para cálculo de devoluciones
+    let ventasGeneralesQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicioDevoluciones)
+    if (productoId) {
+      ventasGeneralesQuery = ventasGeneralesQuery.eq('productoId', productoId)
+    }
+    const { data: ventasGenerales } = await ventasGeneralesQuery
+    const totalVentasGenerales = ventasGenerales?.length || 0
+    const cantidadDevoluciones = devoluciones?.length || 0
+    const unidadesVendidasNoDevueltas = totalVentasGenerales - cantidadDevoluciones
+
+    // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma) para cálculos específicos de plataforma
     let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio)
     
     if (productoId) {
@@ -2320,24 +2320,22 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
     
     const { data: ventas, error: errorVentas } = await ventasQuery
-    console.log('[getCostosEstimados30Dias] Ventas encontradas:', ventas?.length, 'error:', errorVentas)
+    console.log('[getCostosEstimados30Dias] Ventas (30d plataforma) encontradas:', ventas?.length, 'error:', errorVentas)
     if (errorVentas) {
       console.error('[getCostosEstimados30Dias] Error completo ventas:', JSON.stringify(errorVentas))
     }
     const totalVentas = ventas?.length || 0
-    const cantidadDevoluciones = devoluciones?.length || 0
-    const unidadesVendidasNoDevueltas = totalVentas - cantidadDevoluciones
 
-    // Calcular pérdida total por devoluciones del modelo específico
+    // Calcular pérdida total por devoluciones del modelo específico (general, no por plataforma)
     const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
 
-    // Calcular costo de incidencia de devoluciones específico del modelo:
-    // Pérdidas totales del modelo / unidades vendidas no devueltas del modelo
+    // Calcular costo de incidencia de devoluciones (GENERAL, no por plataforma):
+    // Pérdidas totales del modelo (60d) / unidades vendidas no devueltas del modelo (60d)
     const costoDevolucionesPorVenta = unidadesVendidasNoDevueltas > 0 
       ? perdidaTotalDevoluciones / unidadesVendidasNoDevueltas
       : 0
     
-    console.log('[getCostosEstimados30Dias] Pérdidas totales devoluciones:', perdidaTotalDevoluciones, 'Unidades vendidas no devueltas:', unidadesVendidasNoDevueltas, 'Costo por venta:', costoDevolucionesPorVenta)
+    console.log('[getCostosEstimados30Dias] Devoluciones (60d):', cantidadDevoluciones, 'Ventas generales (60d):', totalVentasGenerales, 'No devueltas:', unidadesVendidasNoDevueltas, 'Pérdidas:', perdidaTotalDevoluciones, 'Costo/venta:', costoDevolucionesPorVenta)
 
     // Primero verificar si hay gastos en general
     const { data: gastosTotales } = await supabase
@@ -2383,12 +2381,17 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }, 0) || 0
     const precioVentaPromedio = totalVentas > 0 ? totalPrecioVenta / totalVentas : 0
 
-    // Calcular ROAS de los últimos 30 días
-    const totalIngresoVentas = ventas?.reduce((sum, v) => {
+    // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
+    const { data: todasVentas } = await supabase
+      .from('ventas')
+      .select('pv_bruto, pvBruto, precio_venta')
+      .gte('fecha', fechaInicio)
+    
+    const totalIngresoVentasGeneral = todasVentas?.reduce((sum, v) => {
       const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
       return sum + precio
     }, 0) || 0
-    const roas = totalGastosAds > 0 ? totalIngresoVentas / totalGastosAds : 0
+    const roas = totalGastosAds > 0 ? totalIngresoVentasGeneral / totalGastosAds : 0
     
     // Calcular costo de ADS por venta usando ROAS general
     // Si tengo ROAS, puedo calcular cuánto gasto en ADS por cada venta
