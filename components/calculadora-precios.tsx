@@ -295,6 +295,12 @@ export function CalculadoraPrecios({
     // 1. Precio (con descuento) - Costo = Resultado Operativo
     const resultadoOperativo = precioConDescuento - costo
 
+    // Declarar variables que se usarán más adelante
+    let iva = 0
+    let iibb = 0
+    let comisionSinIva = 0
+    let comisionExtraSinIva = 0
+
     // 3. Costos de Plataforma usando tarifas reales sobre precio con descuento
     // Si usarComisionManual, usar el valor manual para la comisión base
     let comision = parametros.usarComisionManual && parametros.comisionManual !== undefined
@@ -371,7 +377,7 @@ export function CalculadoraPrecios({
       resultadoOperativo,
       comision,
       comisionExtra,
-      ...(parametros.plataforma === 'ML' && {
+      ...(parametros.plataforma === 'TN' && {
         comisionSinIva: comisionSinIva,
         comisionExtraSinIva: comisionExtraSinIva
       }),
