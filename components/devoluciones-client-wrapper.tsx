@@ -3,6 +3,8 @@
 import { useState, useMemo } from "react"
 import { DevolucionesTable } from "@/components/devoluciones-table"
 import { DevolucionesGestionFiltro } from "@/components/devoluciones-gestion-filtro"
+import { Button } from "@/components/ui/button"
+import { ChevronDown, ChevronUp } from "lucide-react"
 
 interface DevolucionesClientWrapperProps {
   devoluciones: any[]
@@ -10,6 +12,8 @@ interface DevolucionesClientWrapperProps {
 
 export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWrapperProps) {
   const [filtros, setFiltros] = useState<any>({})
+  const [mostrarTodas, setMostrarTodas] = useState(false)
+  const LIMITE_INICIAL = 5
 
   const devolucionesFiltradas = useMemo(() => {
     let resultado = [...devoluciones]
@@ -120,6 +124,13 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
     return resultado
   }, [devoluciones, filtros])
 
+  // Determinar cuántas mostrar
+  const devolucionesAMostrar = mostrarTodas 
+    ? devolucionesFiltradas 
+    : devolucionesFiltradas.slice(0, LIMITE_INICIAL)
+  
+  const hayMas = devolucionesFiltradas.length > LIMITE_INICIAL
+
   return (
     <>
       <DevolucionesGestionFiltro 
@@ -127,7 +138,29 @@ export function DevolucionesClientWrapper({ devoluciones }: DevolucionesClientWr
         totalDevoluciones={devoluciones.length}
         devolucionesFiltradas={devolucionesFiltradas.length}
       />
-      <DevolucionesTable devoluciones={devolucionesFiltradas} />
+      <DevolucionesTable devoluciones={devolucionesAMostrar} />
+      
+      {hayMas && (
+        <div className="flex justify-center mt-4">
+          <Button 
+            variant="outline" 
+            onClick={() => setMostrarTodas(!mostrarTodas)}
+            className="gap-2"
+          >
+            {mostrarTodas ? (
+              <>
+                <ChevronUp className="h-4 w-4" />
+                Mostrar menos
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4" />
+                Ver más ({devolucionesFiltradas.length - LIMITE_INICIAL} más)
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </>
   )
 }

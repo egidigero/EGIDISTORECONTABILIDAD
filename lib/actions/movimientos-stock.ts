@@ -49,9 +49,9 @@ export async function getMovimientosStockPorProducto() {
     return {}
   }
   
-  // Agrupar por producto_id
-  const movimientosPorProducto = data.reduce((acc: any, mov: any) => {
-    const pid = mov.producto_id
+  // Agrupar por producto_id (convertir a string para comparación)
+  const movimientosPorProducto = (data || []).reduce((acc: any, mov: any) => {
+    const pid = String(mov.producto_id) // Asegurar que es string
     if (!acc[pid]) {
       acc[pid] = []
     }

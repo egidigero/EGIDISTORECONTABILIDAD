@@ -171,6 +171,32 @@ export function StockDevolucionesControl() {
               </div>
             )}
 
+            {/* No Recibido */}
+            {grupos['No Recibido'].length > 0 && (
+              <div className="border rounded-lg p-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <span className="text-gray-600">📦 No Recibido</span>
+                  <Badge variant="secondary">{grupos['No Recibido'].length}</Badge>
+                </h3>
+                <div className="space-y-2">
+                  {grupos['No Recibido'].map(item => (
+                    <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
+                      <div className="flex-1">
+                        <p className="font-medium">{item.producto_modelo} ({item.producto_sku})</p>
+                        <p className="text-sm text-muted-foreground">
+                          Venta: {item.sale_code} • {item.comprador}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Seguimiento: {item.numero_seguimiento || 'Sin número'}
+                        </p>
+                      </div>
+                      {getEstadoBadge(item.estado_stock)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Probado - Listo para Reincorporar */}
             {grupos['Probado - Pendiente Reincorporar'].length > 0 && (
               <div className="border rounded-lg p-4">

@@ -132,6 +132,24 @@ export async function createVenta(data: VentaFormData) {
         console.error("❌ Error al actualizar stock:", stockError)
       } else {
         console.log("✅ Stock actualizado correctamente:", stockData)
+        
+        // Registrar movimiento de stock
+        try {
+          await supabase.from("movimientos_stock").insert({
+            producto_id: validatedData.productoId.toString(),
+            deposito_origen: 'Propio',
+            deposito_destino: null,
+            tipo: 'salida',
+            cantidad: 1,
+            fecha: new Date(),
+            observaciones: `Venta ${saleCode} - ${validatedData.comprador}`,
+            origen_tipo: 'venta',
+            origen_id: venta[0].id
+          })
+          console.log("✅ Movimiento de stock registrado")
+        } catch (movError) {
+          console.error("❌ Error al registrar movimiento de stock:", movError)
+        }
       }
     }
 
