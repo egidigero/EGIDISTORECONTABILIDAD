@@ -2471,12 +2471,13 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.length)
     
     // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS y envíos que ya están en costos de plataforma)
+    // IMPORTANTE: EERR usa "Envíos" con acento, pero en BD es "Envios" sin acento, entonces NO se excluye
     const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
       .from("gastos_ingresos")
       .select("montoARS,categoria")
       .gte("fecha", fechaInicio)
       .eq("tipo", "Gasto")
-      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envios,Gastos del negocio - Envios devoluciones)")
+      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos)")
     
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
