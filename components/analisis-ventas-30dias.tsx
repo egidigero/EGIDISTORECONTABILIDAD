@@ -78,9 +78,12 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   }, 0)
   const costoEnvio30Dias = ventas.reduce((sum, v) => sum + Number(v.cargoEnvioCosto || 0), 0)
 
-  // Calcular gastos de publicidad de los últimos 30 días
+  // Calcular gastos de publicidad de los últimos 30 días (misma lógica que EERR)
   const gastosPublicidadFiltrados = gastosIngresos.filter((gi: any) => 
-    gi.tipo === "Gasto" && (gi.categoria?.toLowerCase().includes("publicidad") || gi.categoria?.toLowerCase().includes("ads") || gi.categoria?.toLowerCase().includes("meta"))
+    gi.tipo === "Gasto" && (
+      gi.categoria === "Gastos del negocio - ADS" || 
+      gi.descripcion?.toLowerCase().includes("meta ads")
+    )
   )
   const gastosPublicidad30Dias = gastosPublicidadFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
   
@@ -89,9 +92,10 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   console.log('Cantidad de registros publicidad:', gastosPublicidadFiltrados.length)
   console.log('Categorías encontradas:', gastosPublicidadFiltrados.map(g => g.categoria))
 
-  // Calcular gastos del negocio (excluyendo publicidad) de los últimos 30 días
+  // Calcular gastos del negocio (misma lógica que EERR: excluir ADS y Envíos)
+  const categoriasExcluir = ["Gastos del negocio - ADS", "Gastos del negocio - Envíos", "Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio", "Pago de Importación"]
   const gastosNegocioFiltrados = gastosIngresos.filter((gi: any) => 
-    gi.tipo === "Gasto" && !(gi.categoria?.toLowerCase().includes("publicidad") || gi.categoria?.toLowerCase().includes("ads") || gi.categoria?.toLowerCase().includes("meta"))
+    gi.tipo === "Gasto" && !categoriasExcluir.includes(gi.categoria)
   )
   const gastosNegocio30Dias = gastosNegocioFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
   
@@ -99,10 +103,14 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   console.log('Total gastos negocio últimos 30 días:', gastosNegocio30Dias)
   console.log('Cantidad de registros gastos negocio:', gastosNegocioFiltrados.length)
 
-  // Calcular costo de devoluciones de los últimos 30 días
+  // Calcular costo de devoluciones de los últimos 30 días (misma lógica que EERR)
   const costoDevoluciones30Dias = devoluciones.reduce((sum, dev) => {
-    const costoTotal = Number(dev.gasto_creado || 0) + Number(dev.costo_perdido || 0)
-    return sum + costoTotal
+    // costo_producto_original (si no es recuperable) + costo_producto_nuevo + costo_envio_nuevo
+    const productoRecuperable = dev.producto_recuperable === true || dev.producto_recuperable === 'true' || dev.producto_recuperable === 't'
+    const costoOriginal = productoRecuperable ? 0 : Number(dev.costo_producto_original || 0)
+    const costoNuevo = Number(dev.costo_producto_nuevo || 0)
+    const costoEnvioNuevo = Number(dev.costo_envio_nuevo || 0)
+    return sum + costoOriginal + costoNuevo + costoEnvioNuevo
   }, 0)
   
   console.log('🔍 DEBUG Devoluciones:')
