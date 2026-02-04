@@ -49,6 +49,9 @@ export async function getMovimientosStockPorProducto() {
     return {}
   }
   
+  console.log('Total movimientos obtenidos:', data?.length)
+  console.log('Primeros 3 movimientos:', data?.slice(0, 3))
+  
   // Agrupar por producto_id (convertir a string para comparación)
   const movimientosPorProducto = (data || []).reduce((acc: any, mov: any) => {
     const pid = String(mov.producto_id) // Asegurar que es string
@@ -58,6 +61,9 @@ export async function getMovimientosStockPorProducto() {
     acc[pid].push(mov)
     return acc
   }, {})
+  
+  console.log('Productos con movimientos:', Object.keys(movimientosPorProducto))
+  console.log('Movimientos agrupados:', movimientosPorProducto)
   
   return movimientosPorProducto
 }
