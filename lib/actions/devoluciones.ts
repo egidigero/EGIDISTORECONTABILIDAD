@@ -2488,9 +2488,14 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('[getCostosEstimados30Dias] Total gastos obtenidos:', otrosGastosData?.length, 'Gastos negocio (filtrados):', gastosNegocio.length, 'error:', errorGastosNegocio)
     if (gastosNegocio && gastosNegocio.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', gastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
+      console.log('[getCostosEstimados30Dias] Categorías únicas:', [...new Set(gastosNegocio.map(g => g.categoria))])
     }
     
     const totalGastosNegocio = Math.round((gastosNegocio.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0)) * 100) / 100
+    
+    console.log('[getCostosEstimados30Dias] 💰 DETALLE GASTOS DEL NEGOCIO:')
+    console.log('   - Total gastos del negocio:', totalGastosNegocio)
+    console.log('   - Cantidad de gastos incluidos:', gastosNegocio.length)
     
     // Obtener TODAS las ventas de los últimos 30 días (GENERAL, sin filtros)
     const { data: todasVentas30d } = await supabase
@@ -2511,12 +2516,21 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const cantidadDevoluciones30d = devoluciones30d?.length || 0
     const ventasNoDevueltas30d = totalVentasGenerales30d - cantidadDevoluciones30d
     
+    console.log('[getCostosEstimados30Dias] 📊 DETALLE VENTAS/DEVOLUCIONES 30d:')
+    console.log('   - Total ventas 30d:', totalVentasGenerales30d)
+    console.log('   - Total devoluciones 30d (por fecha_compra):', cantidadDevoluciones30d)
+    console.log('   - Ventas no devueltas:', ventasNoDevueltas30d)
+    
     // Calcular costo de gastos del negocio por venta (dividir por ventas NO devueltas)
     const costoGastosNegocioPorVenta = ventasNoDevueltas30d > 0
       ? Math.round((totalGastosNegocio / ventasNoDevueltas30d) * 100) / 100
       : 0
     
-    console.log('[getCostosEstimados30Dias] Gastos negocio:', totalGastosNegocio, 'Ventas 30d:', totalVentasGenerales30d, 'Devoluciones 30d:', cantidadDevoluciones30d, 'Ventas no devueltas:', ventasNoDevueltas30d, 'Costo/venta:', costoGastosNegocioPorVenta)
+    console.log('[getCostosEstimados30Dias] 💵 CÁLCULO FINAL:')
+    console.log('   - Total gastos negocio: $', totalGastosNegocio)
+    console.log('   - Ventas no devueltas:', ventasNoDevueltas30d)
+    console.log('   - Costo por venta: $', costoGastosNegocioPorVenta)
+    console.log('   - Fórmula:', totalGastosNegocio, '/', ventasNoDevueltas30d, '=', costoGastosNegocioPorVenta)
     console.log('[getCostosEstimados30Dias] ROAS:', roas)
 
     const resultado = {
