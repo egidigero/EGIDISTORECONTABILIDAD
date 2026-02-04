@@ -2274,24 +2274,32 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     hace60Dias.setDate(hace60Dias.getDate() - 60)
     const fechaInicioDevoluciones = hace60Dias.toISOString().split('T')[0]
 
-    console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'plataforma:', plataforma)
+    console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'productoSku:', productoSku, 'plataforma:', plataforma)
 
     // Obtener devoluciones de los últimos 60 días (SIN FILTRAR POR PLATAFORMA - dato general)
-    // Excluir rechazadas y sin reembolso, filtrar solo por producto si se proporciona
+    // Excluir rechazadas y sin reembolso, INCLUIR las que están "En devolución" (tipo_resolucion = null)
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
-      .neq('tipo_resolucion', 'Sin reembolso')
+      .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
       .gte('fecha_compra', fechaInicioDevoluciones)
     
     if (productoSku) {
+      console.log('[getCostosEstimados30Dias] Filtrando devoluciones por SKU:', productoSku)
       devolucionesQuery = devolucionesQuery.eq('producto_sku', productoSku)
     }
     // NO filtrar por plataforma - queremos dato general
     
     const { data: devoluciones, error: errorDev } = await devolucionesQuery
     console.log('[getCostosEstimados30Dias] Devoluciones (60d) encontradas:', devoluciones?.length, 'error:', errorDev)
+    if (devoluciones && devoluciones.length > 0) {
+      console.log('[getCostosEstimados30Dias] Muestra devoluciones (primeras 3):', devoluciones.slice(0, 3).map(d => ({
+        sku: d.producto_sku,
+        fecha_compra: d.fecha_compra,
+        perdida: d.perdida_total
+      })))
+    }
     if (errorDev) {
       console.error('[getCostosEstimados30Dias] Error completo devoluciones:', JSON.stringify(errorDev))
     }
