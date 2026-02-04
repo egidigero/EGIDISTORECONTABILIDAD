@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/patrimonio",
+      "schedule": "0 23 * * *"
+    }
+  ]
+}

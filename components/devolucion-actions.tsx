@@ -45,6 +45,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   const [advanceType, setAdvanceType] = useState<string>("")
   const [productoRecuperable, setProductoRecuperable] = useState<boolean | null>(null)
   const [mpEstado, setMpEstado] = useState<string | null>(null)
+  const [fueReclamo, setFueReclamo] = useState<boolean | null>(null)
   const [fechaCompletadaLocal, setFechaCompletadaLocal] = useState<string | null>(null)
   const [fetchedDevolucion, setFetchedDevolucion] = useState<any | null>(null)
   const [loadingDevolucion, setLoadingDevolucion] = useState(false)
@@ -104,6 +105,8 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
   }
     // Incluir estado del dinero en Mercado Pago (si el usuario lo indicó)
     if (mpEstado) payload.mpEstado = mpEstado
+    // Incluir fue_reclamo para ML (si el usuario lo indicó)
+    if (fueReclamo !== null) payload.fueReclamo = fueReclamo
       
       console.log('[DevolucionActions] Enviando payload:', payload)
       console.log('[DevolucionActions] ID devolución:', devolucion.id)
@@ -430,7 +433,7 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
               fetchedDevolucion?.plataforma === 'ML' || 
               fetchedDevolucion?.metodo_pago === 'MercadoPago' || 
               (fetchedDevolucion as any)?.metodoPago === 'MercadoPago'
-            ) && (
+            ) && !fetchedDevolucion?.mp_retenido && (
               <div className="mt-4">
                 <label className="block text-sm font-medium mb-2">Estado del dinero en MP</label>
                 <select className="w-full border rounded p-2" value={mpEstado ?? "unknown"} onChange={(e) => setMpEstado(e.target.value === 'unknown' ? null : e.target.value)}>
@@ -439,6 +442,21 @@ export function DevolucionActions({ devolucion }: DevolucionActionsProps) {
                   <option value="liquidado">Liquidado (dinero disponible en MP)</option>
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">Indica si el dinero de la venta ya estaba disponible en Mercado Pago o aún estaba en proceso de liquidación.</p>
+              </div>
+            )}
+
+            {/* Preguntar si fue reclamo: SOLO para ML */}
+            {advanceType === 'Reembolso' && fetchedDevolucion?.plataforma === 'ML' && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">¿Fue un reclamo de Mercado Libre?</label>
+                <select className="w-full border rounded p-2" value={fueReclamo === null ? "unknown" : fueReclamo ? "true" : "false"} onChange={(e) => setFueReclamo(e.target.value === 'unknown' ? null : e.target.value === 'true')}>
+                  <option value="unknown">No sé</option>
+                  <option value="true">Sí, fue reclamo</option>
+                  <option value="false">No, no fue reclamo</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Si fue reclamo, se descontará el envío original de MP disponible. Si no fue reclamo, solo se mueve el dinero sin descontar envío.
+                </p>
               </div>
             )}
 

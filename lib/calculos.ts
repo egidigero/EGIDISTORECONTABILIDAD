@@ -155,12 +155,16 @@ export function calcularVenta(
   const precioNeto = plataforma === "TN" && metodoPago === "MercadoPago"
     ? pvConDescuento - comisionTotalSinIva - iva - iibb
     : pvConDescuento - comisionTotalSinIva - iva - iibb - cargoEnvioCosto
-  // 6. Margen es precio neto menos costo del producto
-  const ingresoMargen = precioNeto - costoProducto
   
-  // 7. Rentabilidades calculadas sobre precio original y costo
+  // 6. MARGEN MEJORADO: Igual que calculadora de precios
+  // Margen = Precio Neto - Costo Producto - Costo Envío
+  // Esto da el margen REAL después de restar TODOS los costos
+  const ingresoMargen = precioNeto - costoProducto - cargoEnvioCosto
+  
+  // 7. Rentabilidades calculadas sobre el margen real
+  const costoTotal = costoProducto + cargoEnvioCosto
   const rentabilidadSobrePV = pvBruto > 0 ? ingresoMargen / pvBruto : 0
-  const rentabilidadSobreCosto = costoProducto > 0 ? ingresoMargen / costoProducto : 0
+  const rentabilidadSobreCosto = costoTotal > 0 ? ingresoMargen / costoTotal : 0
 
   return {
     comision: Number(comisionTotalSinIva.toFixed(2)), // Comisiones SIN IVA (bruto)

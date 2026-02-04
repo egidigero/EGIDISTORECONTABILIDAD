@@ -141,6 +141,8 @@ export const devolucionSchemaBase = z.object({
   mpEstado: z.enum(['a_liquidar', 'liquidado']).optional(),
   // Indica si se debe mover el monto a retenido en Mercado Pago al procesar la devolución
   mpRetener: z.boolean().optional(),
+  // Para ML: indica si fue reclamo (resta envío de mp_disponible)
+  fueReclamo: z.boolean().optional(),
   // Comisión original de la venta (opcional, usada en cálculos/trazabilidad)
   comisionOriginal: z.number().min(0).default(0),
   // commission fields removed from DB; calculations derived from ventas/liquidaciones
@@ -173,6 +175,7 @@ export const devolucionSchemaBase = z.object({
   }, z.date().optional()),
   resultadoPrueba: z.enum([
     "Pendiente",
+    "A Probar",
     "Funciona - Recuperable",
     "No funciona - No recuperable"
   ]).optional(),

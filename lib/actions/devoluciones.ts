@@ -43,6 +43,7 @@ function toSnakeCase(obj: any): any {
   // MP/ML flags persisted from the UI
   mpEstado: 'mp_estado',
   mpRetener: 'mp_retenido',
+  fueReclamo: 'fue_reclamo',
   // Campos que NO se deben guardar en DB (solo en memoria)
   fechaAccion: '__SKIP__'
   }
@@ -573,33 +574,45 @@ export async function createDevolucion(data: DevolucionFormData) {
                 montoALiquidar = Number(montoReembolsadoCreada ?? 0)
               }
 
-              // Decide which MP bucket to reduce based on mpEstado (if provided)
+              // Decide which MP bucket to reduce based on mpEstado and mpRetener
               let delta_mp_disponible = 0
               let delta_mp_a_liquidar = 0
               let delta_mp_retenido = 0
 
-              if (mpEstadoCreada === 'a_liquidar') delta_mp_a_liquidar += -montoALiquidar
-              else delta_mp_disponible += -montoALiquidar
+              // LÓGICA NUEVA: Si mpRetener está activado, significa que HAY dinero retenido
+              // En ese caso, resta DIRECTO de mp_retenido, no pregunta estado
+              if (mpRetenerCreada) {
+                // Restar de mp_retenido (libera el dinero retenido)
+                delta_mp_retenido += -montoALiquidar
+              } else {
+                // Flujo normal: restar de mp_disponible o mp_a_liquidar según mpEstado
+                if (mpEstadoCreada === 'a_liquidar') delta_mp_a_liquidar += -montoALiquidar
+                else delta_mp_disponible += -montoALiquidar
+              }
 
-              // NOTE: shipping costs are persisted as gastos_ingresos and handled
-              // separately; do NOT include envío in delta_mp_disponible here.
-
-              // CRITICAL: When creating with mpRetener (just retaining, NOT finalizing Reembolso),
-              // do NOT subtract the envío yet. The envío will be subtracted only when
-              // the devolución is finalized as Reembolso in updateDevolucion.
-              // Only subtract envío if this is a direct Reembolso creation (not just retention).
+              // LÓGICA DE ENVÍO PARA ML:
+              // Solo restar envío si:
+              // 1. NO es retención (mpRetener = false)
+              // 2. Es Reembolso
+              // 3. Es ML Y fue_reclamo = true (o no está definido, para backward compatibility)
               if (!mpRetenerCreada && tipoResCreada === 'Reembolso') {
                 try {
-                  const envioFromVenta = Number((datosVenta as any)?.costoEnvioOriginal ?? (datosVenta as any)?.costo_envio ?? (validatedData as any).costoEnvioOriginal ?? 0)
-                  if (!Number.isNaN(envioFromVenta) && envioFromVenta > 0) {
-                    delta_mp_disponible += -envioFromVenta
+                  const plataforma = (datosVenta as any)?.plataforma ?? (validatedData as any).plataforma
+                  const fueReclamo = (validatedData as any).fueReclamo ?? (validatedData as any).fue_reclamo
+                  
+                  // Para ML: solo restar envío si fue_reclamo es true o undefined (backward compatibility)
+                  const debeRestarEnvio = plataforma !== 'ML' || fueReclamo !== false
+                  
+                  if (debeRestarEnvio) {
+                    const envioFromVenta = Number((datosVenta as any)?.costoEnvioOriginal ?? (datosVenta as any)?.costo_envio ?? (validatedData as any).costoEnvioOriginal ?? 0)
+                    if (!Number.isNaN(envioFromVenta) && envioFromVenta > 0) {
+                      delta_mp_disponible += -envioFromVenta
+                    }
                   }
                 } catch (envSubErr) {
                   // non-critical
                 }
               }
-
-              if (mpRetenerCreada) delta_mp_retenido += montoALiquidar
 
               // Persist into devoluciones_deltas (tipo 'reclamo' for creation when mpRetener)
               const deltaRow: any = {
