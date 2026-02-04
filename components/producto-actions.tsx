@@ -222,6 +222,9 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           <DialogHeader>
             <DialogTitle>📦 Movimientos de Stock - {producto.modelo}</DialogTitle>
           </DialogHeader>
+          <div className="text-xs text-muted-foreground mb-2">
+            Debug: Movimientos recibidos: {movimientos ? movimientos.length : 'undefined'} | Tipo: {typeof movimientos}
+          </div>
           {movimientos && movimientos.length > 0 ? (
             <div className="space-y-2">
               <div className="grid grid-cols-7 gap-2 text-xs font-semibold border-b pb-2 bg-gray-50 px-2 py-1">
