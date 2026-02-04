@@ -2390,57 +2390,45 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const precioVentaPromedio = totalVentas > 0 ? Math.round((totalPrecioVenta / totalVentas) * 100) / 100 : 0
 
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
-    // Usar la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
+    // Usar EXACTAMENTE la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
     
-    // Primero obtener IDs de TODAS las ventas de los últimos 30 días (sin filtros)
-    const { data: ventasPara30d } = await supabase
-      .from('ventas')
-      .select('id')
-      .gte('fecha', fechaInicio)
+    // IGUAL QUE EERR: Obtener devoluciones para identificar ventas a excluir
+    const { data: devolucionesForExclusion } = await supabase
+      .from('devoluciones')
+      .select('id, venta_id, tipo_resolucion, estado')
+      .gte('fecha_reclamo', fechaInicio)
     
-    const ventaIds30d = ventasPara30d?.map(v => String(v.id)) || []
-    console.log('🔍 Total ventas 30d para verificar reembolsos:', ventaIds30d.length)
+    const devolucionesExcl = devolucionesForExclusion || []
     
-    // Ahora obtener TODAS las devoluciones (sin filtro de fecha) que correspondan a esas ventas
-    let devolucionesParaExcluirQuery = supabase
-      .from('devoluciones_resumen')
-      .select('venta_id, tipo_resolucion, estado')
-    
-    if (ventaIds30d.length > 0) {
-      // Supabase .in() recibe un array directamente
-      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.in('venta_id', ventaIds30d)
-    }
-    
-    const { data: devolucionesParaExcluir } = await devolucionesParaExcluirQuery
-    
-    console.log('🔍 Devoluciones encontradas para excluir:', devolucionesParaExcluir?.length)
-    
-    const ventaIdsExcluir = new Set<string>()
-    for (const dev of devolucionesParaExcluir || []) {
-      const tipo = String(dev.tipo_resolucion || '')
-      const estado = String(dev.estado || '')
+    // IGUAL QUE EERR: Construir lista de venta_ids que tuvieron reembolso o están en devolución
+    const ventaIdsExclSet = new Set<string>()
+    for (const d of devolucionesExcl) {
+      const tipo = String(d.tipo_resolucion || '')
+      const estado = String(d.estado || '')
+      
+      // Excluir la venta si:
+      // 1. tipo_resolucion es 'Reembolso'
+      // 2. estado es 'En devolución' (aún no finalizada)
       const isReembolso = tipo.toLowerCase().includes('reembolso')
       const isEnDevolucion = estado === 'En devolución'
       
-      if ((isReembolso || isEnDevolucion) && dev.venta_id) {
-        ventaIdsExcluir.add(String(dev.venta_id))
+      if ((isReembolso || isEnDevolucion) && d.venta_id) {
+        ventaIdsExclSet.add(String(d.venta_id))
       }
     }
     
-    console.log('🔍 Consultando ventas desde:', fechaInicio, 'Excluyendo:', ventaIdsExcluir.size, 'ventas con reembolso')
+    console.log('🔍 Devoluciones para exclusión encontradas:', devolucionesExcl.length, 'Ventas a excluir:', ventaIdsExclSet.size)
     
-    // Construir query excluyendo ventas reembolsadas
+    // IGUAL QUE EERR: Construir query de ventas excluyendo reembolsadas
     let ventasRoasQuery = supabase
       .from('ventas')
       .select('pvBruto')
       .gte('fecha', fechaInicio)
     
-    // NO aplicar filtros de producto ni plataforma - ROAS debe ser GENERAL
-    // Solo excluir las ventas con reembolso
-    
-    if (ventaIdsExcluir.size > 0) {
-      const ventaIdsArray = Array.from(ventaIdsExcluir)
-      const quoted = ventaIdsArray.map(id => `'${id}'`).join(',')
+    // IGUAL QUE EERR: Si hay ids a excluir, usar .not('id','in',`(1,2,3)`)
+    const ventaIdsExcluir = Array.from(ventaIdsExclSet)
+    if (ventaIdsExcluir.length > 0) {
+      const quoted = ventaIdsExcluir.map(id => `'${id}'`).join(',')
       const inString = `(${quoted})`
       ventasRoasQuery = ventasRoasQuery.not('id', 'in', inString)
     }
@@ -2473,29 +2461,22 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Cantidad ventas incluidas:', todasVentasRoas?.length)
     console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.size)
     
-    // Obtener gastos del negocio (GENERAL, no por producto) de los últimos 30 días
-    // Incluir todo EXCEPTO: ADS, Envíos, y Envíos devoluciones (estos ya están en otros costos)
-    const { data: todosGastos, error: errorGastosNegocio } = await supabase
-      .from('gastos_ingresos')
-      .select('montoARS, categoria, descripcion')
-      .eq('tipo', 'Gasto')
-      .gte('fecha', fechaInicio)
+    // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS y envíos que ya están en costos de plataforma)
+    const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
+      .from("gastos_ingresos")
+      .select("montoARS,categoria")
+      .gte("fecha", fechaInicio)
+      .eq("tipo", "Gasto")
+      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos)")
     
-    // Filtrar en código para mayor control
-    const gastosNegocio = todosGastos?.filter(g => {
-      const cat = g.categoria || ''
-      const desc = (g.descripcion || '').toLowerCase()
-      
-      // Excluir ADS, Envíos, Envíos devoluciones
-      if (cat === 'Gastos del negocio - ADS') return false
-      if (cat === 'Gastos del negocio - Envios') return false
-      if (cat === 'Gastos del negocio - Envios devoluciones') return false
-      if (desc.includes('meta ads')) return false
-      
-      return true
-    }) || []
+    // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
+    const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
+    const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"]
+    const gastosNegocio = otrosGastosData 
+      ? otrosGastosData.filter(g => !categoriasExcluirEERR.includes(g.categoria))
+      : []
     
-    console.log('[getCostosEstimados30Dias] Total gastos:', todosGastos?.length, 'Gastos negocio filtrados:', gastosNegocio.length, 'error:', errorGastosNegocio)
+    console.log('[getCostosEstimados30Dias] Total gastos obtenidos:', otrosGastosData?.length, 'Gastos negocio (filtrados):', gastosNegocio.length, 'error:', errorGastosNegocio)
     if (gastosNegocio && gastosNegocio.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', gastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
     }
