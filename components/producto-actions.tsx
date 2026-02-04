@@ -164,23 +164,109 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
       )}
       {/* Modal de movimientos */}
       <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle>Movimientos de stock para {producto.modelo}</DialogTitle>
+            <DialogTitle className="text-xl">Movimientos de Stock - {producto.modelo}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Stock actual: {producto.stockPropio || 0} unidades</p>
           </DialogHeader>
-          <div style={{ maxHeight: 400, overflowY: "auto" }}>
-            <DataTable
-              data={movimientos?.filter(m => String(m.producto_id) === String(producto.id)) || []}
-              columns={[
-                { key: "fecha", header: "Fecha", render: (m: any) => new Date(m.fecha).toLocaleString() },
-                { key: "tipo", header: "Tipo" },
-                { key: "cantidad", header: "Cantidad" },
-                { key: "deposito_origen", header: "Depósito Origen" },
-                { key: "deposito_destino", header: "Depósito Destino" },
-                { key: "observaciones", header: "Obs." },
-              ]}
-              searchable={false}
-            />
+          <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 120px)" }}>
+            {(() => {
+              const movimientosProducto = movimientos?.filter(m => String(m.producto_id) === String(producto.id)) || []
+              
+              if (movimientosProducto.length === 0) {
+                return (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p className="text-lg font-medium">No hay movimientos registrados</p>
+                    <p className="text-sm mt-2">Los movimientos aparecerán cuando se registren ventas o devoluciones</p>
+                  </div>
+                )
+              }
+
+              // Calcular stock acumulado de atrás hacia adelante
+              const movimientosConStock = [...movimientosProducto]
+                .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+                .reduce((acc: any[], mov: any, index: number) => {
+                  const stockAnterior = index === 0 ? 0 : acc[index - 1].stockParcial
+                  const cambio = mov.tipo === 'entrada' ? mov.cantidad : -mov.cantidad
+                  const stockParcial = stockAnterior + cambio
+                  acc.push({ ...mov, stockParcial, cambio })
+                  return acc
+                }, [])
+                .reverse() // Mostrar más recientes primero
+
+              return (
+                <div className="space-y-3">
+                  {movimientosConStock.map((mov: any, idx: number) => {
+                    const isEntrada = mov.tipo === 'entrada'
+                    return (
+                      <div 
+                        key={idx}
+                        className={`p-4 rounded-lg border-l-4 ${
+                          isEntrada 
+                            ? 'bg-green-50 border-green-500' 
+                            : 'bg-red-50 border-red-500'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                isEntrada 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {isEntrada ? '↑ Entrada' : '↓ Salida'}
+                              </span>
+                              <span className="text-sm text-gray-600">
+                                {new Date(mov.fecha).toLocaleDateString('es-AR', { 
+                                  day: '2-digit', 
+                                  month: '2-digit', 
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                              {mov.deposito_origen && (
+                                <div>
+                                  <span className="text-gray-500">Origen:</span>
+                                  <span className="ml-2 font-medium">{mov.deposito_origen}</span>
+                                </div>
+                              )}
+                              {mov.deposito_destino && (
+                                <div>
+                                  <span className="text-gray-500">Destino:</span>
+                                  <span className="ml-2 font-medium">{mov.deposito_destino}</span>
+                                </div>
+                              )}
+                              {mov.observaciones && (
+                                <div className="col-span-2">
+                                  <span className="text-gray-500">Obs:</span>
+                                  <span className="ml-2">{mov.observaciones}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1 ml-4">
+                            <div className={`text-2xl font-bold ${
+                              isEntrada ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {isEntrada ? '+' : '-'}{mov.cantidad}
+                            </div>
+                            <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">
+                              Stock: {mov.stockParcial}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         </DialogContent>
       </Dialog>
