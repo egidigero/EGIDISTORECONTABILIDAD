@@ -2476,7 +2476,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select("montoARS,categoria")
       .gte("fecha", fechaInicio)
       .eq("tipo", "Gasto")
-      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos,Gastos del negocio - Envios devoluciones)")
+      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envios,Gastos del negocio - Envios devoluciones)")
     
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
