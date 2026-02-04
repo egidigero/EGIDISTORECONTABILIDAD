@@ -2422,7 +2422,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // IGUAL QUE EERR: Construir query de ventas excluyendo reembolsadas
     let ventasRoasQuery = supabase
       .from('ventas')
-      .select('pvBruto')
+      .select('id, pvBruto')
       .gte('fecha', fechaInicio)
     
     // IGUAL QUE EERR: Si hay ids a excluir, usar .not('id','in',`(1,2,3)`)
@@ -2435,22 +2435,31 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     const { data: todasVentasRoas, error: errorVentasRoas } = await ventasRoasQuery
     
-    console.log('📊 ROAS - Total ventas encontradas:', todasVentasRoas?.length, 'error:', errorVentasRoas)
+    // IGUAL QUE EERR: Aplicar exclusión en memoria para asegurar
+    let ventasFiltradas = todasVentasRoas || []
+    if (ventaIdsExcluir.length > 0 && ventasFiltradas.length > 0) {
+      const before = ventasFiltradas.length
+      ventasFiltradas = ventasFiltradas.filter(v => !ventaIdsExclSet.has(String(v.id)))
+      const after = ventasFiltradas.length
+      console.log('📊 ROAS - Exclusión en memoria:', { before, after, excluidas: before - after })
+    }
+    
+    console.log('📊 ROAS - Total ventas (después de exclusión):', ventasFiltradas.length, 'error:', errorVentasRoas)
     
     if (errorVentasRoas) {
       console.error('❌ Error en query de ventas para ROAS:', errorVentasRoas)
     }
     
-    if (todasVentasRoas && todasVentasRoas.length > 0) {
-      console.log('📊 ROAS - Primeras 5 ventas:', todasVentasRoas.slice(0, 5).map(v => ({ pvBruto: v.pvBruto })))
+    if (ventasFiltradas && ventasFiltradas.length > 0) {
+      console.log('📊 ROAS - Primeras 5 ventas:', ventasFiltradas.slice(0, 5).map(v => ({ pvBruto: v.pvBruto })))
     } else {
       console.log('⚠️ No se encontraron ventas para ROAS')
     }
     
-    const totalVentasBruto = Math.round((todasVentasRoas?.reduce((sum, v) => {
+    const totalVentasBruto = Math.round((ventasFiltradas.reduce((sum, v) => {
       const precio = Number(v.pvBruto) || 0
       return sum + precio
-    }, 0) || 0) * 100) / 100
+    }, 0)) * 100) / 100
     
     const roas = totalGastosAds > 0 ? Math.round((totalVentasBruto / totalGastosAds) * 100) / 100 : 0
     
@@ -2458,8 +2467,8 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Total ventas bruto (sin reembolsos):', totalVentasBruto)
     console.log('   - Total ADS:', totalGastosAds)
     console.log('   - ROAS calculado:', roas)
-    console.log('   - Cantidad ventas incluidas:', todasVentasRoas?.length)
-    console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.size)
+    console.log('   - Cantidad ventas incluidas:', ventasFiltradas.length)
+    console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.length)
     
     // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS y envíos que ya están en costos de plataforma)
     const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
@@ -2467,7 +2476,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select("montoARS,categoria")
       .gte("fecha", fechaInicio)
       .eq("tipo", "Gasto")
-      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos)")
+      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos,Gastos del negocio - Envios devoluciones)")
     
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
