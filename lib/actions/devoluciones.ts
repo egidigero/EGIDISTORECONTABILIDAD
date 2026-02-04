@@ -2483,14 +2483,16 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Cantidad ventas incluidas:', ventasFiltradas.length)
     console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.length)
     
-    // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS y envíos que ya están en costos de plataforma)
-    // IMPORTANTE: EERR usa "Envíos" con acento, pero en BD es "Envios" sin acento, entonces NO se excluye
+    // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS)
+    // NOTA: Incluimos "Gastos del negocio - Envios" porque necesitamos calcular la diferencia con los envíos de plataforma
+    const fechaFin = new Date().toISOString()
     const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
       .from("gastos_ingresos")
-      .select("montoARS,categoria")
+      .select("montoARS,categoria,canal")
       .gte("fecha", fechaInicio)
+      .lte("fecha", fechaFin)
       .eq("tipo", "Gasto")
-      .not("categoria", "in", "(Gastos del negocio - ADS,Gastos del negocio - Envíos)")
+      .not("categoria", "eq", "Gastos del negocio - ADS")
     
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
@@ -2499,13 +2501,50 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       ? otrosGastosData.filter(g => !categoriasExcluirEERR.includes(g.categoria))
       : []
     
-    console.log('[getCostosEstimados30Dias] Total gastos obtenidos:', otrosGastosData?.length, 'Gastos negocio (filtrados):', gastosNegocio.length, 'error:', errorGastosNegocio)
-    if (gastosNegocio && gastosNegocio.length > 0) {
-      console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', gastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
-      console.log('[getCostosEstimados30Dias] Categorías únicas:', [...new Set(gastosNegocio.map(g => g.categoria))])
-    }
+    // IGUAL QUE EERR: Calcular diferencia de envíos TN (envíos pagados - envíos en plataforma)
+    // 1. Total de envíos TN pagados (de gastos_ingresos)
+    const enviosNegocioTN = gastosNegocio.filter(g => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN')
+    const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc, g) => acc + (Number(g.montoARS) || 0), 0)
     
-    const totalGastosNegocio = Math.round((gastosNegocio.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0)) * 100) / 100
+    // 2. Total de envíos TN en plataforma (de las ventas)
+    const totalEnviosCostosPlataformaTN = ventasFiltradas
+      .filter(v => v.plataforma === 'TN')
+      .reduce((acc, v) => acc + (Number(v.cargoEnvioCosto) || 0), 0)
+    
+    // 3. Diferencia (envíos pagados - envíos en plataforma)
+    const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
+    
+    // 4. Otros gastos del negocio: todos menos los envíos TN (que se suman como diferencia)
+    const otrosGastosNegocio = gastosNegocio.filter(g => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
+    const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc, g) => acc + (Number(g.montoARS) || 0), 0)
+    
+    // 5. Total final de otros gastos del negocio incluye la diferencia de envíos
+    const totalGastosNegocio = Math.round((totalOtrosGastosNegocio + diferenciaEnvios) * 100) / 100
+    
+    console.log('[getCostosEstimados30Dias] Total gastos obtenidos:', otrosGastosData?.length, 'Gastos negocio (filtrados):', gastosNegocio.length, 'error:', errorGastosNegocio)
+    console.log('[getCostosEstimados30Dias] 📦 CÁLCULO ENVÍOS TN:')
+    console.log('   - Envíos TN pagados (gastos):', totalEnviosNegocioTN.toFixed(2), `(${enviosNegocioTN.length} registros)`)
+    console.log('   - Envíos TN en plataforma (ventas):', totalEnviosCostosPlataformaTN.toFixed(2))
+    console.log('   - Diferencia (pagados - plataforma):', diferenciaEnvios.toFixed(2))
+    
+    if (gastosNegocio && gastosNegocio.length > 0) {
+      console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', otrosGastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
+      console.log('[getCostosEstimados30Dias] Categorías únicas:', [...new Set(otrosGastosNegocio.map(g => g.categoria))])
+      
+      // Log detallado por categoría
+      const porCategoria = otrosGastosNegocio.reduce((acc, g) => {
+        const cat = g.categoria
+        if (!acc[cat]) acc[cat] = { total: 0, count: 0 }
+        acc[cat].total += Number(g.montoARS) || 0
+        acc[cat].count += 1
+        return acc
+      }, {} as Record<string, { total: number, count: number }>)
+      
+      console.log('[getCostosEstimados30Dias] 📋 DETALLE POR CATEGORÍA:')
+      Object.entries(porCategoria).forEach(([cat, data]) => {
+        console.log(`   - ${cat}: $${data.total.toFixed(2)} (${data.count} gastos)`)
+      })
+    }
     
     console.log('[getCostosEstimados30Dias] 💰 DETALLE GASTOS DEL NEGOCIO:')
     console.log('   - Total gastos del negocio:', totalGastosNegocio)
