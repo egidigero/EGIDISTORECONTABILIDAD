@@ -23,7 +23,7 @@ interface CalculadoraPreciosProps {
   onOpenChange?: (open: boolean) => void
   costosEstimados?: {
     costoDevolucionesPorVenta: number
-    costoAdsPorVenta: number
+    costoGastosNegocioPorVenta: number
   }
   productoId?: number
   productoSku?: string
@@ -39,7 +39,7 @@ interface ParametrosCalculo {
   usarComisionManual: boolean // Habilita el campo de comisión manual
   comisionManual?: number // Valor de comisión manual
   costoDevoluciones: number // Costo estimado de devoluciones por venta
-  costoAds: number // Costo estimado de ADS por venta
+  costoGastosNegocio: number // Costo estimado de gastos del negocio por venta
 }
 
 interface TarifaData {
@@ -106,7 +106,7 @@ export function CalculadoraPrecios({
     usarComisionManual: false,
     comisionManual: undefined,
     costoDevoluciones: costosEstimados?.costoDevolucionesPorVenta || 0,
-    costoAds: costosEstimados?.costoAdsPorVenta || 0
+    costoGastosNegocio: costosEstimados?.costoGastosNegocioPorVenta || 0
   })
   // Habilitar y forzar comisión manual para TN + MercadoPago + Transferencia
   useEffect(() => {
@@ -141,7 +141,7 @@ export function CalculadoraPrecios({
       setParametros(prev => ({
         ...prev,
         costoDevoluciones: costosEstimados.costoDevolucionesPorVenta,
-        costoAds: costosEstimados.costoAdsPorVenta
+        costoGastosNegocio: costosEstimados.costoGastosNegocioPorVenta
       }));
     }
   }, [costosEstimados]);
@@ -297,14 +297,14 @@ export function CalculadoraPrecios({
     
     const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + tarifa.fijoPorOperacion
 
-    // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
-    const margenOperativo = resultadoOperativo - totalCostosPlataforma
+    // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Gastos Negocio
+    const margenOperativo = resultadoOperativo - totalCostosPlataforma - parametros.costoDevoluciones - parametros.costoGastosNegocio
 
-    // 5. Costo de Publicidad (puede ser calculado por ROAS o usar estimado)
-    const costoPublicidad = parametros.costoAds > 0 ? parametros.costoAds : (parametros.roas > 0 ? precio / parametros.roas : 0)
+    // 5. Costo de Publicidad (calculado por ROAS)
+    const costoPublicidad = parametros.roas > 0 ? precio / parametros.roas : 0
 
-    // 6. Margen Neto = Margen Operativo - Costo Publicidad - Costo Devoluciones
-    const margenNeto = margenOperativo - costoPublicidad - parametros.costoDevoluciones
+    // 6. Margen Neto = Margen Operativo - Costo Publicidad
+    const margenNeto = margenOperativo - costoPublicidad
 
     // 7. Porcentajes
     const margenSobrePrecio = (margenNeto / precio) * 100
@@ -613,37 +613,31 @@ export function CalculadoraPrecios({
 
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
-                      Costo de ADS por Venta (ARS)
+                      Gastos del Negocio por Venta (ARS)
                     </Label>
                     <Input
                       type="number"
                       step="0.01"
-                      value={parametros.costoAds}
+                      value={parametros.costoGastosNegocio}
                       onChange={(e) => setParametros(prev => ({ 
                         ...prev, 
-                        costoAds: parseFloat(e.target.value) || 0 
+                        costoGastosNegocio: parseFloat(e.target.value) || 0 
                       }))}
                       placeholder="0.00"
                       disabled={modoAnalisis30Dias}
                     />
-                    {modoAnalisis30Dias && datosReales30Dias && datosReales30Dias.roas > 0 ? (
+                    {modoAnalisis30Dias && datosReales30Dias ? (
                       <div className="text-xs text-blue-600">
-                        ✓ Calculado con ROAS {datosReales30Dias.roas.toFixed(2)}x: ${parametros.costoAds.toFixed(2)}
+                        ✓ Usando promedio real: ${datosReales30Dias.gastosNegocioPromedio.toFixed(2)}
                       </div>
                     ) : (
-                      costosEstimados && costosEstimados.costoAdsPorVenta > 0 && (
+                      costosEstimados && costosEstimados.costoGastosNegocioPorVenta > 0 && (
                         <div className="text-xs text-muted-foreground">
-                          Estimado: ${costosEstimados.costoAdsPorVenta.toFixed(2)}
+                          Estimado: ${costosEstimados.costoGastosNegocioPorVenta.toFixed(2)}
                         </div>
                       )
                     )}
                   </div>
-                  
-                  {(parametros.costoDevoluciones > 0 || parametros.costoAds > 0) && (
-                    <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                      💡 Estos costos se suman al cálculo del margen neto
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>

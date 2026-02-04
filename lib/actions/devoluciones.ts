@@ -2390,13 +2390,42 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const precioVentaPromedio = totalVentas > 0 ? Math.round((totalPrecioVenta / totalVentas) * 100) / 100 : 0
 
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
-    // Usar la misma fórmula que EERR: ROAS = Ventas totales / Publicidad
-    console.log('🔍 Consultando TODAS las ventas desde:', fechaInicio)
+    // Usar la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
     
-    const { data: todasVentasRoas, error: errorVentasRoas } = await supabase
+    // Primero obtener ventas a excluir (las que tienen devolución con reembolso o en devolución)
+    const { data: devolucionesParaExcluir } = await supabase
+      .from('devoluciones_resumen')
+      .select('venta_id, tipo_resolucion, estado')
+      .gte('fecha_compra', fechaInicio)
+    
+    const ventaIdsExcluir = new Set<string>()
+    for (const dev of devolucionesParaExcluir || []) {
+      const tipo = String(dev.tipo_resolucion || '')
+      const estado = String(dev.estado || '')
+      const isReembolso = tipo.toLowerCase().includes('reembolso')
+      const isEnDevolucion = estado === 'En devolución'
+      
+      if ((isReembolso || isEnDevolucion) && dev.venta_id) {
+        ventaIdsExcluir.add(String(dev.venta_id))
+      }
+    }
+    
+    console.log('🔍 Consultando ventas desde:', fechaInicio, 'Excluyendo:', ventaIdsExcluir.size, 'ventas con reembolso')
+    
+    // Construir query excluyendo ventas reembolsadas
+    let ventasRoasQuery = supabase
       .from('ventas')
       .select('pvBruto')
       .gte('fecha', fechaInicio)
+    
+    if (ventaIdsExcluir.size > 0) {
+      const ventaIdsArray = Array.from(ventaIdsExcluir)
+      const quoted = ventaIdsArray.map(id => `'${id}'`).join(',')
+      const inString = `(${quoted})`
+      ventasRoasQuery = ventasRoasQuery.not('id', 'in', inString)
+    }
+    
+    const { data: todasVentasRoas, error: errorVentasRoas } = await ventasRoasQuery
     
     console.log('📊 ROAS - Total ventas encontradas:', todasVentasRoas?.length, 'error:', errorVentasRoas)
     
