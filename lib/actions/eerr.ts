@@ -507,6 +507,7 @@ export async function calcularEERR(
   devolucionesComisionesRecuperadas: devolucionesComisionesRecuperadas,
     devolucionesCount: devolucionesCount,
     porcentajeDevolucionesSobreVentas: porcentajeDevolucionesSobreVentas,
+    perdidasPorDevoluciones: perdidasPorDevoluciones,
     detalleDevoluciones: devoluciones,
     };
   } catch (error) {
