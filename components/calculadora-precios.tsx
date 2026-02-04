@@ -74,7 +74,7 @@ interface DatosReales30Dias {
   precioVentaPromedio: number
   costoPromedio: number
   envioPromedio: number
-  adsPromedio: number
+  gastosNegocioPromedio: number
   devolucionPromedio: number
   totalVentas: number
   cantidadDevoluciones: number
@@ -198,7 +198,7 @@ export function CalculadoraPrecios({
           precioVentaPromedio: datos.precioVentaPromedio || 0,
           costoPromedio: costoProducto,
           envioPromedio: datos.envioPromedio || 0,
-          adsPromedio: datos.costoAdsPorVenta || 0,
+          gastosNegocioPromedio: datos.costoGastosNegocioPorVenta || 0,
           devolucionPromedio: datos.costoDevolucionesPorVenta || 0,
           totalVentas: datos.totalVentas || 0,
           cantidadDevoluciones: datos.cantidadDevoluciones || 0,
@@ -208,15 +208,9 @@ export function CalculadoraPrecios({
         setDatosReales30Dias(datosCalculados)
         
         // Actualizar parámetros con los promedios
-        // Para ADS, si tenemos ROAS, calculamos el costo basado en el precio de venta actual
-        const costoAdsCalculado = datosCalculados.roas > 0 
-          ? parametros.precioVenta / datosCalculados.roas
-          : datosCalculados.adsPromedio
-        
         setParametros(prev => ({
           ...prev,
           costoEnvio: datosCalculados.envioPromedio,
-          costoAds: costoAdsCalculado,
           costoDevoluciones: datosCalculados.devolucionPromedio,
           roas: datosCalculados.roas > 0 ? datosCalculados.roas : prev.roas
         }))

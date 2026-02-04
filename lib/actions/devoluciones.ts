@@ -2340,7 +2340,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Calcular costo de incidencia de devoluciones (GENERAL, no por plataforma):
     // Pérdidas totales del modelo (60d) / unidades vendidas no devueltas del modelo (60d)
     const costoDevolucionesPorVenta = unidadesVendidasNoDevueltas > 0 
-      ? perdidaTotalDevoluciones / unidadesVendidasNoDevueltas
+      ? Math.round((perdidaTotalDevoluciones / unidadesVendidasNoDevueltas) * 100) / 100
       : 0
     
     console.log('[getCostosEstimados30Dias] Devoluciones (60d):', cantidadDevoluciones, 'Ventas generales (60d):', totalVentasGenerales, 'No devueltas:', unidadesVendidasNoDevueltas, 'Pérdidas:', perdidaTotalDevoluciones, 'Costo/venta:', costoDevolucionesPorVenta)
@@ -2354,12 +2354,12 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .limit(5)
     console.log('[getCostosEstimados30Dias] Muestra de gastos totales:', gastosTotales)
 
-    // Obtener gasto en ADS de los últimos 30 días
+    // Obtener gasto en ADS de los últimos 30 días (mismo filtro que EERR)
     const { data: gastosAds, error: errorAds } = await supabase
       .from('gastos_ingresos')
-      .select('montoARS, categoria, fecha')
+      .select('montoARS, categoria, fecha, descripcion')
       .eq('tipo', 'Gasto')
-      .or('categoria.ilike.%publicidad%,categoria.ilike.%ads%,categoria.ilike.%marketing%')
+      .or('categoria.eq.Gastos del negocio - ADS,descripcion.ilike.%Meta ADS%')
       .gte('fecha', fechaInicio)
 
     console.log('[getCostosEstimados30Dias] Gastos ADS encontrados:', gastosAds?.length, 'error:', errorAds)
@@ -2367,10 +2367,10 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       console.log('[getCostosEstimados30Dias] Muestra de gastos ADS:', gastosAds.slice(0, 3))
     }
 
-    const totalGastosAds = gastosAds?.reduce((sum, g) => {
+    const totalGastosAds = Math.round((gastosAds?.reduce((sum, g) => {
       const monto = Number(g.montoARS) || 0
       return sum + monto
-    }, 0) || 0
+    }, 0) || 0) * 100) / 100
     
     console.log('[getCostosEstimados30Dias] Total gastos ADS:', totalGastosAds)
 
@@ -2379,7 +2379,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       const envio = Number(v.cargoEnvioCosto || v.cargo_envio_costo || v.costo_envio || v.costoEnvio) || 0
       return sum + envio
     }, 0) || 0
-    const envioPromedio = totalVentas > 0 ? totalEnvios / totalVentas : 0
+    const envioPromedio = totalVentas > 0 ? Math.round((totalEnvios / totalVentas) * 100) / 100 : 0
     console.log('[getCostosEstimados30Dias] Total envios:', totalEnvios, 'Envio promedio:', envioPromedio)
 
     // Calcular precio de venta promedio por plataforma
@@ -2387,7 +2387,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       const precio = Number(v.pv_bruto || v.pvBruto || v.precio_venta) || 0
       return sum + precio
     }, 0) || 0
-    const precioVentaPromedio = totalVentas > 0 ? totalPrecioVenta / totalVentas : 0
+    const precioVentaPromedio = totalVentas > 0 ? Math.round((totalPrecioVenta / totalVentas) * 100) / 100 : 0
 
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
     // Usar la misma fórmula que EERR: ROAS = Ventas totales / Publicidad
@@ -2410,31 +2410,61 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       console.log('⚠️ No se encontraron ventas para ROAS')
     }
     
-    const totalVentasBruto = todasVentasRoas?.reduce((sum, v) => {
+    const totalVentasBruto = Math.round((todasVentasRoas?.reduce((sum, v) => {
       const precio = Number(v.pvBruto) || 0
       return sum + precio
-    }, 0) || 0
+    }, 0) || 0) * 100) / 100
     
-    const roas = totalGastosAds > 0 ? totalVentasBruto / totalGastosAds : 0
+    const roas = totalGastosAds > 0 ? Math.round((totalVentasBruto / totalGastosAds) * 100) / 100 : 0
     
     console.log('💰 ROAS - Total ventas bruto:', totalVentasBruto, 'Total ADS:', totalGastosAds, 'ROAS calculado:', roas)
     
-    // Calcular costo de ADS por venta usando ROAS general
-    // Si tengo ROAS, puedo calcular cuánto gasto en ADS por cada venta
-    const costoAdsPorVenta = roas > 0 && totalVentas > 0
-      ? totalGastosAds / totalVentas
+    // Obtener gastos del negocio (GENERAL, no por producto) de los últimos 30 días
+    // Incluir todo excepto ADS (que ya se usa en ROAS) y Envíos (que están en costos de plataforma)
+    const { data: gastosNegocio } = await supabase
+      .from('gastos_ingresos')
+      .select('montoARS')
+      .eq('tipo', 'Gasto')
+      .not('categoria', 'in', '(\"Gastos del negocio - ADS\",\"Gastos del negocio - Envíos\")')
+      .gte('fecha', fechaInicio)
+    
+    const totalGastosNegocio = Math.round((gastosNegocio?.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0) || 0) * 100) / 100
+    
+    // Obtener unidades vendidas no devueltas de los últimos 30 días (GENERAL, todas las plataformas)
+    const { data: todasVentas30d } = await supabase
+      .from('ventas')
+      .select('id')
+      .gte('fecha', fechaInicio)
+    
+    const totalVentasGenerales30d = todasVentas30d?.length || 0
+    
+    // Para devoluciones de 30 días, usar el mismo filtro
+    const { data: devoluciones30d } = await supabase
+      .from('devoluciones_resumen')
+      .select('id')
+      .neq('estado', 'Rechazada')
+      .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
+      .gte('fecha_compra', fechaInicio)
+    
+    const cantidadDevoluciones30d = devoluciones30d?.length || 0
+    const unidadesNoDevueltas30d = totalVentasGenerales30d - cantidadDevoluciones30d
+    
+    const costoGastosNegocioPorVenta = unidadesNoDevueltas30d > 0
+      ? Math.round((totalGastosNegocio / unidadesNoDevueltas30d) * 100) / 100
       : 0
     
-    console.log('[getCostosEstimados30Dias] ROAS:', roas, 'Costo ADS por venta:', costoAdsPorVenta)
+    console.log('[getCostosEstimados30Dias] Gastos negocio:', totalGastosNegocio, 'Ventas 30d:', totalVentasGenerales30d, 'Devs 30d:', cantidadDevoluciones30d, 'No devueltas:', unidadesNoDevueltas30d, 'Costo/venta:', costoGastosNegocioPorVenta)
+    console.log('[getCostosEstimados30Dias] ROAS:', roas)
 
     const resultado = {
       costoDevolucionesPorVenta,
-      costoAdsPorVenta,
+      costoGastosNegocioPorVenta,
       totalVentas,
       cantidadDevoluciones,
       unidadesVendidasNoDevueltas,
       perdidaTotalDevoluciones,
       totalGastosAds,
+      totalGastosNegocio,
       envioPromedio,
       precioVentaPromedio,
       roas
@@ -2447,11 +2477,13 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.error("[getCostosEstimados30Dias] Error al obtener costos estimados:", error)
     return {
       costoDevolucionesPorVenta: 0,
-      costoAdsPorVenta: 0,
+      costoGastosNegocioPorVenta: 0,
       totalVentas: 0,
       cantidadDevoluciones: 0,
+      unidadesVendidasNoDevueltas: 0,
       perdidaTotalDevoluciones: 0,
       totalGastosAds: 0,
+      totalGastosNegocio: 0,
       envioPromedio: 0,
       precioVentaPromedio: 0,
       roas: 0
