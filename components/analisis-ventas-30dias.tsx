@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getVentas } from "@/lib/actions/ventas"
 import { getGastosIngresos } from "@/lib/actions/gastos-ingresos"
+import { getDevoluciones } from "@/lib/actions/devoluciones"
 
 interface AnalisisVentas30DiasProps {
   productos: any[]
@@ -12,6 +13,7 @@ interface AnalisisVentas30DiasProps {
 export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   const [ventas, setVentas] = useState<any[]>([])
   const [gastosIngresos, setGastosIngresos] = useState<any[]>([])
+  const [devoluciones, setDevoluciones] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -21,9 +23,10 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
         const fecha30DiasAtras = new Date()
         fecha30DiasAtras.setDate(fecha30DiasAtras.getDate() - 30)
 
-        const [todasVentas, todosGastosIngresos] = await Promise.all([
+        const [todasVentas, todosGastosIngresos, todasDevoluciones] = await Promise.all([
           getVentas({ fechaDesde: fecha30DiasAtras }),
-          getGastosIngresos()
+          getGastosIngresos(),
+          getDevoluciones()
         ])
 
         setVentas(todasVentas || [])
@@ -34,6 +37,13 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
           return fechaGI >= fecha30DiasAtras
         })
         setGastosIngresos(gastosIngresosFiltrados)
+        
+        // Filtrar devoluciones de los últimos 30 días
+        const devolucionesFiltradas = (todasDevoluciones || []).filter((dev: any) => {
+          const fechaDev = new Date(dev.fecha_devolucion)
+          return fechaDev >= fecha30DiasAtras
+        })
+        setDevoluciones(devolucionesFiltradas)
       } catch (error) {
         console.error("Error al cargar datos:", error)
       } finally {
@@ -69,14 +79,50 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   const costoEnvio30Dias = ventas.reduce((sum, v) => sum + Number(v.cargoEnvioCosto || 0), 0)
 
   // Calcular gastos de publicidad de los últimos 30 días
-  const gastosPublicidad30Dias = gastosIngresos
-    .filter((gi: any) => gi.tipo === "Gasto" && (gi.categoria?.toLowerCase().includes("publicidad") || gi.categoria?.toLowerCase().includes("ads")))
-    .reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
+  const gastosPublicidadFiltrados = gastosIngresos.filter((gi: any) => 
+    gi.tipo === "Gasto" && (gi.categoria?.toLowerCase().includes("publicidad") || gi.categoria?.toLowerCase().includes("ads") || gi.categoria?.toLowerCase().includes("meta"))
+  )
+  const gastosPublicidad30Dias = gastosPublicidadFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
+  
+  console.log('🔍 DEBUG Publicidad:')
+  console.log('Total gastos publicidad últimos 30 días:', gastosPublicidad30Dias)
+  console.log('Cantidad de registros publicidad:', gastosPublicidadFiltrados.length)
+  console.log('Categorías encontradas:', gastosPublicidadFiltrados.map(g => g.categoria))
+
+  // Calcular gastos del negocio (excluyendo publicidad) de los últimos 30 días
+  const gastosNegocioFiltrados = gastosIngresos.filter((gi: any) => 
+    gi.tipo === "Gasto" && !(gi.categoria?.toLowerCase().includes("publicidad") || gi.categoria?.toLowerCase().includes("ads") || gi.categoria?.toLowerCase().includes("meta"))
+  )
+  const gastosNegocio30Dias = gastosNegocioFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
+  
+  console.log('🔍 DEBUG Gastos Negocio:')
+  console.log('Total gastos negocio últimos 30 días:', gastosNegocio30Dias)
+  console.log('Cantidad de registros gastos negocio:', gastosNegocioFiltrados.length)
+
+  // Calcular costo de devoluciones de los últimos 30 días
+  const costoDevoluciones30Dias = devoluciones.reduce((sum, dev) => {
+    const costoTotal = Number(dev.gasto_creado || 0) + Number(dev.costo_perdido || 0)
+    return sum + costoTotal
+  }, 0)
+  
+  console.log('🔍 DEBUG Devoluciones:')
+  console.log('Total costo devoluciones últimos 30 días:', costoDevoluciones30Dias)
+  console.log('Cantidad de devoluciones:', devoluciones.length)
 
   // Calcular porcentajes sobre ventas de los últimos 30 días
   const pctComisiones = ingresoTotal30Dias > 0 ? (comisiones30Dias / ingresoTotal30Dias) : 0
   const pctEnvio = ingresoTotal30Dias > 0 ? (costoEnvio30Dias / ingresoTotal30Dias) : 0
+  const pctGastosNegocio = ingresoTotal30Dias > 0 ? (gastosNegocio30Dias / ingresoTotal30Dias) : 0
+  const pctDevoluciones = ingresoTotal30Dias > 0 ? (costoDevoluciones30Dias / ingresoTotal30Dias) : 0
   const pctPublicidad = ingresoTotal30Dias > 0 ? (gastosPublicidad30Dias / ingresoTotal30Dias) : 0
+  
+  console.log('📊 DEBUG Porcentajes calculados:')
+  console.log('Ventas totales 30d:', ingresoTotal30Dias)
+  console.log('% Comisiones:', (pctComisiones * 100).toFixed(2) + '%')
+  console.log('% Envíos:', (pctEnvio * 100).toFixed(2) + '%')
+  console.log('% Gastos Negocio:', (pctGastosNegocio * 100).toFixed(2) + '%')
+  console.log('% Devoluciones:', (pctDevoluciones * 100).toFixed(2) + '%')
+  console.log('% Publicidad:', (pctPublicidad * 100).toFixed(2) + '%')
 
   // ========== PROYECCIÓN FUTURA (si vendemos todo el stock) ==========
   // Facturación futura = PV × Stock de cada producto
@@ -96,12 +142,14 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   // Aplicar porcentajes de los últimos 30 días a la facturación futura
   const comisionesFuturo = facturacionFutura * pctComisiones
   const enviosFuturo = facturacionFutura * pctEnvio
+  const gastosNegocioFuturo = facturacionFutura * pctGastosNegocio
+  const devolucionesFuturo = facturacionFutura * pctDevoluciones
   const publicidadFuturo = facturacionFutura * pctPublicidad
 
   // Resultado bruto y margen neto proyectado
   const resultadoBrutoFuturo = facturacionFutura - costoProductosFuturo
-  const costosPlataformaFuturo = comisionesFuturo + enviosFuturo
-  const margenOperativoFuturo = resultadoBrutoFuturo - costosPlataformaFuturo
+  const costosOperativosFuturo = comisionesFuturo + enviosFuturo + gastosNegocioFuturo + devolucionesFuturo
+  const margenOperativoFuturo = resultadoBrutoFuturo - costosOperativosFuturo
   const margenNetoFuturo = margenOperativoFuturo - publicidadFuturo
 
   const margenNetoPorcentaje = facturacionFutura > 0 ? (margenNetoFuturo / facturacionFutura) * 100 : 0
@@ -185,6 +233,18 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
               <span className="text-gray-600">Envíos ({(pctEnvio * 100).toFixed(1)}%)</span>
               <span className="text-red-600">
                 -${enviosFuturo.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pl-4">
+              <span className="text-gray-600">Gastos del Negocio ({(pctGastosNegocio * 100).toFixed(1)}%)</span>
+              <span className="text-red-600">
+                -${gastosNegocioFuturo.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pl-4">
+              <span className="text-gray-600">Devoluciones ({(pctDevoluciones * 100).toFixed(1)}%)</span>
+              <span className="text-red-600">
+                -${devolucionesFuturo.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
             </div>
 
@@ -275,12 +335,6 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
               {unidadesTotales > 0
                 ? (margenNetoFuturo / unidadesTotales).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                 : 0}
-            </li>
-            <li>
-              📊 <strong>Margen Bruto:</strong>{" "}
-              {facturacionFutura > 0
-                ? ((resultadoBrutoFuturo / facturacionFutura) * 100).toFixed(1)
-                : 0}%
             </li>
           </ul>
         </div>
