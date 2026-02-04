@@ -26,7 +26,7 @@ import { ProductoForm } from "./producto-form"
 import { CalculadoraPrecios } from "./calculadora-precios"
 import { DataTable } from "./data-table"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
-import { createClient } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase"
 
 interface ProductoActionsProps {
   producto: {
@@ -149,8 +149,6 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
 
     setIsSubmittingMovimiento(true)
     try {
-      const supabase = createClient()
-
       const { error } = await supabase.from('movimientos_stock').insert({
         producto_id: producto.id,
         tipo: tipoMovimiento,
