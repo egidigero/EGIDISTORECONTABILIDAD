@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { createProducto, updateProducto } from "@/lib/actions/productos"
@@ -37,8 +38,10 @@ interface ProductoFormProps {
 
 export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [ajusteEntrada, setAjusteEntrada] = useState(0)
-  const [ajusteSalida, setAjusteSalida] = useState(0)
+  const [tipoMovimiento, setTipoMovimiento] = useState<'entrada' | 'salida'>('entrada')
+  const [cantidadMovimiento, setCantidadMovimiento] = useState(0)
+  const [observacionesMovimiento, setObservacionesMovimiento] = useState('')
+  const [depositoMovimiento, setDepositoMovimiento] = useState('PROPIO')
   const router = useRouter()
   const isEditing = !!producto
 
@@ -71,21 +74,26 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const onSubmit: SubmitHandler<ProductoFormInputs> = async (data) => {
     setIsSubmitting(true)
     try {
-      // Si estamos editando y hay ajustes, calcular el nuevo stock
+      // Si estamos editando y hay movimiento, calcular el nuevo stock
       let nuevoStock = data.stockPropio ?? 0
       
-      if (isEditing && (ajusteEntrada > 0 || ajusteSalida > 0)) {
+      if (isEditing && cantidadMovimiento > 0) {
         const stockActual = producto?.stockPropio ?? 0
-        nuevoStock = stockActual + ajusteEntrada - ajusteSalida
         
-        if (nuevoStock < 0) {
-          toast({
-            title: "Error",
-            description: "No puedes sacar más stock del que tienes disponible.",
-            variant: "destructive",
-          })
-          setIsSubmitting(false)
-          return
+        if (tipoMovimiento === 'entrada') {
+          nuevoStock = stockActual + cantidadMovimiento
+        } else {
+          nuevoStock = stockActual - cantidadMovimiento
+          
+          if (nuevoStock < 0) {
+            toast({
+              title: "Error",
+              description: "No puedes sacar más stock del que tienes disponible.",
+              variant: "destructive",
+            })
+            setIsSubmitting(false)
+            return
+          }
         }
       }
 
@@ -103,40 +111,20 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
       const result = isEditing ? await updateProducto(producto.id, productData) : await createProducto(productData)
       
       if (result.success) {
-        // Si estamos editando y hay ajustes, crear movimientos
-        if (isEditing && (ajusteEntrada > 0 || ajusteSalida > 0)) {
+        // Si estamos editando y hay movimiento, crear registro
+        if (isEditing && cantidadMovimiento > 0) {
           const { createClient } = await import("@/lib/supabase/client")
           const supabase = createClient()
           
-          const movimientos = []
-          
-          if (ajusteEntrada > 0) {
-            movimientos.push({
-              producto_id: producto.id,
-              tipo: 'entrada',
-              cantidad: ajusteEntrada,
-              deposito_origen: 'PROPIO',
-              fecha: new Date().toISOString(),
-              observaciones: 'Ajuste manual de stock - Entrada',
-              origen_tipo: 'ajuste',
-            })
-          }
-          
-          if (ajusteSalida > 0) {
-            movimientos.push({
-              producto_id: producto.id,
-              tipo: 'salida',
-              cantidad: ajusteSalida,
-              deposito_origen: 'PROPIO',
-              fecha: new Date().toISOString(),
-              observaciones: 'Ajuste manual de stock - Salida',
-              origen_tipo: 'ajuste',
-            })
-          }
-          
-          for (const movimiento of movimientos) {
-            await supabase.from('movimientos_stock').insert(movimiento)
-          }
+          await supabase.from('movimientos_stock').insert({
+            producto_id: producto.id,
+            tipo: tipoMovimiento,
+            cantidad: cantidadMovimiento,
+            deposito_origen: depositoMovimiento,
+            fecha: new Date().toISOString(),
+            observaciones: observacionesMovimiento || `${tipoMovimiento === 'entrada' ? 'Entrada' : 'Salida'} manual de stock`,
+            origen_tipo: 'ajuste',
+          })
         }
         
         // Si es una creación y hay stock inicial, crear movimiento inicial
@@ -248,46 +236,81 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
               <Label htmlFor="stockPropio">Stock propio</Label>
               {isEditing && producto?.stockPropio !== undefined ? (
                 <>
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-2">
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-3">
                     <div className="text-sm font-medium text-blue-900">Stock actual: {producto.stockPropio} unidades</div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="ajuste_entrada" className="text-xs">Agregar (+)</Label>
+                  
+                  <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
+                    <div className="text-sm font-medium text-gray-700">Registrar Movimiento de Stock</div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="tipoMovimiento" className="text-xs">Tipo de Movimiento</Label>
+                      <Select value={tipoMovimiento} onValueChange={(value: 'entrada' | 'salida') => setTipoMovimiento(value)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="entrada">➕ Entrada (Agregar stock)</SelectItem>
+                          <SelectItem value="salida">➖ Salida (Quitar stock)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="cantidadMovimiento" className="text-xs">Cantidad</Label>
                       <Input
-                        id="ajuste_entrada"
+                        id="cantidadMovimiento"
                         type="number"
                         min={0}
-                        value={ajusteEntrada}
-                        onChange={(e) => setAjusteEntrada(Number(e.target.value))}
+                        value={cantidadMovimiento}
+                        onChange={(e) => setCantidadMovimiento(Number(e.target.value))}
                         placeholder="0"
                         className="h-9"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="ajuste_salida" className="text-xs">Sacar (-)</Label>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="depositoMovimiento" className="text-xs">Depósito</Label>
+                      <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PROPIO">PROPIO</SelectItem>
+                          <SelectItem value="FULL">FULL</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="observacionesMovimiento" className="text-xs">Observaciones</Label>
                       <Input
-                        id="ajuste_salida"
-                        type="number"
-                        min={0}
-                        value={ajusteSalida}
-                        onChange={(e) => setAjusteSalida(Number(e.target.value))}
-                        placeholder="0"
+                        id="observacionesMovimiento"
+                        type="text"
+                        value={observacionesMovimiento}
+                        onChange={(e) => setObservacionesMovimiento(e.target.value)}
+                        placeholder="Ej: Ajuste por inventario físico"
                         className="h-9"
                       />
                     </div>
-                  </div>
-                  {(ajusteEntrada > 0 || ajusteSalida > 0) && (
-                    <div className="p-2 bg-yellow-50 rounded border border-yellow-200 mt-2">
-                      <div className="text-xs text-yellow-900">
-                        Nuevo stock: {producto.stockPropio + ajusteEntrada - ajusteSalida} unidades
+
+                    {cantidadMovimiento > 0 && (
+                      <div className="p-2 bg-yellow-50 rounded border border-yellow-200 mt-2">
+                        <div className="text-xs text-yellow-900 font-medium">
+                          Nuevo stock: {tipoMovimiento === 'entrada' 
+                            ? producto.stockPropio + cantidadMovimiento 
+                            : producto.stockPropio - cantidadMovimiento} unidades
+                          {tipoMovimiento === 'salida' && cantidadMovimiento > producto.stockPropio && (
+                            <span className="text-red-600 block mt-1">⚠️ Stock insuficiente</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                  
                   <Input
                     id="stockPropio"
                     type="number"
-                    min={0}
                     {...register("stockPropio", { valueAsNumber: true })}
                     defaultValue={producto.stockPropio}
                     className="hidden"
