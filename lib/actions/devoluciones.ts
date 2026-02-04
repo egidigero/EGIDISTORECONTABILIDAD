@@ -2435,7 +2435,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // IGUAL QUE EERR: Construir query de ventas excluyendo reembolsadas
     let ventasRoasQuery = supabase
       .from('ventas')
-      .select('id, pvBruto')
+      .select('id, pvBruto, plataforma, cargoEnvioCosto')
       .gte('fecha', fechaInicio)
     
     // IGUAL QUE EERR: Si hay ids a excluir, usar .not('id','in',`(1,2,3)`)

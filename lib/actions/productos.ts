@@ -57,9 +57,9 @@ export async function createProducto(data: ProductoFormData) {
   }
 }
 
-export async function updateProducto(id: string, data: ProductoFormData) {
+export async function updateProducto(id: string, data: Partial<ProductoFormData>) {
   try {
-    const validatedData = productoSchema.parse(data)
+    const validatedData = productoSchema.partial().parse(data)
     const now = new Date().toISOString()
     const updateData = { ...validatedData, updatedAt: now }
     const { data: producto, error: productoError } = await supabase

@@ -48,6 +48,25 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
   const [loadingCostos, setLoadingCostos] = useState(false)
   const router = useRouter()
 
+  // Handler para cuando se calcula un nuevo precio en la calculadora
+  const handlePrecioCalculado = async (nuevoPrecio: number) => {
+    try {
+      await updateProducto(producto.id, { precio_venta: nuevoPrecio })
+      toast({
+        title: "Precio actualizado",
+        description: `El precio de venta se actualizó a $${nuevoPrecio.toFixed(2)}`
+      })
+      if (onUpdate) onUpdate()
+      router.refresh()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el precio",
+        variant: "destructive"
+      })
+    }
+  }
+
   // Cargar costos estimados cuando se abre el modal de movimientos
   useEffect(() => {
     if (showMovimientos && !costosEstimados) {
@@ -238,7 +257,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         onOpenChange={setShowCalculadora}
         onPrecioCalculado={handlePrecioCalculado}
         trigger={<div style={{ display: 'none' }} />}
-        productoId={producto.id}
+        productoId={Number(producto.id)}
         productoSku={producto.sku}
       />
 
@@ -387,7 +406,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           {/* Tabla de movimientos */}
           <div className="border-t pt-4">
             <h3 className="text-lg font-semibold mb-3">Historial de Movimientos</h3>
-            {movimientos && movimientos.length > 0 ? (
+            {movimientos && movimientos?.length && movimientos.length > 0 ? (
               <div className="space-y-2">
                 <div className="grid grid-cols-7 gap-2 text-xs font-semibold border-b pb-2 bg-gray-50 px-2 py-1">
                   <div>Fecha</div>
@@ -398,7 +417,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                   <div>Categoría</div>
                   <div>Observaciones</div>
                 </div>
-                {movimientos.map((mov: any, idx: number) => {
+                {movimientos?.map((mov: any, idx: number) => {
                   const esEntrada = mov.tipo === 'entrada'
                   const esSalida = mov.tipo === 'salida'
                   
@@ -462,18 +481,18 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                     <div>
                       <div className="text-muted-foreground">Total entradas</div>
                       <div className="font-mono font-semibold text-green-600">
-                        +{movimientos.filter((m: any) => m.tipo === 'entrada').reduce((sum: number, m: any) => sum + m.cantidad, 0)}
+                        +{movimientos?.filter((m: any) => m.tipo === 'entrada').reduce((sum: number, m: any) => sum + m.cantidad, 0) || 0}
                       </div>
                     </div>
                     <div>
                       <div className="text-muted-foreground">Total salidas</div>
                       <div className="font-mono font-semibold text-red-600">
-                        -{movimientos.filter((m: any) => m.tipo === 'salida').reduce((sum: number, m: any) => sum + m.cantidad, 0)}
+                        -{movimientos?.filter((m: any) => m.tipo === 'salida').reduce((sum: number, m: any) => sum + m.cantidad, 0) || 0}
                       </div>
                     </div>
                     <div>
                       <div className="text-muted-foreground">Movimientos totales</div>
-                      <div className="font-mono font-semibold">{movimientos.length}</div>
+                      <div className="font-mono font-semibold">{movimientos?.length || 0}</div>
                     </div>
                   </div>
                 </div>
