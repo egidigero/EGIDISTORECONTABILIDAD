@@ -2407,11 +2407,13 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select('venta_id, tipo_resolucion, estado')
     
     if (ventaIds30d.length > 0) {
-      const ventaIdsQuoted = ventaIds30d.map(id => `'${id}'`).join(',')
-      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.in('venta_id', `(${ventaIdsQuoted})`)
+      // Supabase .in() recibe un array directamente
+      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.in('venta_id', ventaIds30d)
     }
     
     const { data: devolucionesParaExcluir } = await devolucionesParaExcluirQuery
+    
+    console.log('🔍 Devoluciones encontradas para excluir:', devolucionesParaExcluir?.length)
     
     const ventaIdsExcluir = new Set<string>()
     for (const dev of devolucionesParaExcluir || []) {
@@ -2473,22 +2475,32 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     // Obtener gastos del negocio (GENERAL, no por producto) de los últimos 30 días
     // Incluir todo EXCEPTO: ADS, Envíos, y Envíos devoluciones (estos ya están en otros costos)
-    const { data: gastosNegocio, error: errorGastosNegocio } = await supabase
+    const { data: todosGastos, error: errorGastosNegocio } = await supabase
       .from('gastos_ingresos')
-      .select('montoARS, categoria')
+      .select('montoARS, categoria, descripcion')
       .eq('tipo', 'Gasto')
-      .neq('categoria', 'Gastos del negocio - ADS')
-      .neq('categoria', 'Gastos del negocio - Envios')
-      .neq('categoria', 'Gastos del negocio - Envios devoluciones')
-      .not('descripcion', 'ilike', '%Meta ADS%')
       .gte('fecha', fechaInicio)
     
-    console.log('[getCostosEstimados30Dias] Gastos del negocio encontrados:', gastosNegocio?.length, 'error:', errorGastosNegocio)
+    // Filtrar en código para mayor control
+    const gastosNegocio = todosGastos?.filter(g => {
+      const cat = g.categoria || ''
+      const desc = (g.descripcion || '').toLowerCase()
+      
+      // Excluir ADS, Envíos, Envíos devoluciones
+      if (cat === 'Gastos del negocio - ADS') return false
+      if (cat === 'Gastos del negocio - Envios') return false
+      if (cat === 'Gastos del negocio - Envios devoluciones') return false
+      if (desc.includes('meta ads')) return false
+      
+      return true
+    }) || []
+    
+    console.log('[getCostosEstimados30Dias] Total gastos:', todosGastos?.length, 'Gastos negocio filtrados:', gastosNegocio.length, 'error:', errorGastosNegocio)
     if (gastosNegocio && gastosNegocio.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', gastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
     }
     
-    const totalGastosNegocio = Math.round((gastosNegocio?.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0) || 0) * 100) / 100
+    const totalGastosNegocio = Math.round((gastosNegocio.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0)) * 100) / 100
     
     // Obtener TODAS las ventas de los últimos 30 días (GENERAL, sin filtros)
     const { data: todasVentas30d } = await supabase
