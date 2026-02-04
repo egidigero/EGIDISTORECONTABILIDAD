@@ -170,13 +170,13 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           </DialogHeader>
           <div style={{ maxHeight: 400, overflowY: "auto" }}>
             <DataTable
-              data={movimientos?.filter(m => m.productoId === producto.id) || []}
+              data={movimientos?.filter(m => String(m.producto_id) === String(producto.id)) || []}
               columns={[
                 { key: "fecha", header: "Fecha", render: (m: any) => new Date(m.fecha).toLocaleString() },
                 { key: "tipo", header: "Tipo" },
                 { key: "cantidad", header: "Cantidad" },
-                { key: "depositoOrigen", header: "Depósito Origen" },
-                { key: "depositoDestino", header: "Depósito Destino" },
+                { key: "deposito_origen", header: "Depósito Origen" },
+                { key: "deposito_destino", header: "Depósito Destino" },
                 { key: "observaciones", header: "Obs." },
               ]}
               searchable={false}
