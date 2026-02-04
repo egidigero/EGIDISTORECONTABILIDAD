@@ -74,18 +74,27 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const onSubmit: SubmitHandler<ProductoFormInputs> = async (data) => {
     setIsSubmitting(true)
     try {
-      // Si estamos editando y hay movimiento, calcular el nuevo stock
-      let nuevoStock = data.stockPropio ?? 0
+      // Convertir a ProductoFormData - el stock siempre empieza en 0, se maneja por movimientos
+      const productData: ProductoFormData = {
+        modelo: data.modelo,
+        sku: data.sku,
+        costoUnitarioARS: data.costoUnitarioARS,
+        precio_venta: data.precio_venta ?? 0,
+        stockPropio: 0, // Siempre 0, el stock real se calcula desde movimientos
+        stockFull: 0,   // Siempre 0, el stock real se calcula desde movimientos
+        activo: data.activo ?? true,
+      }
       
-      if (isEditing && cantidadMovimiento > 0) {
-        const stockActual = producto?.stockPropio ?? 0
+      const result = isEditing ? await updateProducto(producto.id, productData) : await createProducto(productData)
+      
+      if (result.success) {
+        const { createClient } = await import("@/lib/supabase/client")
+        const supabase = createClient()
         
-        if (tipoMovimiento === 'entrada') {
-          nuevoStock = stockActual + cantidadMovimiento
-        } else {
-          nuevoStock = stockActual - cantidadMovimiento
-          
-          if (nuevoStock < 0) {
+        // Si estamos editando y hay movimiento, crear registro
+        if (isEditing && cantidadMovimiento > 0) {
+          // Validar stock suficiente para salidas
+          if (tipoMovimiento === 'salida' && cantidadMovimiento > (producto?.stockPropio ?? 0)) {
             toast({
               title: "Error",
               description: "No puedes sacar más stock del que tienes disponible.",
@@ -94,27 +103,6 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
             setIsSubmitting(false)
             return
           }
-        }
-      }
-
-      // Convertir a ProductoFormData con valores por defecto si es necesario
-      const productData: ProductoFormData = {
-        modelo: data.modelo,
-        sku: data.sku,
-        costoUnitarioARS: data.costoUnitarioARS,
-        precio_venta: data.precio_venta ?? 0,
-        stockPropio: nuevoStock,
-        stockFull: data.stockFull ?? 0,
-        activo: data.activo ?? true,
-      }
-      
-      const result = isEditing ? await updateProducto(producto.id, productData) : await createProducto(productData)
-      
-      if (result.success) {
-        // Si estamos editando y hay movimiento, crear registro
-        if (isEditing && cantidadMovimiento > 0) {
-          const { createClient } = await import("@/lib/supabase/client")
-          const supabase = createClient()
           
           await supabase.from('movimientos_stock').insert({
             producto_id: producto.id,
@@ -128,17 +116,14 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
         }
         
         // Si es una creación y hay stock inicial, crear movimiento inicial
-        if (!isEditing && nuevoStock > 0 && result.data?.id) {
-          const { createClient } = await import("@/lib/supabase/client")
-          const supabase = createClient()
-          
+        if (!isEditing && cantidadMovimiento > 0 && result.data?.id) {
           await supabase.from('movimientos_stock').insert({
             producto_id: result.data.id,
             tipo: 'entrada',
-            cantidad: nuevoStock,
-            deposito_origen: 'PROPIO',
+            cantidad: cantidadMovimiento,
+            deposito_origen: depositoMovimiento,
             fecha: new Date().toISOString(),
-            observaciones: 'Inventario inicial - Stock de apertura',
+            observaciones: observacionesMovimiento || 'Inventario inicial - Stock de apertura',
             origen_tipo: 'ingreso_manual',
           })
         }
@@ -317,13 +302,66 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
                   />
                 </>
               ) : (
-                <Input
-                  id="stockPropio"
-                  type="number"
-                  min={0}
-                  {...register("stockPropio", { valueAsNumber: true })}
-                  placeholder="0"
-                />
+                <>
+                  <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
+                    <div className="text-sm font-medium text-gray-700">Stock Inicial (opcional)</div>
+                    <p className="text-xs text-gray-600">Si el producto tiene stock inicial, se registrará un movimiento de entrada automáticamente.</p>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="stockInicial" className="text-xs">Cantidad inicial</Label>
+                      <Input
+                        id="stockInicial"
+                        type="number"
+                        min={0}
+                        value={cantidadMovimiento}
+                        onChange={(e) => setCantidadMovimiento(Number(e.target.value))}
+                        placeholder="0"
+                        className="h-9"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="depositoInicial" className="text-xs">Depósito</Label>
+                      <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PROPIO">PROPIO</SelectItem>
+                          <SelectItem value="FULL">FULL</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="observacionesInicial" className="text-xs">Observaciones (opcional)</Label>
+                      <Input
+                        id="observacionesInicial"
+                        type="text"
+                        value={observacionesMovimiento}
+                        onChange={(e) => setObservacionesMovimiento(e.target.value)}
+                        placeholder="Ej: Stock de apertura - Inventario inicial"
+                        className="h-9"
+                      />
+                    </div>
+
+                    {cantidadMovimiento > 0 && (
+                      <div className="p-2 bg-green-50 rounded border border-green-200 mt-2">
+                        <div className="text-xs text-green-900 font-medium">
+                          ✓ Se registrará un movimiento de entrada por {cantidadMovimiento} unidades
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <Input
+                    id="stockPropio"
+                    type="number"
+                    {...register("stockPropio", { valueAsNumber: true })}
+                    value={0}
+                    className="hidden"
+                  />
+                </>
               )}
               {errors.stockPropio && <p className="text-sm text-destructive">{errors.stockPropio.message}</p>}
             </div>

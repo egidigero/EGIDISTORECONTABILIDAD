@@ -6,13 +6,38 @@ import { productoSchema, type ProductoFormData } from "@/lib/validations"
 
 export async function getProductos() {
   try {
+    // Usar vista stock_calculado para obtener stock en tiempo real desde movimientos
+    const { data: stockData, error: stockError } = await supabase
+      .from("stock_calculado")
+      .select("*")
+      .order("producto_id", { ascending: false })
+      .limit(100)
+    
+    if (stockError) throw new Error("Error al obtener stock calculado")
+    
+    // Obtener datos básicos de productos
     const { data: productos, error } = await supabase
       .from("productos")
-      .select("id, modelo, sku, costoUnitarioARS, precio_venta, stockPropio, stockFull, activo, createdAt, updatedAt")
+      .select("id, modelo, sku, costoUnitarioARS, precio_venta, activo, createdAt, updatedAt")
       .order("createdAt", { ascending: false })
-      .limit(100) // Limitar resultados para mejor performance
+      .limit(100)
+    
     if (error) throw new Error("Error al obtener productos")
-    return productos || []
+    
+    // Combinar productos con stock calculado
+    const productosConStock = productos?.map(p => {
+      const stock = stockData?.find(s => s.producto_id === p.id)
+      return {
+        ...p,
+        stockPropio: stock?.stock_propio_calculado || 0,
+        stockFull: stock?.stock_full_calculado || 0,
+        stockTotal: stock?.stock_total_calculado || 0,
+        ultimoMovimiento: stock?.ultimo_movimiento,
+        cantidadMovimientos: stock?.cantidad_movimientos || 0
+      }
+    }) || []
+    
+    return productosConStock
   } catch (error) {
     console.error("Error al obtener productos:", error)
     return [] // Retornar array vacío en lugar de throw para mejor UX
@@ -95,13 +120,31 @@ export async function deleteProducto(id: string) {
 
 export async function getProductoById(id: string) {
   try {
+    // Obtener producto
     const { data: producto, error } = await supabase
       .from("productos")
       .select("*")
       .eq("id", id)
       .single()
+    
     if (error) throw new Error("Error al obtener producto")
-    return producto
+    
+    // Obtener stock calculado
+    const { data: stock, error: stockError } = await supabase
+      .from("stock_calculado")
+      .select("*")
+      .eq("producto_id", id)
+      .single()
+    
+    // Combinar datos (si no hay stock, usar valores en 0)
+    return {
+      ...producto,
+      stockPropio: stock?.stock_propio_calculado || 0,
+      stockFull: stock?.stock_full_calculado || 0,
+      stockTotal: stock?.stock_total_calculado || 0,
+      ultimoMovimiento: stock?.ultimo_movimiento,
+      cantidadMovimientos: stock?.cantidad_movimientos || 0
+    }
   } catch (error) {
     console.error("Error al obtener producto:", error)
     throw new Error("Error al obtener producto")

@@ -114,54 +114,37 @@ export async function createVenta(data: VentaFormData) {
       .select("*, producto:productos(*)")
     if (ventaError) return { success: false, error: ventaError.message }
 
-    // Descontar stock del producto
+    // Registrar movimiento de stock (ya no actualizamos stockPropio directamente)
     if (venta?.[0]) {
-      console.log("🔍 Actualizando stock del producto:", validatedData.productoId)
-      console.log("🔍 Stock actual:", producto.stockPropio)
-      console.log("🔍 Nuevo stock:", Math.max(0, Number(producto.stockPropio || 0) - 1))
+      console.log("📦 Registrando movimiento de stock para producto:", validatedData.productoId)
       
-      const { data: stockData, error: stockError } = await supabase
-        .from("productos")
-        .update({ 
-          stockPropio: Math.max(0, Number(producto.stockPropio || 0) - 1)
-        })
-        .eq("id", validatedData.productoId)
-        .select()
-      
-      if (stockError) {
-        console.error("❌ Error al actualizar stock:", stockError)
-      } else {
-        console.log("✅ Stock actualizado correctamente:", stockData)
-        
-        // Registrar movimiento de stock
-        try {
-          const movimientoData = {
-            producto_id: validatedData.productoId.toString(),
-            deposito_origen: 'Propio',
-            deposito_destino: null,
-            tipo: 'salida',
-            cantidad: 1,
-            fecha: new Date().toISOString(),
-            observaciones: `Venta ${saleCode} - ${validatedData.comprador}`,
-            origen_tipo: 'venta',
-            origen_id: venta[0].id
-          }
-          console.log("📦 Insertando movimiento de stock:", movimientoData)
-          
-          const { data: movData, error: movError } = await supabase
-            .from("movimientos_stock")
-            .insert(movimientoData)
-            .select()
-          
-          if (movError) {
-            console.error("❌ Error al registrar movimiento de stock:", movError)
-            console.error("❌ Detalles del error:", JSON.stringify(movError, null, 2))
-          } else {
-            console.log("✅ Movimiento de stock registrado:", movData)
-          }
-        } catch (movError) {
-          console.error("❌ Excepción al registrar movimiento de stock:", movError)
+      try {
+        const movimientoData = {
+          producto_id: validatedData.productoId.toString(),
+          deposito_origen: 'PROPIO',
+          deposito_destino: null,
+          tipo: 'salida',
+          cantidad: 1,
+          fecha: new Date().toISOString(),
+          observaciones: `Venta ${saleCode} - ${validatedData.comprador}`,
+          origen_tipo: 'venta',
+          origen_id: venta[0].id
         }
+        console.log("📦 Datos del movimiento:", movimientoData)
+        
+        const { data: movData, error: movError } = await supabase
+          .from("movimientos_stock")
+          .insert(movimientoData)
+          .select()
+        
+        if (movError) {
+          console.error("❌ Error al registrar movimiento de stock:", movError)
+          console.error("❌ Detalles del error:", JSON.stringify(movError, null, 2))
+        } else {
+          console.log("✅ Movimiento de stock registrado:", movData)
+        }
+      } catch (movError) {
+        console.error("❌ Excepción al registrar movimiento de stock:", movError)
       }
     }
 
