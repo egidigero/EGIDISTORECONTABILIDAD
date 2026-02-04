@@ -2392,19 +2392,12 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
     // Usar la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
     
-    // Primero obtener ventas a excluir (las que tienen devolución con reembolso o en devolución)
-    let devolucionesParaExcluirQuery = supabase
+    // Primero obtener TODAS las ventas a excluir (las que tienen devolución con reembolso o en devolución)
+    // NO filtrar por producto - ROAS debe ser general
+    const { data: devolucionesParaExcluir } = await supabase
       .from('devoluciones_resumen')
       .select('venta_id, tipo_resolucion, estado')
       .gte('fecha_compra', fechaInicio)
-    
-    // Filtrar por producto si corresponde
-    if (productoSku) {
-      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.eq('producto_sku', productoSku)
-      console.log('[getCostosEstimados30Dias] ROAS - Filtrando devoluciones para excluir por SKU:', productoSku)
-    }
-    
-    const { data: devolucionesParaExcluir } = await devolucionesParaExcluirQuery
     
     const ventaIdsExcluir = new Set<string>()
     for (const dev of devolucionesParaExcluir || []) {
@@ -2426,17 +2419,8 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select('pvBruto')
       .gte('fecha', fechaInicio)
     
-    // Aplicar filtros de producto si corresponde
-    if (productoId) {
-      ventasRoasQuery = ventasRoasQuery.eq('productoId', productoId)
-      console.log('[getCostosEstimados30Dias] ROAS - Filtrando por productoId:', productoId)
-    }
-    
-    // Aplicar filtros de plataforma si corresponde
-    if (plataforma) {
-      ventasRoasQuery = ventasRoasQuery.eq('plataforma', plataforma)
-      console.log('[getCostosEstimados30Dias] ROAS - Filtrando por plataforma:', plataforma)
-    }
+    // NO aplicar filtros de producto ni plataforma - ROAS debe ser GENERAL
+    // Solo excluir las ventas con reembolso
     
     if (ventaIdsExcluir.size > 0) {
       const ventaIdsArray = Array.from(ventaIdsExcluir)
@@ -2479,7 +2463,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     const totalGastosNegocio = Math.round((gastosNegocio?.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0) || 0) * 100) / 100
     
-    // Obtener unidades vendidas no devueltas de los últimos 30 días (GENERAL, todas las plataformas)
+    // Obtener TODAS las ventas de los últimos 30 días (GENERAL, sin filtros) para dividir gastos
     const { data: todasVentas30d } = await supabase
       .from('ventas')
       .select('id')
@@ -2487,22 +2471,12 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     const totalVentasGenerales30d = todasVentas30d?.length || 0
     
-    // Para devoluciones de 30 días, usar el mismo filtro
-    const { data: devoluciones30d } = await supabase
-      .from('devoluciones_resumen')
-      .select('id')
-      .neq('estado', 'Rechazada')
-      .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
-      .gte('fecha_compra', fechaInicio)
-    
-    const cantidadDevoluciones30d = devoluciones30d?.length || 0
-    const unidadesNoDevueltas30d = totalVentasGenerales30d - cantidadDevoluciones30d
-    
-    const costoGastosNegocioPorVenta = unidadesNoDevueltas30d > 0
-      ? Math.round((totalGastosNegocio / unidadesNoDevueltas30d) * 100) / 100
+    // Calcular costo de gastos del negocio por venta (dividir por TOTAL ventas, no por ventas - devoluciones)
+    const costoGastosNegocioPorVenta = totalVentasGenerales30d > 0
+      ? Math.round((totalGastosNegocio / totalVentasGenerales30d) * 100) / 100
       : 0
     
-    console.log('[getCostosEstimados30Dias] Gastos negocio:', totalGastosNegocio, 'Ventas 30d:', totalVentasGenerales30d, 'Devs 30d:', cantidadDevoluciones30d, 'No devueltas:', unidadesNoDevueltas30d, 'Costo/venta:', costoGastosNegocioPorVenta)
+    console.log('[getCostosEstimados30Dias] Gastos negocio:', totalGastosNegocio, 'Ventas 30d:', totalVentasGenerales30d, 'Costo/venta:', costoGastosNegocioPorVenta)
     console.log('[getCostosEstimados30Dias] ROAS:', roas)
 
     const resultado = {
