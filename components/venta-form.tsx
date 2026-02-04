@@ -353,8 +353,17 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envío + fijo + IIBB manual adicional
           : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
-      // 4. Margen Operativo = Resultado Operativo - Costos Plataforma
-      const margenOperativo = resultadoOperativo - totalCostosPlataforma
+      // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Gastos Negocio
+      const costoDevoluciones = 0 // Por ahora 0, se puede calcular desde devoluciones futuras
+      const costoGastosNegocio = 0 // Por ahora 0, se puede calcular desde gastos/ingresos
+      const margenOperativo = resultadoOperativo - totalCostosPlataforma - costoDevoluciones - costoGastosNegocio
+
+      // 5. Costo de Publicidad (ROAS)
+      const roas = 5 // Por defecto 5, se puede hacer configurable
+      const costoPublicidad = roas > 0 ? precio / roas : 0
+
+      // 6. Margen Neto = Margen Operativo - Publicidad
+      const margenNeto = margenOperativo - costoPublicidad
 
       const data = {
         precio,
@@ -371,12 +380,17 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         subtotalComision,
         subtotalComisionExtra,
         totalCostosPlataforma,
+        costoDevoluciones,
+        costoGastosNegocio,
         margenOperativo,
+        costoPublicidad,
+        roas,
+        margenNeto,
         // Para compatibilidad con el componente actual
         costoProducto: costo,
-        ingresoMargen: margenOperativo,
-        rentabilidadSobrePV: margenOperativo / precio,
-        rentabilidadSobreCosto: costo > 0 ? margenOperativo / costo : 0
+        ingresoMargen: margenNeto, // IMPORTANTE: Ahora guardamos el margen NETO (con publicidad)
+        rentabilidadSobrePV: margenNeto / precio,
+        rentabilidadSobreCosto: (costo + envio) > 0 ? margenNeto / (costo + envio) : 0
       }
 
       return { success: true, data, tarifa }
@@ -977,10 +991,41 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       <span>Costos Plataforma:</span>
                       <span className="font-mono">-${preview.data.totalCostosPlataforma.toFixed(2)}</span>
                     </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Devoluciones estimadas:</span>
+                      <span className="font-mono">-${preview.data.costoDevoluciones.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Gastos negocio estimados:</span>
+                      <span className="font-mono">-${preview.data.costoGastosNegocio.toFixed(2)}</span>
+                    </div>
                     <div className="border-t pt-1 mt-2">
                       <div className="flex justify-between font-semibold text-purple-700">
                         <span>Margen Operativo:</span>
                         <span className="font-mono">${preview.data.margenOperativo.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Publicidad y Margen Neto */}
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="text-lg font-semibold mb-2">Margen Final</div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>Margen Operativo:</span>
+                      <span className="font-mono">${preview.data.margenOperativo.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Publicidad (ROAS {preview.data.roas}):</span>
+                      <span className="font-mono">-${preview.data.costoPublicidad.toFixed(2)}</span>
+                    </div>
+                    <div className="border-t pt-1 mt-2">
+                      <div className="flex justify-between font-semibold text-blue-700 text-base">
+                        <span>Margen Neto:</span>
+                        <span className={`font-mono ${preview.data.margenNeto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${preview.data.margenNeto.toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -997,7 +1042,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>% sobre Costo:</span>
+                      <span>% sobre Costo Total:</span>
                       <span className={`font-mono ${preview.data.rentabilidadSobreCosto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {(preview.data.rentabilidadSobreCosto * 100).toFixed(1)}%
                       </span>

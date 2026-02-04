@@ -7,7 +7,7 @@ import type { Producto } from "@/lib/types"
 interface ProductosTableClientProps {
   productos: Producto[]
   onUpdate?: () => void
-  movimientos?: any[]
+  movimientosPorProducto?: any
   ventasPorProducto?: boolean
 }
 
@@ -69,14 +69,18 @@ export function ProductosTableClient(props: ProductosTableClientProps) {
     if (col.key === "acciones") {
       return {
         ...col,
-        render: (producto: any) => (
-          <ProductoActions
-            producto={producto}
-            onUpdate={props.onUpdate}
-            movimientos={props.movimientos}
-            ventasPorProducto={props.ventasPorProducto}
-          />
-        ),
+        render: (producto: any) => {
+          // Obtener movimientos específicos de este producto
+          const movimientosProducto = props.movimientosPorProducto?.[producto.id] || []
+          return (
+            <ProductoActions
+              producto={producto}
+              onUpdate={props.onUpdate}
+              movimientos={movimientosProducto}
+              ventasPorProducto={props.ventasPorProducto}
+            />
+          )
+        },
       };
     }
     return col;

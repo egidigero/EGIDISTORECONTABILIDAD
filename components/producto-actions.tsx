@@ -216,6 +216,113 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         productoSku={producto.sku}
       />
 
+      {/* Modal de Movimientos */}
+      <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>📦 Movimientos de Stock - {producto.modelo}</DialogTitle>
+          </DialogHeader>
+          {movimientos && movimientos.length > 0 ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-7 gap-2 text-xs font-semibold border-b pb-2 bg-gray-50 px-2 py-1">
+                <div>Fecha</div>
+                <div>Tipo</div>
+                <div className="text-right">Cantidad</div>
+                <div>Origen</div>
+                <div>Destino</div>
+                <div>Categoría</div>
+                <div>Observaciones</div>
+              </div>
+              {movimientos.map((mov: any, idx: number) => {
+                const esEntrada = mov.tipo === 'entrada'
+                const esSalida = mov.tipo === 'salida'
+                
+                // Determinar icono y color según origen
+                let origenLabel = mov.origen_tipo || '-'
+                let origenColor = 'bg-gray-100 text-gray-700'
+                let origenIcon = ''
+                
+                if (mov.origen_tipo === 'venta') {
+                  origenLabel = '🛒 Venta'
+                  origenColor = 'bg-red-100 text-red-700'
+                } else if (mov.origen_tipo === 'devolucion' || mov.origen_tipo === 'reincorporacion') {
+                  origenLabel = '↩️ Devolución'
+                  origenColor = 'bg-green-100 text-green-700'
+                } else if (mov.origen_tipo === 'ingreso_manual') {
+                  origenLabel = '➕ Ingreso manual'
+                  origenColor = 'bg-blue-100 text-blue-700'
+                } else if (mov.origen_tipo === 'ajuste') {
+                  origenLabel = '⚙️ Ajuste'
+                  origenColor = 'bg-yellow-100 text-yellow-700'
+                }
+                
+                return (
+                  <div key={idx} className="grid grid-cols-7 gap-2 text-xs border-b pb-2 px-2 py-1 hover:bg-gray-50">
+                    <div className="text-muted-foreground">
+                      {new Date(mov.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                      <div className="text-[10px] text-gray-400">
+                        {new Date(mov.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                        esEntrada ? 'bg-green-100 text-green-700' :
+                        esSalida ? 'bg-red-100 text-red-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {esEntrada ? '⬆️ Entrada' : esSalida ? '⬇️ Salida' : 'Ajuste'}
+                      </span>
+                    </div>
+                    <div className={`font-mono text-right font-semibold ${esEntrada ? 'text-green-600' : esSalida ? 'text-red-600' : ''}`}>
+                      {esEntrada ? '+' : esSalida ? '-' : ''}{mov.cantidad}
+                    </div>
+                    <div className="text-muted-foreground text-xs">{mov.deposito_origen}</div>
+                    <div className="text-muted-foreground text-xs">{mov.deposito_destino || '-'}</div>
+                    <div>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${origenColor}`}>
+                        {origenLabel}
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground text-xs truncate" title={mov.observaciones}>
+                      {mov.observaciones || '-'}
+                    </div>
+                  </div>
+                )
+              })}
+              
+              {/* Resumen */}
+              <div className="mt-4 pt-4 border-t bg-gray-50 p-3 rounded">
+                <div className="text-sm font-semibold mb-2">📊 Resumen</div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Total entradas</div>
+                    <div className="font-mono font-semibold text-green-600">
+                      +{movimientos.filter((m: any) => m.tipo === 'entrada').reduce((sum: number, m: any) => sum + m.cantidad, 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Total salidas</div>
+                    <div className="font-mono font-semibold text-red-600">
+                      -{movimientos.filter((m: any) => m.tipo === 'salida').reduce((sum: number, m: any) => sum + m.cantidad, 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Movimientos totales</div>
+                    <div className="font-mono font-semibold">{movimientos.length}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <div className="text-4xl mb-2">📦</div>
+              <div className="font-medium">No hay movimientos registrados</div>
+              <div className="text-xs mt-1">Los movimientos de ventas, devoluciones e ingresos aparecerán aquí</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>

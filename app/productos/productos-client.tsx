@@ -9,7 +9,7 @@ import { Plus, RefreshCw } from "lucide-react"
 import { ProductosTableClient } from "@/components/productos-table-client"
 import { NuevoProductoModal } from "@/components/nuevo-producto-modal"
 import { StockResumen } from "@/components/stock-resumen"
-import { consultarStock, consultarMovimientos } from "@/lib/stock-api"
+import { getMovimientosStockPorProducto } from "@/lib/actions/movimientos-stock"
 import { AnalisisVentas30Dias } from "@/components/analisis-ventas-30dias"
 import RotacionStock from "@/components/rotacion-stock"
 
@@ -26,16 +26,13 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
     router.refresh() // Revalidar página para actualizar datos
   }
 
-  const [stock, setStock] = useState<any[]>([])
-  const [movimientos, setMovimientos] = useState<any[]>([])
+  const [movimientosPorProducto, setMovimientosPorProducto] = useState<any>({})
 
   useEffect(() => {
     (async () => {
       try {
-        const s = await consultarStock()
-        setStock(s || [])
-        const m = await consultarMovimientos()
-        setMovimientos(m || [])
+        const movimientos = await getMovimientosStockPorProducto()
+        setMovimientosPorProducto(movimientos || {})
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error(e)
@@ -60,6 +57,9 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
               <Button asChild variant="outline" size="sm">
                 <a href="/">← Volver al menú principal</a>
               </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/patrimonio">💰 Ver Patrimonio</Link>
+              </Button>
               <Button variant="outline" size="sm" onClick={() => router.refresh()}>
                 <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
@@ -73,7 +73,12 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
           <div className="mb-4">
             <StockResumen productos={initialProductos} />
           </div>
-          <ProductosTableClient productos={initialProductos} onUpdate={router.refresh} movimientos={movimientos} ventasPorProducto />
+          <ProductosTableClient 
+            productos={initialProductos} 
+            onUpdate={router.refresh} 
+            movimientosPorProducto={movimientosPorProducto}
+            ventasPorProducto 
+          />
         </CardContent>
       </Card>
       <RotacionStock productos={initialProductos} />
