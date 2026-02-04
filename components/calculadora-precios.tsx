@@ -330,20 +330,14 @@ export function CalculadoraPrecios({
       
       // IIBB: 3% sobre comisiones (manual en venta-form, aquí calculado)
       iibb = (comision + comisionExtra) * 0.03
-
-    // Lógica especial TN + MercadoPago + Transferencia
-    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia") {
-      iva = comision * 0.21; // Solo la comisión base lleva IVA
-      // IIBB: 3% sobre comisión base y comisión extra
-      iibb = (comision + comisionExtra) * 0.03;
     } else if (parametros.plataforma === "TN") {
-      iva = (comision + comisionExtra) * 0.21;
+      iva = (comision + comisionExtra) * 0.21
       // IIBB: 3% sobre comisiones totales
-      iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03);
+      iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03)
     } else if (parametros.plataforma === "ML") {
-      comisionSinIva = comision / 1.21;
-      comisionExtraSinIva = comisionExtra / 1.21;
-      iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva;
+      comisionSinIva = comision / 1.21
+      comisionExtraSinIva = comisionExtra / 1.21
+      iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva
       // ML no tiene IIBB adicional
     }
     
@@ -1211,4 +1205,3 @@ export function CalculadoraPrecios({
     </Dialog>
   )
 }
-
