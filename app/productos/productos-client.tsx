@@ -31,11 +31,14 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
   useEffect(() => {
     (async () => {
       try {
+        console.log('🔄 Cargando movimientos de stock...')
         const movimientos = await getMovimientosStockPorProducto()
+        console.log('✅ Movimientos recibidos en cliente:', movimientos)
+        console.log('Claves del objeto:', Object.keys(movimientos))
         setMovimientosPorProducto(movimientos || {})
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error(e)
+        console.error('❌ Error cargando movimientos:', e)
       }
     })()
   }, [])
