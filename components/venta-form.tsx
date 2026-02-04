@@ -19,6 +19,7 @@ import { ventaSchema, VentaFormData } from "@/lib/validations"
 import { getRecargoCuotasMP } from "@/lib/calculos"
 import { Calculator } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 
 // Schema para el formulario (con fecha como string)
 const ventaFormSchema = ventaSchema.extend({
@@ -79,6 +80,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
   const [preview, setPreview] = useState<any>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [tarifaCompleta, setTarifaCompleta] = useState<any>(null)
+  const [costosEstimados, setCostosEstimados] = useState<any>(null)
   const router = useRouter()
   const isEditing = !!venta
 
@@ -196,6 +198,26 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     }
   }, [watch("productoId"), productos, setValue])
 
+  // Cargar costos estimados cuando cambie el producto o plataforma
+  useEffect(() => {
+    const productoId = watch("productoId")
+    const plataforma = watch("plataforma")
+    
+    if (productoId) {
+      const producto = productos.find(p => p.id === productoId)
+      if (producto) {
+        getCostosEstimados30Dias(Number(productoId), plataforma, producto.sku)
+          .then(datos => {
+            setCostosEstimados(datos)
+          })
+          .catch(err => {
+            console.error("Error cargando costos estimados:", err)
+            setCostosEstimados(null)
+          })
+      }
+    }
+  }, [watch("productoId"), watch("plataforma"), productos])
+
   // Calcular preview cuando cambien los campos relevantes
   useEffect(() => {
     const [productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto, usarComisionManual, comisionManual, comisionExtraManual, iibbManual] = watchedFields
@@ -228,7 +250,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       setPreview(null)
       setTarifaCompleta(null)
     }
-  }, watchedFields)
+  }, [...watchedFields, costosEstimados])
 
   // Función que replica exactamente la lógica de la calculadora de productos
   const calcularPreviewConTarifaCompleta = async (
@@ -354,12 +376,12 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Gastos Negocio
-      const costoDevoluciones = 0 // Por ahora 0, se puede calcular desde devoluciones futuras
-      const costoGastosNegocio = 0 // Por ahora 0, se puede calcular desde gastos/ingresos
+      const costoDevoluciones = costosEstimados?.costoDevolucionesPorVenta || 0
+      const costoGastosNegocio = costosEstimados?.costoGastosNegocioPorVenta || 0
       const margenOperativo = resultadoOperativo - totalCostosPlataforma - costoDevoluciones - costoGastosNegocio
 
-      // 5. Costo de Publicidad (ROAS)
-      const roas = 5 // Por defecto 5, se puede hacer configurable
+      // 5. Costo de Publicidad (ROAS de últimos 30 días)
+      const roas = costosEstimados?.roas > 0 ? costosEstimados.roas : 5
       const costoPublicidad = roas > 0 ? precio / roas : 0
 
       // 6. Margen Neto = Margen Operativo - Publicidad

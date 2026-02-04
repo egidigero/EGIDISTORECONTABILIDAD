@@ -59,6 +59,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
     setLoadingCostos(true)
     try {
       const datos = await getCostosEstimados30Dias(Number(producto.id), undefined, producto.sku)
+      console.log("📊 Costos estimados recibidos para producto", producto.modelo, ":", datos)
       setCostosEstimados(datos)
     } catch (error) {
       console.error("Error cargando costos estimados:", error)
