@@ -135,20 +135,32 @@ export async function createVenta(data: VentaFormData) {
         
         // Registrar movimiento de stock
         try {
-          await supabase.from("movimientos_stock").insert({
+          const movimientoData = {
             producto_id: validatedData.productoId.toString(),
             deposito_origen: 'Propio',
             deposito_destino: null,
             tipo: 'salida',
             cantidad: 1,
-            fecha: new Date(),
+            fecha: new Date().toISOString(),
             observaciones: `Venta ${saleCode} - ${validatedData.comprador}`,
             origen_tipo: 'venta',
             origen_id: venta[0].id
-          })
-          console.log("✅ Movimiento de stock registrado")
+          }
+          console.log("📦 Insertando movimiento de stock:", movimientoData)
+          
+          const { data: movData, error: movError } = await supabase
+            .from("movimientos_stock")
+            .insert(movimientoData)
+            .select()
+          
+          if (movError) {
+            console.error("❌ Error al registrar movimiento de stock:", movError)
+            console.error("❌ Detalles del error:", JSON.stringify(movError, null, 2))
+          } else {
+            console.log("✅ Movimiento de stock registrado:", movData)
+          }
         } catch (movError) {
-          console.error("❌ Error al registrar movimiento de stock:", movError)
+          console.error("❌ Excepción al registrar movimiento de stock:", movError)
         }
       }
     }

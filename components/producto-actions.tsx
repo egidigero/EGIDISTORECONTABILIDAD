@@ -132,11 +132,9 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           <DropdownMenuItem onClick={() => setShowCalculadora(true)}>
             <Calculator className="w-4 h-4 mr-2" /> Calculadora
           </DropdownMenuItem>
-          {movimientos && (
-            <DropdownMenuItem onClick={() => setShowMovimientos(true)}>
-              📦 Movimientos
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem onClick={() => setShowMovimientos(true)}>
+            📦 Movimientos {movimientos && movimientos.length > 0 ? `(${movimientos.length})` : ''}
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setShowDeleteDialog(true)}>
             <Trash2 className="w-4 h-4 mr-2" /> Eliminar
           </DropdownMenuItem>
