@@ -108,6 +108,17 @@ export function CalculadoraPrecios({
     costoDevoluciones: costosEstimados?.costoDevolucionesPorVenta || 0,
     costoGastosNegocio: costosEstimados?.costoGastosNegocioPorVenta || 0
   })
+  // Sincronizar costoDevoluciones y costoGastosNegocio con costosEstimados
+  useEffect(() => {
+    if (costosEstimados) {
+      setParametros(prev => ({
+        ...prev,
+        costoDevoluciones: costosEstimados.costoDevolucionesPorVenta || 0,
+        costoGastosNegocio: costosEstimados.costoGastosNegocioPorVenta || 0
+      }))
+    }
+  }, [costosEstimados])
+
   // Habilitar y forzar comisión manual para TN + MercadoPago + Transferencia
   useEffect(() => {
     if (
@@ -212,6 +223,7 @@ export function CalculadoraPrecios({
           ...prev,
           costoEnvio: datosCalculados.envioPromedio,
           costoDevoluciones: datosCalculados.devolucionPromedio,
+          costoGastosNegocio: datosCalculados.gastosNegocioPromedio,
           roas: datosCalculados.roas > 0 ? datosCalculados.roas : prev.roas
         }))
       } catch (error) {
@@ -223,17 +235,6 @@ export function CalculadoraPrecios({
     
     cargarDatosReales()
   }, [modoAnalisis30Dias, costoProducto, productoId, productoSku, parametros.plataforma])
-
-  // Recalcular costo de ADS cuando cambia el precio de venta (si tenemos ROAS)
-  useEffect(() => {
-    if (modoAnalisis30Dias && datosReales30Dias && datosReales30Dias.roas > 0 && parametros.precioVenta > 0) {
-      const costoAdsCalculado = parametros.precioVenta / datosReales30Dias.roas
-      setParametros(prev => ({
-        ...prev,
-        costoAds: costoAdsCalculado
-      }))
-    }
-  }, [parametros.precioVenta, datosReales30Dias?.roas, modoAnalisis30Dias])
 
   // Calcular resultado cuando cambien los parámetros
   useEffect(() => {
@@ -1008,6 +1009,18 @@ export function CalculadoraPrecios({
                           <span>Costos Plataforma:</span>
                           <span className="font-mono">-${resultado.totalCostosPlataforma.toFixed(2)}</span>
                         </div>
+                        {parametros.costoDevoluciones > 0 && (
+                          <div className="flex justify-between text-amber-600">
+                            <span>Costo Devoluciones (30d):</span>
+                            <span className="font-mono">-${parametros.costoDevoluciones.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {parametros.costoGastosNegocio > 0 && (
+                          <div className="flex justify-between text-orange-600">
+                            <span>Gastos del Negocio (30d):</span>
+                            <span className="font-mono">-${parametros.costoGastosNegocio.toFixed(2)}</span>
+                          </div>
+                        )}
                         <Separator />
                         <div className="flex justify-between font-semibold text-purple-700">
                           <span>Margen Operativo:</span>
@@ -1027,9 +1040,9 @@ export function CalculadoraPrecios({
                       </div>
                     </div>
 
-                    {/* Margen Neto Final */}
+                    {/* Margen Neto Antes de Impuestos */}
                     <div className="p-4 bg-green-50 rounded-lg">
-                      <div className="text-lg font-semibold mb-2">Margen Neto Final</div>
+                      <div className="text-lg font-semibold mb-2">Margen Neto Antes de Impuestos</div>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span>Margen Operativo:</span>
@@ -1039,12 +1052,6 @@ export function CalculadoraPrecios({
                           <span>Costo Publicidad:</span>
                           <span className="font-mono">-${resultado.costoPublicidad.toFixed(2)}</span>
                         </div>
-                        {parametros.costoDevoluciones > 0 && (
-                          <div className="flex justify-between text-amber-600">
-                            <span>Costo Devoluciones:</span>
-                            <span className="font-mono">-${parametros.costoDevoluciones.toFixed(2)}</span>
-                          </div>
-                        )}
                         <Separator />
                         <div className="flex justify-between font-bold text-lg">
                           <span>Margen Neto:</span>

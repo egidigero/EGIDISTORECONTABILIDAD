@@ -2393,10 +2393,18 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Usar la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
     
     // Primero obtener ventas a excluir (las que tienen devolución con reembolso o en devolución)
-    const { data: devolucionesParaExcluir } = await supabase
+    let devolucionesParaExcluirQuery = supabase
       .from('devoluciones_resumen')
       .select('venta_id, tipo_resolucion, estado')
       .gte('fecha_compra', fechaInicio)
+    
+    // Filtrar por producto si corresponde
+    if (productoSku) {
+      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.eq('producto_sku', productoSku)
+      console.log('[getCostosEstimados30Dias] ROAS - Filtrando devoluciones para excluir por SKU:', productoSku)
+    }
+    
+    const { data: devolucionesParaExcluir } = await devolucionesParaExcluirQuery
     
     const ventaIdsExcluir = new Set<string>()
     for (const dev of devolucionesParaExcluir || []) {
@@ -2417,6 +2425,18 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .from('ventas')
       .select('pvBruto')
       .gte('fecha', fechaInicio)
+    
+    // Aplicar filtros de producto si corresponde
+    if (productoId) {
+      ventasRoasQuery = ventasRoasQuery.eq('productoId', productoId)
+      console.log('[getCostosEstimados30Dias] ROAS - Filtrando por productoId:', productoId)
+    }
+    
+    // Aplicar filtros de plataforma si corresponde
+    if (plataforma) {
+      ventasRoasQuery = ventasRoasQuery.eq('plataforma', plataforma)
+      console.log('[getCostosEstimados30Dias] ROAS - Filtrando por plataforma:', plataforma)
+    }
     
     if (ventaIdsExcluir.size > 0) {
       const ventaIdsArray = Array.from(ventaIdsExcluir)
