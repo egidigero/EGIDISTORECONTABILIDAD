@@ -2,8 +2,9 @@ import Link from "next/link"
 import NuevaDevolucionModalWrapper from "@/components/nueva-devolucion-modal-wrapper"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, RotateCcw, FileText } from "lucide-react"
+import { Plus, RotateCcw, FileText, Package } from "lucide-react"
 import { DevolucionesClientWrapper } from "@/components/devoluciones-client-wrapper"
+import { StockDevolucionesControl } from "@/components/stock-devoluciones-control"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 
 // Forzar revalidación sin cache
@@ -69,6 +70,24 @@ export default async function DevolucionesPage() {
               ) : (
                 <DevolucionesClientWrapper devoluciones={devoluciones} />
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Control de Stock de Devoluciones */}
+        <div className="mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Control de Stock de Devoluciones
+              </CardTitle>
+              <CardDescription>
+                Gestiona el stock devuelto: productos a probar, probados y funcionando, listos para reincorporar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <StockDevolucionesControl />
             </CardContent>
           </Card>
         </div>

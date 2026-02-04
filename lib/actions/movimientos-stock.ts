@@ -1,10 +1,8 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { supabase } from "@/lib/supabase"
 
 export async function getMovimientosStock(productoId?: string) {
-  const supabase = await createClient()
-  
   let query = supabase
     .from('movimientos_stock')
     .select(`
@@ -32,8 +30,6 @@ export async function getMovimientosStock(productoId?: string) {
 }
 
 export async function getMovimientosStockPorProducto() {
-  const supabase = await createClient()
-  
   const { data, error } = await supabase
     .from('movimientos_stock')
     .select(`
@@ -41,7 +37,10 @@ export async function getMovimientosStockPorProducto() {
       tipo,
       cantidad,
       origen_tipo,
-      fecha
+      fecha,
+      deposito_origen,
+      deposito_destino,
+      observaciones
     `)
     .order('fecha', { ascending: false })
   
