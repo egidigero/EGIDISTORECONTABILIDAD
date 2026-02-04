@@ -26,6 +26,7 @@ import { ProductoForm } from "./producto-form"
 import { CalculadoraPrecios } from "./calculadora-precios"
 import { DataTable } from "./data-table"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
+import { createClient } from "@/lib/supabase/client"
 
 interface ProductoActionsProps {
   producto: {
@@ -148,20 +149,22 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
 
     setIsSubmittingMovimiento(true)
     try {
-      const { createClient } = await import("@/lib/supabase/client")
       const supabase = createClient()
 
       const { error } = await supabase.from('movimientos_stock').insert({
         producto_id: producto.id,
         tipo: tipoMovimiento,
         cantidad: cantidadMovimiento,
-        deposito_origen: depositoMovimiento,
+        deposito_origen: 'PROPIO',
         fecha: new Date().toISOString(),
         observaciones: observacionesMovimiento || `${tipoMovimiento === 'entrada' ? 'Entrada' : 'Salida'} manual de stock`,
         origen_tipo: 'ajuste',
       })
 
-      if (error) throw error
+      if (error) {
+        console.error("Error de Supabase:", error)
+        throw error
+      }
 
       toast({
         title: "Movimiento registrado",
@@ -231,12 +234,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {showEditModal && (
-        <ProductoForm producto={editProducto || producto} onSuccess={() => {
-          setShowEditModal(false)
-          if (onUpdate) onUpdate()
-        }} />
-      )}
+
       {/* Modal de movimientos */}
       <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
         <DialogContent className="max-w-4xl max-h-[85vh]">
@@ -283,15 +281,13 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
 
                 <div className="space-y-2">
                   <Label>Depósito</Label>
-                  <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PROPIO">PROPIO</SelectItem>
-                      <SelectItem value="FULL">FULL</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    type="text"
+                    value="PROPIO"
+                    disabled
+                    className="bg-gray-100"
+                  />
+                  <p className="text-xs text-muted-foreground">Solo depósito PROPIO</p>
                 </div>
 
                 <div className="space-y-2">
