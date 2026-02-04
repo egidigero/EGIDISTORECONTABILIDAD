@@ -5,47 +5,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getVentas } from "@/lib/actions/ventas"
 import { getGastosIngresos } from "@/lib/actions/gastos-ingresos"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
+import { calcularEERR } from "@/lib/actions/eerr"
 
 interface AnalisisVentas30DiasProps {
   productos: any[]
 }
 
 export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
-  const [ventas, setVentas] = useState<any[]>([])
-  const [gastosIngresos, setGastosIngresos] = useState<any[]>([])
-  const [devoluciones, setDevoluciones] = useState<any[]>([])
+  const [eerrData, setEerrData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        // Obtener ventas y gastos/ingresos de los últimos 30 días
+        // Calcular EERR de los últimos 30 días
+        const fechaHoy = new Date()
         const fecha30DiasAtras = new Date()
         fecha30DiasAtras.setDate(fecha30DiasAtras.getDate() - 30)
 
-        const [todasVentas, todosGastosIngresos, todasDevoluciones] = await Promise.all([
-          getVentas({ fechaDesde: fecha30DiasAtras }),
-          getGastosIngresos(),
-          getDevoluciones()
-        ])
-
-        setVentas(todasVentas || [])
-        
-        // Filtrar gastos/ingresos de los últimos 30 días
-        const gastosIngresosFiltrados = (todosGastosIngresos || []).filter((gi: any) => {
-          const fechaGI = new Date(gi.fecha)
-          return fechaGI >= fecha30DiasAtras
-        })
-        setGastosIngresos(gastosIngresosFiltrados)
-        
-        // Filtrar devoluciones de los últimos 30 días
-        const devolucionesFiltradas = (todasDevoluciones || []).filter((dev: any) => {
-          const fechaDev = new Date(dev.fecha_devolucion)
-          return fechaDev >= fecha30DiasAtras
-        })
-        setDevoluciones(devolucionesFiltradas)
+        const datos = await calcularEERR(fecha30DiasAtras, fechaHoy, "General")
+        setEerrData(datos)
       } catch (error) {
-        console.error("Error al cargar datos:", error)
+        console.error("Error al cargar datos EERR:", error)
       } finally {
         setLoading(false)
       }
@@ -67,70 +48,35 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
     )
   }
 
-  // ========== CÁLCULOS DE LOS ÚLTIMOS 30 DÍAS (para obtener porcentajes) ==========
-  const ingresoTotal30Dias = ventas.reduce((sum, v) => sum + Number(v.pvBruto || 0), 0)
-  const costoProductos30Dias = ventas.reduce((sum, v) => sum + Number(v.costoProducto || 0), 0)
-  const comisiones30Dias = ventas.reduce((sum, v) => {
-    const comision = Number(v.comision || 0)
-    const iva = Number(v.iva || 0)
-    const iibb = Number(v.iibb || 0)
-    return sum + comision + iva + iibb
-  }, 0)
-  const costoEnvio30Dias = ventas.reduce((sum, v) => sum + Number(v.cargoEnvioCosto || 0), 0)
-
-  // Calcular gastos de publicidad de los últimos 30 días (misma lógica que EERR)
-  const gastosPublicidadFiltrados = gastosIngresos.filter((gi: any) => 
-    gi.tipo === "Gasto" && (
-      gi.categoria === "Gastos del negocio - ADS" || 
-      gi.descripcion?.toLowerCase().includes("meta ads")
+  // ========== USAR DATOS DEL EERR DIRECTAMENTE ==========
+  if (!eerrData) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>📊 Proyección de Stock Futuro</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">Cargando datos...</p>
+        </CardContent>
+      </Card>
     )
-  )
-  const gastosPublicidad30Dias = gastosPublicidadFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
-  
-  console.log('🔍 DEBUG Publicidad:')
-  console.log('Total gastos publicidad últimos 30 días:', gastosPublicidad30Dias)
-  console.log('Cantidad de registros publicidad:', gastosPublicidadFiltrados.length)
-  console.log('Categorías encontradas:', gastosPublicidadFiltrados.map(g => g.categoria))
+  }
 
-  // Calcular gastos del negocio (misma lógica que EERR: excluir ADS y Envíos)
-  const categoriasExcluir = ["Gastos del negocio - ADS", "Gastos del negocio - Envíos", "Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio", "Pago de Importación"]
-  const gastosNegocioFiltrados = gastosIngresos.filter((gi: any) => 
-    gi.tipo === "Gasto" && !categoriasExcluir.includes(gi.categoria)
-  )
-  const gastosNegocio30Dias = gastosNegocioFiltrados.reduce((sum, gi) => sum + Number(gi.montoARS || 0), 0)
+  const ingresoTotal30Dias = eerrData.ventasTotales
+  const comisiones30Dias = eerrData.comisionesNetas
+  const costoEnvio30Dias = eerrData.enviosTotales
+  const gastosPublicidad30Dias = eerrData.publicidad
+  const gastosNegocio30Dias = eerrData.otrosGastos
   
-  console.log('🔍 DEBUG Gastos Negocio:')
-  console.log('Total gastos negocio últimos 30 días:', gastosNegocio30Dias)
-  console.log('Cantidad de registros gastos negocio:', gastosNegocioFiltrados.length)
-
-  // Calcular costo de devoluciones de los últimos 30 días (misma lógica que EERR)
-  const costoDevoluciones30Dias = devoluciones.reduce((sum, dev) => {
-    // costo_producto_original (si no es recuperable) + costo_producto_nuevo + costo_envio_nuevo
-    const productoRecuperable = dev.producto_recuperable === true || dev.producto_recuperable === 'true' || dev.producto_recuperable === 't'
-    const costoOriginal = productoRecuperable ? 0 : Number(dev.costo_producto_original || 0)
-    const costoNuevo = Number(dev.costo_producto_nuevo || 0)
-    const costoEnvioNuevo = Number(dev.costo_envio_nuevo || 0)
-    return sum + costoOriginal + costoNuevo + costoEnvioNuevo
-  }, 0)
+  // Calcular pérdidas por devoluciones desde el EERR
+  const perdidasDevoluciones30Dias = eerrData.resultadoBruto - eerrData.totalCostosPlataformaAjustado - eerrData.margenOperativo
   
-  console.log('🔍 DEBUG Devoluciones:')
-  console.log('Total costo devoluciones últimos 30 días:', costoDevoluciones30Dias)
-  console.log('Cantidad de devoluciones:', devoluciones.length)
-
   // Calcular porcentajes sobre ventas de los últimos 30 días
   const pctComisiones = ingresoTotal30Dias > 0 ? (comisiones30Dias / ingresoTotal30Dias) : 0
   const pctEnvio = ingresoTotal30Dias > 0 ? (costoEnvio30Dias / ingresoTotal30Dias) : 0
   const pctGastosNegocio = ingresoTotal30Dias > 0 ? (gastosNegocio30Dias / ingresoTotal30Dias) : 0
-  const pctDevoluciones = ingresoTotal30Dias > 0 ? (costoDevoluciones30Dias / ingresoTotal30Dias) : 0
+  const pctDevoluciones = ingresoTotal30Dias > 0 ? (perdidasDevoluciones30Dias / ingresoTotal30Dias) : 0
   const pctPublicidad = ingresoTotal30Dias > 0 ? (gastosPublicidad30Dias / ingresoTotal30Dias) : 0
-  
-  console.log('📊 DEBUG Porcentajes calculados:')
-  console.log('Ventas totales 30d:', ingresoTotal30Dias)
-  console.log('% Comisiones:', (pctComisiones * 100).toFixed(2) + '%')
-  console.log('% Envíos:', (pctEnvio * 100).toFixed(2) + '%')
-  console.log('% Gastos Negocio:', (pctGastosNegocio * 100).toFixed(2) + '%')
-  console.log('% Devoluciones:', (pctDevoluciones * 100).toFixed(2) + '%')
-  console.log('% Publicidad:', (pctPublicidad * 100).toFixed(2) + '%')
 
   // ========== PROYECCIÓN FUTURA (si vendemos todo el stock) ==========
   // Facturación futura = PV × Stock de cada producto
@@ -151,12 +97,12 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   const comisionesFuturo = facturacionFutura * pctComisiones
   const enviosFuturo = facturacionFutura * pctEnvio
   const gastosNegocioFuturo = facturacionFutura * pctGastosNegocio
-  const devolucionesFuturo = facturacionFutura * pctDevoluciones
+  const perdidasDevolucionesFuturo = facturacionFutura * pctDevoluciones
   const publicidadFuturo = facturacionFutura * pctPublicidad
 
   // Resultado bruto y margen neto proyectado
   const resultadoBrutoFuturo = facturacionFutura - costoProductosFuturo
-  const costosOperativosFuturo = comisionesFuturo + enviosFuturo + gastosNegocioFuturo + devolucionesFuturo
+  const costosOperativosFuturo = comisionesFuturo + enviosFuturo + gastosNegocioFuturo + perdidasDevolucionesFuturo
   const margenOperativoFuturo = resultadoBrutoFuturo - costosOperativosFuturo
   const margenNetoFuturo = margenOperativoFuturo - publicidadFuturo
 
@@ -252,7 +198,7 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
             <div className="flex justify-between items-center pl-4">
               <span className="text-gray-600">Devoluciones ({(pctDevoluciones * 100).toFixed(1)}%)</span>
               <span className="text-red-600">
-                -${devolucionesFuturo.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                -${perdidasDevolucionesFuturo.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </span>
             </div>
 
@@ -327,25 +273,6 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
             </div>
           </div>
         )}
-
-        {/* Indicadores clave */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h4 className="font-semibold text-yellow-800 mb-2">💡 Indicadores Clave</h4>
-          <ul className="text-sm text-yellow-700 space-y-1">
-            <li>
-              🎯 <strong>ROI sobre Stock:</strong>{" "}
-              {costoProductosFuturo > 0
-                ? ((margenNetoFuturo / costoProductosFuturo) * 100).toFixed(1)
-                : 0}%
-            </li>
-            <li>
-              💵 <strong>Ganancia por Unidad:</strong> $
-              {unidadesTotales > 0
-                ? (margenNetoFuturo / unidadesTotales).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-                : 0}
-            </li>
-          </ul>
-        </div>
       </CardContent>
     </Card>
   )
