@@ -62,58 +62,50 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
     )
   }
 
-  // ========== CALCULAR EXACTAMENTE IGUAL QUE EERR-REPORT.TSX ==========
+  // ========== MOSTRAR TODO EL EERR PARA DEBUG ==========
+  console.log('🔍 EERR DATA COMPLETO:', JSON.stringify(eerrData, null, 2))
   
-  // Categorías a excluir (mismas que eerr-report)
-  const categoriasExcluirEERR = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio", "Pago de Importación"]
+  // Valores del EERR que necesitamos (tomando los campos que coinciden con lo que muestra el EERR)
+  const ventasTotales30d = eerrData.ventasTotales || 0
   
-  // 1. VENTAS Y COMISIONES - directo del EERR
-  const ingresoTotal30Dias = eerrData.ventasTotales || 0
-  const comisiones30Dias = eerrData.comisionesNetas || 0 // Comisiones netas (base + IVA + IIBB)
-  const costoEnvio30Dias = eerrData.enviosTotales || 0
+  // Del EERR real que me pasaste:
+  // Comisiones Netas: -$1,124,926.3 (Base + IVA + IIBB)
+  const comisionesNetas30d = (eerrData.comisionesBase || 0) + (eerrData.ivaComisiones || 0) + (eerrData.iibbComisiones || 0)
   
-  // 2. PUBLICIDAD - directo del EERR
-  const gastosPublicidad30Dias = eerrData.publicidad || 0
+  // Envíos: -$341,637.56
+  const enviosTotales30d = eerrData.enviosTotales || 0
   
-  // 3. DEVOLUCIONES - calcular de detalleDevoluciones con perdida_total (igual que eerr-report)
-  const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
-  const perdidasDevoluciones30Dias = devols.length > 0
-    ? devols.reduce((acc: number, d: any) => acc + Number(d.perdida_total || 0), 0)
-    : (eerrData.devolucionesPerdidaTotal || 0)
+  // Publicidad: -$3,570,522.65
+  const publicidad30d = eerrData.publicidad || 0
   
-  // 4. GASTOS DEL NEGOCIO - calcular de detalleOtrosGastos (igual que eerr-report)
-  const gastosNegocioArr = Array.isArray(eerrData.detalleOtrosGastos)
-    ? eerrData.detalleOtrosGastos.filter((g: any) =>
-        !categoriasExcluirEERR.includes(g.categoria) &&
-        g.categoria !== 'Gastos del negocio - Envios devoluciones'
-      )
-    : []
+  // Gastos del Negocio: -$363,878.21 (Total Otros Gastos)
+  const gastosNegocio30d = eerrData.otrosGastos || 0
   
-  // Envíos TN pagados vs costos plataforma
-  const enviosNegocioTN = gastosNegocioArr.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN')
-  const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
-  const totalEnviosCostosPlataformaTN = eerrData.envios || 0 // Solo TN de costos plataforma
-  const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
+  // Devoluciones: -$703,475.73 (Total Pérdida por Devoluciones)
+  // Usar devolucionesPerdidaTotal que es el campo correcto
+  const devoluciones30d = eerrData.devolucionesPerdidaTotal || 0
   
-  // Otros gastos (sin envíos TN)
-  const otrosGastosNegocio = gastosNegocioArr.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
-  const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
-  const gastosNegocio30Dias = totalOtrosGastosNegocio + diferenciaEnvios
+  console.log('📊 VALORES EXTRAÍDOS DEL EERR:')
+  console.log('Ventas:', ventasTotales30d)
+  console.log('Comisiones Netas:', comisionesNetas30d, '(base:', eerrData.comisionesBase, 'iva:', eerrData.ivaComisiones, 'iibb:', eerrData.iibbComisiones, ')')
+  console.log('Envíos:', enviosTotales30d)
+  console.log('Publicidad:', publicidad30d)
+  console.log('Gastos Negocio:', gastosNegocio30d)
+  console.log('Devoluciones:', devoluciones30d)
   
-  console.log('🔍 DEBUG EERR - Calculado igual que eerr-report.tsx:')
-  console.log('Ventas totales 30d:', ingresoTotal30Dias)
-  console.log('Comisiones (sin envíos) 30d:', comisiones30Dias)
-  console.log('Envíos 30d:', costoEnvio30Dias)
-  console.log('Publicidad 30d:', gastosPublicidad30Dias)
-  console.log('Gastos Negocio 30d:', gastosNegocio30Dias, '(otros:', totalOtrosGastosNegocio, '+ dif envíos:', diferenciaEnvios, ')')
-  console.log('Pérdidas Devoluciones 30d:', perdidasDevoluciones30Dias, '(de', devols.length, 'devoluciones)')
+  // Calcular porcentajes sobre ventas
+  const pctComisiones = ventasTotales30d > 0 ? comisionesNetas30d / ventasTotales30d : 0
+  const pctEnvio = ventasTotales30d > 0 ? enviosTotales30d / ventasTotales30d : 0
+  const pctGastosNegocio = ventasTotales30d > 0 ? gastosNegocio30d / ventasTotales30d : 0
+  const pctDevoluciones = ventasTotales30d > 0 ? devoluciones30d / ventasTotales30d : 0
+  const pctPublicidad = ventasTotales30d > 0 ? publicidad30d / ventasTotales30d : 0
   
-  // Calcular porcentajes sobre ventas de los últimos 30 días
-  const pctComisiones = ingresoTotal30Dias > 0 ? (comisiones30Dias / ingresoTotal30Dias) : 0
-  const pctEnvio = ingresoTotal30Dias > 0 ? (costoEnvio30Dias / ingresoTotal30Dias) : 0
-  const pctGastosNegocio = ingresoTotal30Dias > 0 ? (gastosNegocio30Dias / ingresoTotal30Dias) : 0
-  const pctDevoluciones = ingresoTotal30Dias > 0 ? (perdidasDevoluciones30Dias / ingresoTotal30Dias) : 0
-  const pctPublicidad = ingresoTotal30Dias > 0 ? (gastosPublicidad30Dias / ingresoTotal30Dias) : 0
+  console.log('📈 PORCENTAJES CALCULADOS:')
+  console.log('% Comisiones:', (pctComisiones * 100).toFixed(2))
+  console.log('% Envíos:', (pctEnvio * 100).toFixed(2))
+  console.log('% Gastos Negocio:', (pctGastosNegocio * 100).toFixed(2))
+  console.log('% Devoluciones:', (pctDevoluciones * 100).toFixed(2))
+  console.log('% Publicidad:', (pctPublicidad * 100).toFixed(2))
 
   // ========== PROYECCIÓN FUTURA (si vendemos todo el stock) ==========
   // Facturación futura = PV × Stock de cada producto
