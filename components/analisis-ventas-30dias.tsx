@@ -18,12 +18,13 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        // Calcular EERR de los últimos 30 días
-        const fechaHoy = new Date()
-        const fecha30DiasAtras = new Date()
-        fecha30DiasAtras.setDate(fecha30DiasAtras.getDate() - 30)
+        // Calcular EERR de los últimos 30 días - MISMA LÓGICA QUE eerr-report.tsx
+        const fechaHasta = new Date()
+        const fechaDesde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        
+        console.log('📅 FECHAS EERR:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString() })
 
-        const datos = await calcularEERR(fecha30DiasAtras, fechaHoy, "General")
+        const datos = await calcularEERR(fechaDesde, fechaHasta, "General")
         setEerrData(datos)
       } catch (error) {
         console.error("Error al cargar datos EERR:", error)
