@@ -62,21 +62,51 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
     )
   }
 
-  // ========== USAR DATOS DEL EERR DIRECTAMENTE - SIN RECALCULAR NADA ==========
-  const ingresoTotal30Dias = eerrData.ventasTotales
-  const comisiones30Dias = eerrData.comisionesNetas
-  const costoEnvio30Dias = eerrData.enviosTotales
-  const gastosPublicidad30Dias = eerrData.publicidad
-  const gastosNegocio30Dias = eerrData.otrosGastos
-  const perdidasDevoluciones30Dias = eerrData.perdidasPorDevoluciones || 0
+  // ========== CALCULAR EXACTAMENTE IGUAL QUE EERR-REPORT.TSX ==========
   
-  console.log('🔍 DEBUG EERR - Datos directos de calcularEERR():')
+  // Categorías a excluir (mismas que eerr-report)
+  const categoriasExcluirEERR = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio", "Pago de Importación"]
+  
+  // 1. VENTAS Y COMISIONES - directo del EERR
+  const ingresoTotal30Dias = eerrData.ventasTotales || 0
+  const comisiones30Dias = eerrData.comisionesNetas || 0 // Comisiones netas (base + IVA + IIBB)
+  const costoEnvio30Dias = eerrData.enviosTotales || 0
+  
+  // 2. PUBLICIDAD - directo del EERR
+  const gastosPublicidad30Dias = eerrData.publicidad || 0
+  
+  // 3. DEVOLUCIONES - calcular de detalleDevoluciones con perdida_total (igual que eerr-report)
+  const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
+  const perdidasDevoluciones30Dias = devols.length > 0
+    ? devols.reduce((acc: number, d: any) => acc + Number(d.perdida_total || 0), 0)
+    : (eerrData.devolucionesPerdidaTotal || 0)
+  
+  // 4. GASTOS DEL NEGOCIO - calcular de detalleOtrosGastos (igual que eerr-report)
+  const gastosNegocioArr = Array.isArray(eerrData.detalleOtrosGastos)
+    ? eerrData.detalleOtrosGastos.filter((g: any) =>
+        !categoriasExcluirEERR.includes(g.categoria) &&
+        g.categoria !== 'Gastos del negocio - Envios devoluciones'
+      )
+    : []
+  
+  // Envíos TN pagados vs costos plataforma
+  const enviosNegocioTN = gastosNegocioArr.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN')
+  const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
+  const totalEnviosCostosPlataformaTN = eerrData.envios || 0 // Solo TN de costos plataforma
+  const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
+  
+  // Otros gastos (sin envíos TN)
+  const otrosGastosNegocio = gastosNegocioArr.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
+  const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
+  const gastosNegocio30Dias = totalOtrosGastosNegocio + diferenciaEnvios
+  
+  console.log('🔍 DEBUG EERR - Calculado igual que eerr-report.tsx:')
   console.log('Ventas totales 30d:', ingresoTotal30Dias)
-  console.log('Comisiones 30d:', comisiones30Dias)
+  console.log('Comisiones (sin envíos) 30d:', comisiones30Dias)
   console.log('Envíos 30d:', costoEnvio30Dias)
   console.log('Publicidad 30d:', gastosPublicidad30Dias)
-  console.log('Gastos Negocio 30d:', gastosNegocio30Dias)
-  console.log('Pérdidas Devoluciones 30d:', perdidasDevoluciones30Dias)
+  console.log('Gastos Negocio 30d:', gastosNegocio30Dias, '(otros:', totalOtrosGastosNegocio, '+ dif envíos:', diferenciaEnvios, ')')
+  console.log('Pérdidas Devoluciones 30d:', perdidasDevoluciones30Dias, '(de', devols.length, 'devoluciones)')
   
   // Calcular porcentajes sobre ventas de los últimos 30 días
   const pctComisiones = ingresoTotal30Dias > 0 ? (comisiones30Dias / ingresoTotal30Dias) : 0
