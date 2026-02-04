@@ -34,17 +34,17 @@ const columns = [
     key: "stockTotal",
     header: "Stock Total",
     render: (producto: any) => {
-      const stockTotal = Number(producto.stockPropio || 0) + Number(producto.stockFull || 0);
-      return stockTotal.toLocaleString();
+      const stockTotal = Number(producto.stockTotal || producto.stockPropio || 0) + Number(producto.stockFull || 0)
+      return stockTotal.toLocaleString()
     },
   },
   {
     key: "patrimonioProducto",
     header: "Patrimonio",
     render: (producto: any) => {
-      const stockTotal = Number(producto.stockPropio || 0) + Number(producto.stockFull || 0);
-      const patrimonio = Number(producto.costoUnitarioARS || 0) * stockTotal;
-      return `$${patrimonio.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const stockTotal = Number(producto.stockTotal || producto.stockPropio || 0) + Number(producto.stockFull || 0)
+      const patrimonio = Number(producto.costoUnitarioARS || 0) * stockTotal
+      return `$${patrimonio.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     },
   },
   {

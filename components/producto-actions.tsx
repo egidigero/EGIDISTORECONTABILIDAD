@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
@@ -14,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { MoreHorizontal, Edit, Trash2, Calculator } from "lucide-react"
+import { MoreHorizontal, Edit, Trash2, Calculator, Plus } from "lucide-react"
 import { deleteProducto, updateProducto } from "@/lib/actions/productos"
 import { getProductoById } from "@/lib/actions/productos"
 import { useRouter } from "next/navigation"
@@ -46,6 +49,12 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
   const [showMovimientos, setShowMovimientos] = useState(false)
   const [costosEstimados, setCostosEstimados] = useState<any>(null)
   const [loadingCostos, setLoadingCostos] = useState(false)
+  const [showAgregarMovimiento, setShowAgregarMovimiento] = useState(false)
+  const [tipoMovimiento, setTipoMovimiento] = useState<'entrada' | 'salida'>('entrada')
+  const [cantidadMovimiento, setCantidadMovimiento] = useState(0)
+  const [depositoMovimiento, setDepositoMovimiento] = useState('PROPIO')
+  const [observacionesMovimiento, setObservacionesMovimiento] = useState('')
+  const [isSubmittingMovimiento, setIsSubmittingMovimiento] = useState(false)
   const router = useRouter()
 
   // Handler para cuando se calcula un nuevo precio en la calculadora
@@ -117,6 +126,68 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
     }
   }
 
+  const handleGuardarMovimiento = async () => {
+    if (cantidadMovimiento <= 0) {
+      toast({
+        title: "Error",
+        description: "La cantidad debe ser mayor a 0",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const stockActual = Number(producto.stockTotal || producto.stockPropio || 0)
+    if (tipoMovimiento === 'salida' && cantidadMovimiento > stockActual) {
+      toast({
+        title: "Error",
+        description: `No puedes sacar más stock del disponible (${stockActual} unidades)`,
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsSubmittingMovimiento(true)
+    try {
+      const { createClient } = await import("@/lib/supabase/client")
+      const supabase = createClient()
+
+      const { error } = await supabase.from('movimientos_stock').insert({
+        producto_id: producto.id,
+        tipo: tipoMovimiento,
+        cantidad: cantidadMovimiento,
+        deposito_origen: depositoMovimiento,
+        fecha: new Date().toISOString(),
+        observaciones: observacionesMovimiento || `${tipoMovimiento === 'entrada' ? 'Entrada' : 'Salida'} manual de stock`,
+        origen_tipo: 'ajuste',
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "Movimiento registrado",
+        description: `Se ${tipoMovimiento === 'entrada' ? 'agregaron' : 'quitaron'} ${cantidadMovimiento} unidades`,
+      })
+
+      // Resetear formulario
+      setCantidadMovimiento(0)
+      setObservacionesMovimiento('')
+      setShowAgregarMovimiento(false)
+
+      // Actualizar datos
+      if (onUpdate) await onUpdate()
+      router.refresh()
+    } catch (error) {
+      console.error("Error al guardar movimiento:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo registrar el movimiento",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSubmittingMovimiento(false)
+    }
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -126,7 +197,11 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setShowEditModal(true)}>
+          <DropdownMenuItem onClick={async () => {
+            const prod = await getProductoById(producto.id)
+            setEditProducto(prod)
+            setShowEditModal(true)
+          }}>
             <Edit className="w-4 h-4 mr-2" /> Editar
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setShowCalculadora(true)}>
@@ -166,9 +241,94 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
       <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
         <DialogContent className="max-w-4xl max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle className="text-xl">Movimientos de Stock - {producto.modelo}</DialogTitle>
-            <p className="text-sm text-muted-foreground">Stock actual: {producto.stockPropio || 0} unidades</p>
+            <DialogTitle className="text-xl flex items-center justify-between">
+              <span>Movimientos de Stock - {producto.modelo}</span>
+              <Button size="sm" onClick={() => setShowAgregarMovimiento(!showAgregarMovimiento)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {showAgregarMovimiento ? 'Cancelar' : 'Agregar Movimiento'}
+              </Button>
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">Stock actual: {producto.stockTotal || producto.stockPropio || 0} unidades</p>
           </DialogHeader>
+
+          {/* Formulario para agregar movimiento */}
+          {showAgregarMovimiento && (
+            <div className="p-4 border rounded-lg bg-gray-50 space-y-4">
+              <h3 className="font-semibold">Nuevo Movimiento Manual</h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tipo de Movimiento</Label>
+                  <Select value={tipoMovimiento} onValueChange={(value: 'entrada' | 'salida') => setTipoMovimiento(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="entrada">➕ Entrada (Agregar stock)</SelectItem>
+                      <SelectItem value="salida">➖ Salida (Quitar stock)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Cantidad</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={cantidadMovimiento}
+                    onChange={(e) => setCantidadMovimiento(Number(e.target.value))}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Depósito</Label>
+                  <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PROPIO">PROPIO</SelectItem>
+                      <SelectItem value="FULL">FULL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Observaciones</Label>
+                  <Input
+                    type="text"
+                    value={observacionesMovimiento}
+                    onChange={(e) => setObservacionesMovimiento(e.target.value)}
+                    placeholder="Ej: Ajuste por inventario físico"
+                  />
+                </div>
+              </div>
+
+              {cantidadMovimiento > 0 && (
+                <div className={`p-3 rounded border ${tipoMovimiento === 'entrada' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                  <div className="text-sm font-medium">
+                    Nuevo stock: {tipoMovimiento === 'entrada' 
+                      ? (Number(producto.stockTotal || producto.stockPropio || 0) + cantidadMovimiento)
+                      : (Number(producto.stockTotal || producto.stockPropio || 0) - cantidadMovimiento)} unidades
+                    {tipoMovimiento === 'salida' && cantidadMovimiento > Number(producto.stockTotal || producto.stockPropio || 0) && (
+                      <span className="text-red-600 block mt-1">⚠️ Stock insuficiente</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button onClick={handleGuardarMovimiento} disabled={isSubmittingMovimiento || cantidadMovimiento <= 0}>
+                  {isSubmittingMovimiento ? 'Guardando...' : 'Guardar Movimiento'}
+                </Button>
+                <Button variant="outline" onClick={() => setShowAgregarMovimiento(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 120px)" }}>
             {(() => {
               const movimientosProducto = movimientos?.filter(m => String(m.producto_id) === String(producto.id)) || []
@@ -270,68 +430,24 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
           </div>
         </DialogContent>
       </Dialog>
-    </>
-  )
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-8 w-8 p-0">
-            <span className="sr-only">Abrir menú</span>
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={async () => {
-              const prod = await getProductoById(producto.id)
-              setEditProducto(prod)
-              setShowEditModal(true)
-            }}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={() => setShowCalculadora(true)}
-            onSelect={(e) => e.preventDefault()}
-          >
-            <Calculator className="mr-2 h-4 w-4" />
-            Calculadora
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
-            <span style={{ color: "#000" }}>Eliminar</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
 
       {/* Modal de edición */}
-      {showEditModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.2)" }}
-          onClick={async () => {
-            setShowEditModal(false);
-            if (onUpdate) await onUpdate();
-          }}
-        >
-          <div
-            className="bg-white border rounded shadow-lg p-4 max-w-md w-full m-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-xl font-bold mb-4">Editar Producto</h2>
-            {editProducto && (
-              <ProductoForm
-                producto={editProducto}
-                onSuccess={async () => {
-                  setShowEditModal(false);
-                  if (onUpdate) await onUpdate();
-                }}
-              />
-            )}
-          </div>
-        </div>
-      )}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Producto</DialogTitle>
+          </DialogHeader>
+          {editProducto && (
+            <ProductoForm
+              producto={editProducto}
+              onSuccess={async () => {
+                setShowEditModal(false)
+                if (onUpdate) await onUpdate()
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Calculadora de precios */}
       <CalculadoraPrecios
@@ -344,253 +460,6 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         productoId={Number(producto.id)}
         productoSku={producto.sku}
       />
-
-      {/* Modal de Movimientos */}
-      <Dialog open={showMovimientos} onOpenChange={setShowMovimientos}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>📦 Movimientos de Stock - {producto.modelo}</DialogTitle>
-          </DialogHeader>
-          
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            {/* Margen Operativo */}
-            <div className="border rounded-lg p-4 bg-blue-50">
-              <div className="text-lg font-semibold mb-3 text-blue-900">Margen Operativo</div>
-              {loadingCostos ? (
-                <div className="text-sm text-muted-foreground">Cargando...</div>
-              ) : costosEstimados ? (
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Resultado Bruto:</span>
-                    <span className="font-mono font-semibold text-green-600">
-                      ${((costosEstimados.precioVentaPromedio || 0) - (producto.costoUnitarioARS || 0)).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Costos Plataforma:</span>
-                    <span className="font-mono font-semibold text-red-600">
-                      -${((costosEstimados.precioVentaPromedio || 0) * 0.35).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Devoluciones estimadas:</span>
-                    <span className="font-mono font-semibold text-red-600">
-                      -${(costosEstimados.costoDevolucionesPorVenta || 0).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Gastos negocio estimados:</span>
-                    <span className="font-mono font-semibold text-red-600">
-                      -${(costosEstimados.costoGastosNegocioPorVenta || 0).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="h-px bg-gray-300 my-2"></div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Margen Operativo:</span>
-                    <span className="font-mono font-bold text-blue-600">
-                      ${(
-                        ((costosEstimados.precioVentaPromedio || 0) - (producto.costoUnitarioARS || 0)) -
-                        ((costosEstimados.precioVentaPromedio || 0) * 0.35) -
-                        (costosEstimados.costoDevolucionesPorVenta || 0) -
-                        (costosEstimados.costoGastosNegocioPorVenta || 0)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Sin datos de últimos 30 días</div>
-              )}
-            </div>
-
-            {/* Margen Final */}
-            <div className="border rounded-lg p-4 bg-purple-50">
-              <div className="text-lg font-semibold mb-3 text-purple-900">Margen Final</div>
-              {loadingCostos ? (
-                <div className="text-sm text-muted-foreground">Cargando...</div>
-              ) : costosEstimados ? (
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Margen Operativo:</span>
-                    <span className="font-mono font-semibold text-blue-600">
-                      ${(
-                        ((costosEstimados.precioVentaPromedio || 0) - (producto.costoUnitarioARS || 0)) -
-                        ((costosEstimados.precioVentaPromedio || 0) * 0.35) -
-                        (costosEstimados.costoDevolucionesPorVenta || 0) -
-                        (costosEstimados.costoGastosNegocioPorVenta || 0)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      Publicidad (ROAS {costosEstimados.roas > 0 ? costosEstimados.roas.toFixed(1) : '5'}):
-                    </span>
-                    <span className="font-mono font-semibold text-red-600">
-                      -${(
-                        costosEstimados.roas > 0 
-                          ? (costosEstimados.precioVentaPromedio || 0) / costosEstimados.roas 
-                          : (costosEstimados.precioVentaPromedio || 0) / 5
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="h-px bg-gray-300 my-2"></div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Margen Neto:</span>
-                    <span className="font-mono font-bold text-purple-600">
-                      ${(
-                        ((costosEstimados.precioVentaPromedio || 0) - (producto.costoUnitarioARS || 0)) -
-                        ((costosEstimados.precioVentaPromedio || 0) * 0.35) -
-                        (costosEstimados.costoDevolucionesPorVenta || 0) -
-                        (costosEstimados.costoGastosNegocioPorVenta || 0) -
-                        (costosEstimados.roas > 0 
-                          ? (costosEstimados.precioVentaPromedio || 0) / costosEstimados.roas 
-                          : (costosEstimados.precioVentaPromedio || 0) / 5)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Sin datos de últimos 30 días</div>
-              )}
-            </div>
-
-            {/* Datos de referencia */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <div className="text-lg font-semibold mb-3">📊 Datos (30 días)</div>
-              {loadingCostos ? (
-                <div className="text-sm text-muted-foreground">Cargando...</div>
-              ) : costosEstimados ? (
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Precio venta prom:</span>
-                    <span className="font-mono">${(costosEstimados.precioVentaPromedio || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Envío promedio:</span>
-                    <span className="font-mono">${(costosEstimados.envioPromedio || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total ventas:</span>
-                    <span className="font-mono">{costosEstimados.totalVentas || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Devoluciones:</span>
-                    <span className="font-mono">{costosEstimados.cantidadDevoluciones || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ROAS:</span>
-                    <span className="font-mono font-semibold">{costosEstimados.roas > 0 ? costosEstimados.roas.toFixed(1) : 'N/A'}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Sin datos de últimos 30 días</div>
-              )}
-            </div>
-          </div>
-
-          {/* Tabla de movimientos */}
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-semibold mb-3">Historial de Movimientos</h3>
-            {movimientos && movimientos?.length && movimientos.length > 0 ? (
-              <div className="space-y-2">
-                <div className="grid grid-cols-7 gap-2 text-xs font-semibold border-b pb-2 bg-gray-50 px-2 py-1">
-                  <div>Fecha</div>
-                  <div>Tipo</div>
-                  <div className="text-right">Cantidad</div>
-                  <div>Origen</div>
-                  <div>Destino</div>
-                  <div>Categoría</div>
-                  <div>Observaciones</div>
-                </div>
-                {movimientos?.map((mov: any, idx: number) => {
-                  const esEntrada = mov.tipo === 'entrada'
-                  const esSalida = mov.tipo === 'salida'
-                  
-                  // Determinar icono y color según origen
-                  let origenLabel = mov.origen_tipo || '-'
-                  let origenColor = 'bg-gray-100 text-gray-700'
-                  let origenIcon = ''
-                  
-                  if (mov.origen_tipo === 'venta') {
-                    origenLabel = '🛒 Venta'
-                    origenColor = 'bg-red-100 text-red-700'
-                  } else if (mov.origen_tipo === 'devolucion' || mov.origen_tipo === 'reincorporacion') {
-                    origenLabel = '↩️ Devolución'
-                    origenColor = 'bg-green-100 text-green-700'
-                  } else if (mov.origen_tipo === 'ingreso_manual') {
-                    origenLabel = '➕ Ingreso manual'
-                    origenColor = 'bg-blue-100 text-blue-700'
-                  } else if (mov.origen_tipo === 'ajuste') {
-                    origenLabel = '⚙️ Ajuste'
-                    origenColor = 'bg-yellow-100 text-yellow-700'
-                  }
-                  
-                  return (
-                    <div key={idx} className="grid grid-cols-7 gap-2 text-xs border-b pb-2 px-2 py-1 hover:bg-gray-50">
-                      <div className="text-muted-foreground">
-                        {new Date(mov.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
-                        <div className="text-[10px] text-gray-400">
-                          {new Date(mov.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      <div>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                          esEntrada ? 'bg-green-100 text-green-700' :
-                          esSalida ? 'bg-red-100 text-red-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {esEntrada ? '⬆️ Entrada' : esSalida ? '⬇️ Salida' : 'Ajuste'}
-                        </span>
-                      </div>
-                      <div className={`font-mono text-right font-semibold ${esEntrada ? 'text-green-600' : esSalida ? 'text-red-600' : ''}`}>
-                        {esEntrada ? '+' : esSalida ? '-' : ''}{mov.cantidad}
-                      </div>
-                      <div className="text-muted-foreground text-xs">{mov.deposito_origen}</div>
-                      <div className="text-muted-foreground text-xs">{mov.deposito_destino || '-'}</div>
-                      <div>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${origenColor}`}>
-                          {origenLabel}
-                        </span>
-                      </div>
-                      <div className="text-muted-foreground text-xs truncate" title={mov.observaciones}>
-                        {mov.observaciones || '-'}
-                      </div>
-                    </div>
-                  )
-                })}
-                
-                {/* Resumen */}
-                <div className="mt-4 pt-4 border-t bg-gray-50 p-3 rounded">
-                  <div className="text-sm font-semibold mb-2">📊 Resumen</div>
-                  <div className="grid grid-cols-3 gap-4 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">Total entradas</div>
-                      <div className="font-mono font-semibold text-green-600">
-                        +{movimientos?.filter((m: any) => m.tipo === 'entrada').reduce((sum: number, m: any) => sum + m.cantidad, 0) || 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Total salidas</div>
-                      <div className="font-mono font-semibold text-red-600">
-                        -{movimientos?.filter((m: any) => m.tipo === 'salida').reduce((sum: number, m: any) => sum + m.cantidad, 0) || 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Movimientos totales</div>
-                      <div className="font-mono font-semibold">{movimientos?.length || 0}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <div className="text-4xl mb-2">📦</div>
-                <div className="font-medium">No hay movimientos registrados</div>
-                <div className="text-xs mt-1">Los movimientos de ventas, devoluciones e ingresos aparecerán aquí</div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
