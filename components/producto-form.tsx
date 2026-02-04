@@ -37,6 +37,8 @@ interface ProductoFormProps {
 
 export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [ajusteEntrada, setAjusteEntrada] = useState(0)
+  const [ajusteSalida, setAjusteSalida] = useState(0)
   const router = useRouter()
   const isEditing = !!producto
 
@@ -69,19 +71,90 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const onSubmit: SubmitHandler<ProductoFormInputs> = async (data) => {
     setIsSubmitting(true)
     try {
+      // Si estamos editando y hay ajustes, calcular el nuevo stock
+      let nuevoStock = data.stockPropio ?? 0
+      
+      if (isEditing && (ajusteEntrada > 0 || ajusteSalida > 0)) {
+        const stockActual = producto?.stockPropio ?? 0
+        nuevoStock = stockActual + ajusteEntrada - ajusteSalida
+        
+        if (nuevoStock < 0) {
+          toast({
+            title: "Error",
+            description: "No puedes sacar más stock del que tienes disponible.",
+            variant: "destructive",
+          })
+          setIsSubmitting(false)
+          return
+        }
+      }
+
       // Convertir a ProductoFormData con valores por defecto si es necesario
       const productData: ProductoFormData = {
         modelo: data.modelo,
         sku: data.sku,
         costoUnitarioARS: data.costoUnitarioARS,
         precio_venta: data.precio_venta ?? 0,
-        stockPropio: data.stockPropio ?? 0,
+        stockPropio: nuevoStock,
         stockFull: data.stockFull ?? 0,
         activo: data.activo ?? true,
       }
+      
       const result = isEditing ? await updateProducto(producto.id, productData) : await createProducto(productData)
       
       if (result.success) {
+        // Si estamos editando y hay ajustes, crear movimientos
+        if (isEditing && (ajusteEntrada > 0 || ajusteSalida > 0)) {
+          const { createClient } = await import("@/lib/supabase/client")
+          const supabase = createClient()
+          
+          const movimientos = []
+          
+          if (ajusteEntrada > 0) {
+            movimientos.push({
+              producto_id: producto.id,
+              tipo: 'entrada',
+              cantidad: ajusteEntrada,
+              deposito_origen: 'PROPIO',
+              fecha: new Date().toISOString(),
+              observaciones: 'Ajuste manual de stock - Entrada',
+              origen_tipo: 'ajuste',
+            })
+          }
+          
+          if (ajusteSalida > 0) {
+            movimientos.push({
+              producto_id: producto.id,
+              tipo: 'salida',
+              cantidad: ajusteSalida,
+              deposito_origen: 'PROPIO',
+              fecha: new Date().toISOString(),
+              observaciones: 'Ajuste manual de stock - Salida',
+              origen_tipo: 'ajuste',
+            })
+          }
+          
+          for (const movimiento of movimientos) {
+            await supabase.from('movimientos_stock').insert(movimiento)
+          }
+        }
+        
+        // Si es una creación y hay stock inicial, crear movimiento inicial
+        if (!isEditing && nuevoStock > 0 && result.data?.id) {
+          const { createClient } = await import("@/lib/supabase/client")
+          const supabase = createClient()
+          
+          await supabase.from('movimientos_stock').insert({
+            producto_id: result.data.id,
+            tipo: 'entrada',
+            cantidad: nuevoStock,
+            deposito_origen: 'PROPIO',
+            fecha: new Date().toISOString(),
+            observaciones: 'Inventario inicial - Stock de apertura',
+            origen_tipo: 'ingreso_manual',
+          })
+        }
+        
         toast({
           title: isEditing ? "Producto actualizado" : "Producto creado",
           description: `El producto ${productData.modelo} ha sido ${isEditing ? "actualizado" : "creado"} correctamente.`,
@@ -174,18 +247,63 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
             <div className="space-y-2">
               <Label htmlFor="stockPropio">Stock propio</Label>
               {isEditing && producto?.stockPropio !== undefined ? (
-                <div className="text-xs text-muted-foreground mb-1">Stock actual: <span className="font-bold">{producto.stockPropio}</span></div>
-              ) : null}
-              <Input
-                id="stockPropio"
+                <>
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-2">
+                    <div className="text-sm font-medium text-blue-900">Stock actual: {producto.stockPropio} unidades</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="ajuste_entrada" className="text-xs">Agregar (+)</Label>
+                      <Input
+                        id="ajuste_entrada"
+                        type="number"
+                        min={0}
+                        value={ajusteEntrada}
+                        onChange={(e) => setAjusteEntrada(Number(e.target.value))}
+                        placeholder="0"
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="ajuste_salida" className="text-xs">Sacar (-)</Label>
+                      <Input
+                        id="ajuste_salida"
+                        type="number"
+                        min={0}
+                        value={ajusteSalida}
+                        onChange={(e) => setAjusteSalida(Number(e.target.value))}
+                        placeholder="0"
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+                  {(ajusteEntrada > 0 || ajusteSalida > 0) && (
+                    <div className="p-2 bg-yellow-50 rounded border border-yellow-200 mt-2">
+                      <div className="text-xs text-yellow-900">
+                        Nuevo stock: {producto.stockPropio + ajusteEntrada - ajusteSalida} unidades
+                      </div>
+                    </div>
+                  )}
+                  <Input
+                    id="stockPropio"
+                    type="number"
+                    min={0}
+                    {...register("stockPropio", { valueAsNumber: true })}
+                    defaultValue={producto.stockPropio}
+                    className="hidden"
+                  />
+                </>
+              ) : (
+                <Input
+                  id="stockPropio"
                   type="number"
                   min={0}
                   {...register("stockPropio", { valueAsNumber: true })}
-                  defaultValue={isEditing && producto?.stockPropio !== undefined ? producto.stockPropio : undefined}
                   placeholder="0"
                 />
-                {errors.stockPropio && <p className="text-sm text-destructive">{errors.stockPropio.message}</p>}
-              </div>
+              )}
+              {errors.stockPropio && <p className="text-sm text-destructive">{errors.stockPropio.message}</p>}
+            </div>
               <div className="space-y-2">
                 <Label htmlFor="stockFull">Stock full</Label>
                 {isEditing && producto?.stockFull !== undefined ? (
