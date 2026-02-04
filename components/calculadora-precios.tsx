@@ -13,6 +13,7 @@ import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, LineChart, Line, ReferenceLine } from "recharts"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
+import { getRecargoCuotasMP } from "@/lib/calculos"
 
 interface CalculadoraPreciosProps {
   costoProducto: number
@@ -40,6 +41,7 @@ interface ParametrosCalculo {
   comisionManual?: number // Valor de comisión manual
   costoDevoluciones: number // Costo estimado de devoluciones por venta
   costoGastosNegocio: number // Costo estimado de gastos del negocio por venta
+  cuotas?: number // Cantidad de cuotas para TN + MercadoPago + Cuotas sin interés
 }
 
 interface TarifaData {
@@ -168,6 +170,43 @@ export function CalculadoraPrecios({
   const [datosReales30Dias, setDatosReales30Dias] = useState<DatosReales30Dias | null>(null)
   const [loadingDatosReales, setLoadingDatosReales] = useState(false)
 
+  // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
+  useEffect(() => {
+    if (parametros.plataforma === "ML") {
+      setParametros(prev => {
+        const updates: any = { metodoPago: "MercadoPago" };
+        // Si la condición es Transferencia, cambiarla a Normal
+        if (prev.condicion === "Transferencia") {
+          updates.condicion = "Normal";
+        }
+        return { ...prev, ...updates };
+      });
+    }
+  }, [parametros.plataforma]);
+
+  // Para TN + MercadoPago: si está en Transferencia, cambiar a Normal
+  useEffect(() => {
+    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago") {
+      if (parametros.condicion === "Transferencia") {
+        setParametros(prev => ({ ...prev, condicion: "Normal" }));
+      }
+    }
+  }, [parametros.plataforma, parametros.metodoPago, parametros.condicion]);
+
+  // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interés
+  useEffect(() => {
+    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Cuotas sin interés") {
+      if (!parametros.cuotas) {
+        setParametros(prev => ({ ...prev, cuotas: 1 })); // Default: 1 cuota (contado)
+      }
+    } else {
+      // Limpiar cuotas si no aplica
+      if (parametros.cuotas) {
+        setParametros(prev => ({ ...prev, cuotas: undefined }));
+      }
+    }
+  }, [parametros.plataforma, parametros.metodoPago, parametros.condicion, parametros.cuotas]);
+
   // Cargar tarifa cuando cambien los parámetros de plataforma
   useEffect(() => {
     async function cargarTarifa() {
@@ -258,19 +297,33 @@ export function CalculadoraPrecios({
 
     // 3. Costos de Plataforma usando tarifas reales sobre precio con descuento
     // Si usarComisionManual, usar el valor manual para la comisión base
-    const comision = parametros.usarComisionManual && parametros.comisionManual !== undefined
+    let comision = parametros.usarComisionManual && parametros.comisionManual !== undefined
       ? parametros.comisionManual
       : precioConDescuento * tarifa.comisionPct
-    // Para TN+MercadoPago+Transferencia, la comisión extra es directa, sin IVA ni IIBB
-    const comisionExtra = parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia"
-      ? precioConDescuento * (tarifa.comisionExtraPct || 0)
-      : (precioConDescuento * (tarifa.comisionExtraPct || 0))
+    
+    // Para TN + MercadoPago + Cuotas sin interés: agregar recargo por cuotas
+    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Cuotas sin interés") {
+      const cuotasValue = parametros.cuotas || 1
+      const recargoMP = getRecargoCuotasMP(cuotasValue)
+      const comisionMPAdicional = precioConDescuento * recargoMP
+      comision = comision + comisionMPAdicional // Comisión total MP (base + recargo cuotas)
+    }
+    
+    const comisionExtra = precioConDescuento * (tarifa.comisionExtraPct || 0)
     const envio = parametros.costoEnvio
     
-    let iva = 0
-    let iibb = 0
-    let comisionSinIva = comision
-    let comisionExtraSinIva = comisionExtra
+    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago") {
+      // La comisión MP completa (base + recargo cuotas) NO incluye IVA
+      comisionSinIva = comision
+      const ivaMP = comision * 0.21 // IVA 21% sobre comisión MP total
+      
+      // comisionExtra = Comisión TN (SÍ incluye IVA)
+      comisionExtraSinIva = comisionExtra / 1.21
+      const ivaTN = comisionExtra - comisionExtraSinIva
+      iva = ivaMP + ivaTN // IVA total
+      
+      // IIBB: 3% sobre comisiones (manual en venta-form, aquí calculado)
+      iibb = (comision + comisionExtra) * 0.03
 
     // Lógica especial TN + MercadoPago + Transferencia
     if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Transferencia") {
@@ -460,7 +513,8 @@ export function CalculadoraPrecios({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {parametros.plataforma === "TN" && (
+                      {/* Transferencia solo para TN + PagoNube */}
+                      {parametros.plataforma === "TN" && parametros.metodoPago === "PagoNube" && (
                         <SelectItem value="Transferencia">Transferencia</SelectItem>
                       )}
                       <SelectItem value="Cuotas sin interés">Cuotas sin interés</SelectItem>
@@ -470,7 +524,31 @@ export function CalculadoraPrecios({
                   {parametros.plataforma === "ML" && (
                     <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin interés y Normal</p>
                   )}
+                  {parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && (
+                    <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin interés y Normal</p>
+                  )}
                 </div>
+
+                {/* Campo Cuotas: solo para TN + MercadoPago + "Cuotas sin interés" */}
+                {parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Cuotas sin interés" && (
+                  <div className="space-y-2">
+                    <Label>Cantidad de Cuotas</Label>
+                    <Select
+                      value={parametros.cuotas?.toString() || "1"}
+                      onValueChange={(value) => setParametros(prev => ({ ...prev, cuotas: parseInt(value) }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 cuota (contado) - 8.15%</SelectItem>
+                        <SelectItem value="2">2 cuotas sin interés - 8.58%</SelectItem>
+                        <SelectItem value="3">3 cuotas sin interés - 12.05%</SelectItem>
+                        <SelectItem value="6">6 cuotas sin interés - 13.95%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Precio de Venta (ARS)</Label>
