@@ -13,6 +13,7 @@ interface AnalisisVentas30DiasProps {
 
 export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   const [eerrData, setEerrData] = useState<any>(null)
+  const [devoluciones, setDevoluciones] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -23,8 +24,19 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
         const fecha30DiasAtras = new Date()
         fecha30DiasAtras.setDate(fecha30DiasAtras.getDate() - 30)
 
-        const datos = await calcularEERR(fecha30DiasAtras, fechaHoy, "General")
+        const [datos, todasDevoluciones] = await Promise.all([
+          calcularEERR(fecha30DiasAtras, fechaHoy, "General"),
+          getDevoluciones()
+        ])
+        
+        // Filtrar devoluciones de los últimos 30 días
+        const devolucionesFiltradas = (todasDevoluciones || []).filter((dev: any) => {
+          const fechaDev = new Date(dev.fecha_devolucion)
+          return fechaDev >= fecha30DiasAtras
+        })
+        
         setEerrData(datos)
+        setDevoluciones(devolucionesFiltradas)
       } catch (error) {
         console.error("Error al cargar datos EERR:", error)
       } finally {
@@ -68,8 +80,43 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   const gastosPublicidad30Dias = eerrData.publicidad
   const gastosNegocio30Dias = eerrData.otrosGastos
   
-  // Calcular pérdidas por devoluciones desde el EERR
-  const perdidasDevoluciones30Dias = eerrData.resultadoBruto - eerrData.totalCostosPlataformaAjustado - eerrData.margenOperativo
+  // Calcular pérdidas por devoluciones con la MISMA lógica exacta que el EERR
+  let perdidasDevoluciones30Dias = 0
+  for (const d of devoluciones) {
+    try {
+      // Normalizar producto_recuperable
+      const productoRecuperableRaw = d.producto_recuperable
+      const productoRecuperable = (
+        productoRecuperableRaw === true ||
+        productoRecuperableRaw === 'true' ||
+        productoRecuperableRaw === 't' ||
+        Number(productoRecuperableRaw || 0) === 1
+      )
+
+      // costo_producto_original: solo si NO es recuperable
+      const costoProductoOriginalRow = productoRecuperable ? 0 : Math.max(0, Number(d.costo_producto_original || 0))
+
+      // costo_producto_nuevo: si hay reemplazo
+      const costoProductoNuevoRow = Math.max(0, Number(d.costo_producto_nuevo || 0))
+
+      // costo_envio_nuevo: envío del reemplazo
+      const costoEnvioNuevoRow = Math.max(0, Number(d.costo_envio_nuevo || 0))
+
+      // Sumar a pérdidas
+      perdidasDevoluciones30Dias += costoProductoOriginalRow + costoProductoNuevoRow + costoEnvioNuevoRow
+    } catch (err) {
+      console.warn('Error procesando devolución en proyección', err)
+    }
+  }
+  
+  console.log('🔍 DEBUG FINAL:')
+  console.log('Ventas totales 30d:', ingresoTotal30Dias)
+  console.log('Comisiones 30d:', comisiones30Dias)
+  console.log('Envíos 30d:', costoEnvio30Dias)
+  console.log('Publicidad 30d:', gastosPublicidad30Dias)
+  console.log('Gastos Negocio 30d:', gastosNegocio30Dias)
+  console.log('Pérdidas Devoluciones 30d:', perdidasDevoluciones30Dias)
+  console.log('Devoluciones procesadas:', devoluciones.length)
   
   // Calcular porcentajes sobre ventas de los últimos 30 días
   const pctComisiones = ingresoTotal30Dias > 0 ? (comisiones30Dias / ingresoTotal30Dias) : 0
