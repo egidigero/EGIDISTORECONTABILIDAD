@@ -2392,12 +2392,26 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // Calcular ROAS GENERAL (todas las plataformas) de los últimos 30 días
     // Usar la misma fórmula que EERR: ROAS = Ventas totales (SIN reembolsos) / Publicidad
     
-    // Primero obtener TODAS las ventas a excluir (las que tienen devolución con reembolso o en devolución)
-    // NO filtrar por producto - ROAS debe ser general
-    const { data: devolucionesParaExcluir } = await supabase
+    // Primero obtener IDs de TODAS las ventas de los últimos 30 días (sin filtros)
+    const { data: ventasPara30d } = await supabase
+      .from('ventas')
+      .select('id')
+      .gte('fecha', fechaInicio)
+    
+    const ventaIds30d = ventasPara30d?.map(v => String(v.id)) || []
+    console.log('🔍 Total ventas 30d para verificar reembolsos:', ventaIds30d.length)
+    
+    // Ahora obtener TODAS las devoluciones (sin filtro de fecha) que correspondan a esas ventas
+    let devolucionesParaExcluirQuery = supabase
       .from('devoluciones_resumen')
       .select('venta_id, tipo_resolucion, estado')
-      .gte('fecha_compra', fechaInicio)
+    
+    if (ventaIds30d.length > 0) {
+      const ventaIdsQuoted = ventaIds30d.map(id => `'${id}'`).join(',')
+      devolucionesParaExcluirQuery = devolucionesParaExcluirQuery.in('venta_id', `(${ventaIdsQuoted})`)
+    }
+    
+    const { data: devolucionesParaExcluir } = await devolucionesParaExcluirQuery
     
     const ventaIdsExcluir = new Set<string>()
     for (const dev of devolucionesParaExcluir || []) {
@@ -2458,13 +2472,21 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.size)
     
     // Obtener gastos del negocio (GENERAL, no por producto) de los últimos 30 días
-    // Incluir todo excepto ADS (que ya se usa en ROAS) y Envíos (que están en costos de plataforma)
-    const { data: gastosNegocio } = await supabase
+    // Incluir todo EXCEPTO: ADS, Envíos, y Envíos devoluciones (estos ya están en otros costos)
+    const { data: gastosNegocio, error: errorGastosNegocio } = await supabase
       .from('gastos_ingresos')
-      .select('montoARS')
+      .select('montoARS, categoria')
       .eq('tipo', 'Gasto')
-      .not('categoria', 'in', '(\"Gastos del negocio - ADS\",\"Gastos del negocio - Envíos\")')
+      .neq('categoria', 'Gastos del negocio - ADS')
+      .neq('categoria', 'Gastos del negocio - Envios')
+      .neq('categoria', 'Gastos del negocio - Envios devoluciones')
+      .not('descripcion', 'ilike', '%Meta ADS%')
       .gte('fecha', fechaInicio)
+    
+    console.log('[getCostosEstimados30Dias] Gastos del negocio encontrados:', gastosNegocio?.length, 'error:', errorGastosNegocio)
+    if (gastosNegocio && gastosNegocio.length > 0) {
+      console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', gastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))
+    }
     
     const totalGastosNegocio = Math.round((gastosNegocio?.reduce((sum, g) => sum + (Number(g.montoARS) || 0), 0) || 0) * 100) / 100
     
