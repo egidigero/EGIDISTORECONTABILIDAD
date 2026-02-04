@@ -70,8 +70,9 @@ export function ProductosTableClient(props: ProductosTableClientProps) {
       return {
         ...col,
         render: (producto: any) => {
-          // Obtener movimientos específicos de este producto
-          const movimientosProducto = props.movimientosPorProducto?.[producto.id] || []
+          // Obtener movimientos específicos de este producto (convertir a string para buscar)
+          const movimientosProducto = props.movimientosPorProducto?.[String(producto.id)] || []
+          console.log('Producto ID:', producto.id, 'Movimientos encontrados:', movimientosProducto.length)
           return (
             <ProductoActions
               producto={producto}
