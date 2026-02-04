@@ -208,6 +208,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       if (producto) {
         getCostosEstimados30Dias(Number(productoId), plataforma, producto.sku)
           .then(datos => {
+            console.log('📊 Costos estimados recibidos:', datos)
             setCostosEstimados(datos)
           })
           .catch(err => {
