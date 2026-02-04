@@ -38,10 +38,10 @@ interface ProductoFormProps {
 
 export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [tipoMovimiento, setTipoMovimiento] = useState<'entrada' | 'salida'>('entrada')
-  const [cantidadMovimiento, setCantidadMovimiento] = useState(0)
-  const [observacionesMovimiento, setObservacionesMovimiento] = useState('')
-  const [depositoMovimiento, setDepositoMovimiento] = useState('PROPIO')
+  // Estados para stock inicial solo en modo creación
+  const [cantidadInicial, setCantidadInicial] = useState(0)
+  const [observacionesInicial, setObservacionesInicial] = useState('')
+  const [depositoInicial, setDepositoInicial] = useState('PROPIO')
   const router = useRouter()
   const isEditing = !!producto
 
@@ -88,42 +88,18 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
       const result = isEditing ? await updateProducto(producto.id, productData) : await createProducto(productData)
       
       if (result.success) {
-        const { createClient } = await import("@/lib/supabase/client")
-        const supabase = createClient()
-        
-        // Si estamos editando y hay movimiento, crear registro
-        if (isEditing && cantidadMovimiento > 0) {
-          // Validar stock suficiente para salidas
-          if (tipoMovimiento === 'salida' && cantidadMovimiento > (producto?.stockPropio ?? 0)) {
-            toast({
-              title: "Error",
-              description: "No puedes sacar más stock del que tienes disponible.",
-              variant: "destructive",
-            })
-            setIsSubmitting(false)
-            return
-          }
-          
-          await supabase.from('movimientos_stock').insert({
-            producto_id: producto.id,
-            tipo: tipoMovimiento,
-            cantidad: cantidadMovimiento,
-            deposito_origen: depositoMovimiento,
-            fecha: new Date().toISOString(),
-            observaciones: observacionesMovimiento || `${tipoMovimiento === 'entrada' ? 'Entrada' : 'Salida'} manual de stock`,
-            origen_tipo: 'ajuste',
-          })
-        }
-        
         // Si es una creación y hay stock inicial, crear movimiento inicial
-        if (!isEditing && cantidadMovimiento > 0 && result.data?.id) {
+        if (!isEditing && cantidadInicial > 0 && result.data?.id) {
+          const { createClient } = await import("@/lib/supabase/client")
+          const supabase = createClient()
+          
           await supabase.from('movimientos_stock').insert({
             producto_id: result.data.id,
             tipo: 'entrada',
-            cantidad: cantidadMovimiento,
-            deposito_origen: depositoMovimiento,
+            cantidad: cantidadInicial,
+            deposito_origen: depositoInicial,
             fecha: new Date().toISOString(),
-            observaciones: observacionesMovimiento || 'Inventario inicial - Stock de apertura',
+            observaciones: observacionesInicial || 'Inventario inicial - Stock de apertura',
             origen_tipo: 'ingreso_manual',
           })
         }
@@ -216,171 +192,77 @@ export function ProductoForm({ producto, onSuccess }: ProductoFormProps) {
             {errors.precio_venta && <p className="text-sm text-destructive">{errors.precio_venta.message}</p>}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="stockPropio">Stock propio</Label>
-              {isEditing && producto?.stockPropio !== undefined ? (
-                <>
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-3">
-                    <div className="text-sm font-medium text-blue-900">Stock actual: {producto.stockPropio} unidades</div>
-                  </div>
-                  
-                  <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                    <div className="text-sm font-medium text-gray-700">Registrar Movimiento de Stock</div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="tipoMovimiento" className="text-xs">Tipo de Movimiento</Label>
-                      <Select value={tipoMovimiento} onValueChange={(value: 'entrada' | 'salida') => setTipoMovimiento(value)}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="entrada">➕ Entrada (Agregar stock)</SelectItem>
-                          <SelectItem value="salida">➖ Salida (Quitar stock)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="cantidadMovimiento" className="text-xs">Cantidad</Label>
-                      <Input
-                        id="cantidadMovimiento"
-                        type="number"
-                        min={0}
-                        value={cantidadMovimiento}
-                        onChange={(e) => setCantidadMovimiento(Number(e.target.value))}
-                        placeholder="0"
-                        className="h-9"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="depositoMovimiento" className="text-xs">Depósito</Label>
-                      <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PROPIO">PROPIO</SelectItem>
-                          <SelectItem value="FULL">FULL</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="observacionesMovimiento" className="text-xs">Observaciones</Label>
-                      <Input
-                        id="observacionesMovimiento"
-                        type="text"
-                        value={observacionesMovimiento}
-                        onChange={(e) => setObservacionesMovimiento(e.target.value)}
-                        placeholder="Ej: Ajuste por inventario físico"
-                        className="h-9"
-                      />
-                    </div>
-
-                    {cantidadMovimiento > 0 && (
-                      <div className="p-2 bg-yellow-50 rounded border border-yellow-200 mt-2">
-                        <div className="text-xs text-yellow-900 font-medium">
-                          Nuevo stock: {tipoMovimiento === 'entrada' 
-                            ? producto.stockPropio + cantidadMovimiento 
-                            : producto.stockPropio - cantidadMovimiento} unidades
-                          {tipoMovimiento === 'salida' && cantidadMovimiento > producto.stockPropio && (
-                            <span className="text-red-600 block mt-1">⚠️ Stock insuficiente</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
+          {/* Stock: Solo mostrar en modo creación */}
+          {!isEditing && (
+            <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
+              <div className="text-sm font-medium text-gray-700">Stock Inicial (opcional)</div>
+              <p className="text-xs text-gray-600">Si el producto tiene stock inicial, se registrará un movimiento de entrada automáticamente.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cantidadInicial" className="text-xs">Cantidad inicial</Label>
                   <Input
-                    id="stockPropio"
+                    id="cantidadInicial"
                     type="number"
-                    {...register("stockPropio", { valueAsNumber: true })}
-                    defaultValue={producto.stockPropio}
-                    className="hidden"
+                    min={0}
+                    value={cantidadInicial}
+                    onChange={(e) => setCantidadInicial(Number(e.target.value))}
+                    placeholder="0"
+                    className="h-9"
                   />
-                </>
-              ) : (
-                <>
-                  <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                    <div className="text-sm font-medium text-gray-700">Stock Inicial (opcional)</div>
-                    <p className="text-xs text-gray-600">Si el producto tiene stock inicial, se registrará un movimiento de entrada automáticamente.</p>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="stockInicial" className="text-xs">Cantidad inicial</Label>
-                      <Input
-                        id="stockInicial"
-                        type="number"
-                        min={0}
-                        value={cantidadMovimiento}
-                        onChange={(e) => setCantidadMovimiento(Number(e.target.value))}
-                        placeholder="0"
-                        className="h-9"
-                      />
-                    </div>
+                </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="depositoInicial" className="text-xs">Depósito</Label>
-                      <Select value={depositoMovimiento} onValueChange={setDepositoMovimiento}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PROPIO">PROPIO</SelectItem>
-                          <SelectItem value="FULL">FULL</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="observacionesInicial" className="text-xs">Observaciones (opcional)</Label>
-                      <Input
-                        id="observacionesInicial"
-                        type="text"
-                        value={observacionesMovimiento}
-                        onChange={(e) => setObservacionesMovimiento(e.target.value)}
-                        placeholder="Ej: Stock de apertura - Inventario inicial"
-                        className="h-9"
-                      />
-                    </div>
-
-                    {cantidadMovimiento > 0 && (
-                      <div className="p-2 bg-green-50 rounded border border-green-200 mt-2">
-                        <div className="text-xs text-green-900 font-medium">
-                          ✓ Se registrará un movimiento de entrada por {cantidadMovimiento} unidades
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <Input
-                    id="stockPropio"
-                    type="number"
-                    {...register("stockPropio", { valueAsNumber: true })}
-                    value={0}
-                    className="hidden"
-                  />
-                </>
-              )}
-              {errors.stockPropio && <p className="text-sm text-destructive">{errors.stockPropio.message}</p>}
-            </div>
-              <div className="space-y-2">
-                <Label htmlFor="stockFull">Stock full</Label>
-                {isEditing && producto?.stockFull !== undefined ? (
-                  <div className="text-xs text-muted-foreground mb-1">Stock actual: <span className="font-bold">{producto.stockFull}</span></div>
-                ) : null}
-                <Input
-                  id="stockFull"
-                  type="number"
-                  min={0}
-                  {...register("stockFull", { valueAsNumber: true })}
-                  defaultValue={isEditing && producto?.stockFull !== undefined ? producto.stockFull : undefined}
-                  placeholder="0"
-                />
-                {errors.stockFull && <p className="text-sm text-destructive">{errors.stockFull.message}</p>}
+                <div className="space-y-2">
+                  <Label htmlFor="depositoInicial" className="text-xs">Depósito</Label>
+                  <Select value={depositoInicial} onValueChange={setDepositoInicial}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PROPIO">PROPIO</SelectItem>
+                      <SelectItem value="FULL">FULL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="observacionesInicial" className="text-xs">Observaciones (opcional)</Label>
+                <Input
+                  id="observacionesInicial"
+                  type="text"
+                  value={observacionesInicial}
+                  onChange={(e) => setObservacionesInicial(e.target.value)}
+                  placeholder="Ej: Stock de apertura - Inventario inicial"
+                  className="h-9"
+                />
+              </div>
+
+              {cantidadInicial > 0 && (
+                <div className="p-2 bg-green-50 rounded border border-green-200 mt-2">
+                  <div className="text-xs text-green-900 font-medium">
+                    ✓ Se registrará un movimiento de entrada por {cantidadInicial} unidades en {depositoInicial}
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Campos hidden para mantener compatibilidad */}
+          <Input
+            id="stockPropio"
+            type="number"
+            {...register("stockPropio", { valueAsNumber: true })}
+            value={0}
+            className="hidden"
+          />
+          <Input
+            id="stockFull"
+            type="number"
+            {...register("stockFull", { valueAsNumber: true })}
+            value={0}
+            className="hidden"
+          />
 
           <div className="flex items-center space-x-2">
             <Switch id="activo" checked={activo} onCheckedChange={(checked) => setValue("activo", checked)} />
