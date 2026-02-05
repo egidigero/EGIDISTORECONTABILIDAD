@@ -2497,8 +2497,12 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
     const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"]
+    // TAMBIÉN excluir "Gastos del negocio - Envios devoluciones" porque ya están en pérdidas de devoluciones
     const gastosNegocio = otrosGastosData 
-      ? otrosGastosData.filter(g => !categoriasExcluirEERR.includes(g.categoria))
+      ? otrosGastosData.filter(g => 
+          !categoriasExcluirEERR.includes(g.categoria) &&
+          g.categoria !== 'Gastos del negocio - Envios devoluciones'
+        )
       : []
     
     // IGUAL QUE EERR: Calcular diferencia de envíos TN (envíos pagados - envíos en plataforma)
