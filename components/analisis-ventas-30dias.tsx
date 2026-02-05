@@ -79,33 +79,58 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   // ========== MOSTRAR TODO EL EERR PARA DEBUG ==========
   console.log('🔍 EERR DATA COMPLETO:', JSON.stringify(eerrData, null, 2))
   
-  // Valores del EERR que necesitamos (tomando los campos que coinciden con lo que muestra el EERR)
+  // Valores del EERR que necesitamos
   const ventasTotales30d = eerrData.ventasTotales || 0
   
-  // Del EERR real que me pasaste:
-  // Comisiones Netas: -$1,124,926.3 (Base + IVA + IIBB)
+  // Comisiones Netas: Base + IVA + IIBB
   const comisionesNetas30d = (eerrData.comisionesBase || 0) + (eerrData.ivaComisiones || 0) + (eerrData.iibbComisiones || 0)
   
-  // Envíos: -$341,637.56
+  // Envíos totales
   const enviosTotales30d = eerrData.enviosTotales || 0
   
-  // Publicidad: -$3,570,522.65
+  // Publicidad
   const publicidad30d = eerrData.publicidad || 0
   
-  // Gastos del Negocio: -$363,878.21 (Total Otros Gastos)
-  const gastosNegocio30d = eerrData.otrosGastos || 0
+  // ========== DEVOLUCIONES: Calcular igual que eerr-report.tsx ==========
+  // Suma de perdida_total de cada devolución
+  const devols = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
+  const devoluciones30d = devols.length > 0
+    ? devols.reduce((acc: number, d: any) => acc + Number(d.perdida_total || 0), 0)
+    : (eerrData.devolucionesPerdidaTotal || 0)
   
-  // Devoluciones: -$703,475.73 (Total Pérdida por Devoluciones)
-  // Usar devolucionesPerdidaTotal que es el campo correcto
-  const devoluciones30d = eerrData.devolucionesPerdidaTotal || 0
+  // ========== GASTOS NEGOCIO: Calcular igual que eerr-report.tsx ==========
+  // Excluir: categorías personales, ADS, Pago de Importación, Envios devoluciones
+  const categoriasPersonales = ['Gastos de Casa', 'Gastos de Geronimo', 'Gastos de Sergio']
+  const categoriasNegocioExcluir = ['Gastos del negocio - ADS', 'Pago de Importación']
+  const categoriasExcluirEERR = [...categoriasPersonales, ...categoriasNegocioExcluir]
+  
+  let gastosNegocioArr = Array.isArray(eerrData.detalleOtrosGastos)
+    ? eerrData.detalleOtrosGastos.filter((g: any) =>
+        !categoriasExcluirEERR.includes(g.categoria) &&
+        g.categoria !== 'Gastos del negocio - Envios devoluciones'
+      )
+    : []
+  
+  // Separar envíos TN para calcular diferencia
+  const enviosNegocioTN = gastosNegocioArr.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN')
+  const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
+  const totalEnviosCostosPlataformaTN = eerrData.envios || 0 // envíos TN en costos de plataforma
+  const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
+  
+  // Otros gastos del negocio (todos menos los envíos TN)
+  const otrosGastosNegocio = gastosNegocioArr.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
+  const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
+  
+  // Total gastos del negocio = otros gastos + diferencia envíos
+  const gastosNegocio30d = totalOtrosGastosNegocio + diferenciaEnvios
   
   console.log('📊 VALORES EXTRAÍDOS DEL EERR:')
   console.log('Ventas:', ventasTotales30d)
   console.log('Comisiones Netas:', comisionesNetas30d, '(base:', eerrData.comisionesBase, 'iva:', eerrData.ivaComisiones, 'iibb:', eerrData.iibbComisiones, ')')
   console.log('Envíos:', enviosTotales30d)
   console.log('Publicidad:', publicidad30d)
-  console.log('Gastos Negocio:', gastosNegocio30d)
-  console.log('Devoluciones:', devoluciones30d)
+  console.log('Gastos Negocio:', gastosNegocio30d, '(otrosGastos:', totalOtrosGastosNegocio, 'difEnvios:', diferenciaEnvios, ')')
+  console.log('Devoluciones:', devoluciones30d, '(de', devols.length, 'devoluciones)')
   
   // Calcular porcentajes sobre ventas
   const pctComisiones = ventasTotales30d > 0 ? comisionesNetas30d / ventasTotales30d : 0
