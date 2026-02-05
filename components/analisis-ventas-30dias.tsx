@@ -18,13 +18,19 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        // Calcular EERR de los últimos 30 días - MISMA LÓGICA QUE eerr-report.tsx
-        const fechaHasta = new Date()
-        const fechaDesde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        // Calcular EERR de los últimos 30 días
+        // Usar misma lógica que eerr-filters: fechas sin hora (medianoche local)
+        const hoy = new Date()
+        const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        
+        // Normalizar a medianoche local (como lo hace el filtro EERR)
+        const fechaHasta = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59)
+        const fechaDesde = new Date(hace30.getFullYear(), hace30.getMonth(), hace30.getDate(), 0, 0, 0)
         
         console.log('📅 FECHAS EERR:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString() })
 
-        const datos = await calcularEERR(fechaDesde, fechaHasta, "General")
+        // NO pasar canal para que traiga todo (igual que EERR sin filtro de canal)
+        const datos = await calcularEERR(fechaDesde, fechaHasta, undefined)
         setEerrData(datos)
       } catch (error) {
         console.error("Error al cargar datos EERR:", error)
