@@ -6,6 +6,7 @@ import { getVentas } from "@/lib/actions/ventas"
 import { getGastosIngresos } from "@/lib/actions/gastos-ingresos"
 import { getDevoluciones } from "@/lib/actions/devoluciones"
 import { calcularEERR } from "@/lib/actions/eerr"
+import { subDays, format } from "date-fns"
 
 interface AnalisisVentas30DiasProps {
   productos: any[]
@@ -18,18 +19,24 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        // Calcular EERR de los últimos 30 días
-        // Usar misma lógica que eerr-filters: fechas sin hora (medianoche local)
+        // REPLICAR EXACTAMENTE lo que hace eerr-filters.tsx + eerr-report.tsx
+        // 1. eerr-filters genera strings con format(date, "yyyy-MM-dd")
+        // 2. eerr-report parsea con new Date(string)
+        
         const hoy = new Date()
-        const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        const hace30 = subDays(hoy, 30) // Usar subDays de date-fns igual que eerr-filters
         
-        // Normalizar a medianoche local (como lo hace el filtro EERR)
-        const fechaHasta = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59)
-        const fechaDesde = new Date(hace30.getFullYear(), hace30.getMonth(), hace30.getDate(), 0, 0, 0)
+        // Generar strings igual que eerr-filters
+        const fechaDesdeStr = format(hace30, "yyyy-MM-dd")
+        const fechaHastaStr = format(hoy, "yyyy-MM-dd")
         
-        console.log('📅 FECHAS EERR:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString() })
+        // Parsear igual que eerr-report.tsx
+        const fechaDesde = new Date(fechaDesdeStr)
+        const fechaHasta = new Date(fechaHastaStr)
+        
+        console.log('📅 FECHAS (strings):', { desde: fechaDesdeStr, hasta: fechaHastaStr })
+        console.log('📅 FECHAS (parsed):', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString() })
 
-        // NO pasar canal para que traiga todo (igual que EERR sin filtro de canal)
         const datos = await calcularEERR(fechaDesde, fechaHasta, undefined)
         setEerrData(datos)
       } catch (error) {
