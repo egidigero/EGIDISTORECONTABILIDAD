@@ -579,11 +579,12 @@ export async function createDevolucion(data: DevolucionFormData) {
               let delta_mp_a_liquidar = 0
               let delta_mp_retenido = 0
 
-              // LÓGICA NUEVA: Si mpRetener está activado, significa que HAY dinero retenido
-              // En ese caso, resta DIRECTO de mp_retenido, no pregunta estado
+              // LÓGICA: Si mpRetener está activado, el dinero se RETIENE
+              // Solo se puede retener dinero DISPONIBLE (no se puede retener dinero "a_liquidar")
               if (mpRetenerCreada) {
-                // Restar de mp_retenido (libera el dinero retenido)
-                delta_mp_retenido += -montoALiquidar
+                // RETENER dinero: SUMAR a mp_retenido (positivo) y RESTAR de mp_disponible
+                delta_mp_retenido += montoALiquidar
+                delta_mp_disponible += -montoALiquidar
               } else {
                 // Flujo normal: restar de mp_disponible o mp_a_liquidar según mpEstado
                 if (mpEstadoCreada === 'a_liquidar') delta_mp_a_liquidar += -montoALiquidar
