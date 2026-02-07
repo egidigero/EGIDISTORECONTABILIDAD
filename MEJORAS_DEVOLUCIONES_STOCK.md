@@ -52,6 +52,18 @@
 4. **Probado No Funcionando**: Stock roto, no recuperable
 5. **Reincorporado a Stock**: Ya fue agregado de vuelta al stock
 
+#### 📌 Filtro Especial: Sin Reembolso
+**Devoluciones excluidas del control de stock**:
+- **Condición**: `tipo_resolucion = 'Sin reembolso'`
+- **Razón**: Cliente nunca devolvió el producto físicamente, no hay stock que gestionar
+- **Implementación**: Filtro en vista `devoluciones_stock_control`
+- **Ejemplo**: Cliente no envió el producto de vuelta, se libera el dinero retenido (si lo había) y se cierra el caso
+
+Estas devoluciones **NO aparecen** en el control de stock porque:
+- ❌ No hay producto físico que recibir, probar o reincorporar
+- ❌ No hay dinero que devolver al cliente
+- ✅ Solo se registra el evento para historial contable
+
 #### Nuevos Campos en Tabla `devoluciones`:
 - `stock_reincorporado` (boolean): Indica si ya fue reincorporado
 - `resultado_prueba` actualizado con nuevo estado "A Probar"

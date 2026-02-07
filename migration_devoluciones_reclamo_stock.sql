@@ -139,10 +139,13 @@ FROM devoluciones d
   LEFT JOIN ventas v ON d.venta_id = v.id
   LEFT JOIN productos p ON v."productoId" = p.id
 WHERE d.producto_recuperable = TRUE  -- Solo productos potencialmente recuperables
+  -- Excluir "Sin reembolso" (cliente nunca devolvió, no hay producto físico que gestionar)
+  AND (d.tipo_resolucion IS NULL OR d.tipo_resolucion != 'Sin reembolso')
 ORDER BY d.fecha_recepcion DESC NULLS LAST, d.created_at DESC;
 
 COMMENT ON VIEW devoluciones_stock_control IS 
-'Vista para control de stock de productos devueltos: estado de prueba y reincorporación';
+'Vista para control de stock de productos devueltos: estado de prueba y reincorporación. 
+EXCLUYE: Devoluciones "Sin reembolso" (cliente nunca devolvió el producto, no hay stock que gestionar).';
 
 -- =====================================================================
 -- 5. FUNCIÓN PARA REINCORPORAR STOCK DEVUELTO
