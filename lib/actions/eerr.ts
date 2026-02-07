@@ -224,6 +224,7 @@ export async function calcularEERR(
     
     // Para el cálculo del margen neto: excluir gastos personales Y Pago de Importación
     // Pago de Importación afecta liquidaciones pero NO aparece en EERR
+    // Nota: Los ingresos personales se excluyen más abajo
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"];
     const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"];
     const gastosNegocio = otrosGastosData 
@@ -244,13 +245,25 @@ export async function calcularEERR(
     if (canal && canal !== "General") {
       otrosIngresosQuery = otrosIngresosQuery.or(`canal.eq.${canal},canal.is.null,canal.eq.General`);
     }
-    // Excluir ingresos de ventas si existieran en la tabla (por seguridad)
+    // Excluir solo ingresos de ventas (LOS INGRESOS PERSONALES SÍ se incluyen)
     const { data: otrosIngresosData, error: otrosIngresosError } = await otrosIngresosQuery;
     const otrosIngresosFiltrados = otrosIngresosData
       ? otrosIngresosData.filter((ingreso) => ingreso.categoria !== "Ventas")
       : [];
-    const otrosIngresos = !otrosIngresosError && otrosIngresosFiltrados.length > 0
-      ? Math.round(otrosIngresosFiltrados.reduce((acc, ingreso) => acc + Number(ingreso.montoARS || 0), 0) * 100) / 100
+    
+    // Separar ingresos personales para reportarlos aparte (pero SÍ afectan el margen)
+    const categoriasIngresosPersonales = ["Ingresos Personales", "Ingresos de Casa", "Ingresos de Geronimo", "Ingresos de Sergio"];
+    const ingresosPersonales = otrosIngresosFiltrados
+      ? otrosIngresosFiltrados.filter((ingreso) => categoriasIngresosPersonales.includes(ingreso.categoria))
+      : [];
+    const totalIngresosPersonales = ingresosPersonales.reduce((acc, ingreso) => acc + Number(ingreso.montoARS || 0), 0);
+    
+    // Los ingresos del negocio (sin personales) para la sección "Otros Ingresos del Negocio"
+    const ingresosNegocio = otrosIngresosFiltrados
+      ? otrosIngresosFiltrados.filter((ingreso) => !categoriasIngresosPersonales.includes(ingreso.categoria))
+      : [];
+    const otrosIngresos = !otrosIngresosError && ingresosNegocio.length > 0
+      ? Math.round(ingresosNegocio.reduce((acc, ingreso) => acc + Number(ingreso.montoARS || 0), 0) * 100) / 100
       : 0;
 
   // Margen operativo base = Resultado bruto - Costos plataforma - Publicidad
@@ -264,9 +277,10 @@ export async function calcularEERR(
   const margenNetoNegocioBase = Math.round((margenOperativoBase - otrosGastos + otrosIngresos) * 100) / 100;
 
   // Margen final después de gastos personales (solo para canal General) - base (will be recomputed after devoluciones)
+  // Ingresos personales SUMAN (compensan los gastos personales)
   let margenFinalConPersonales = undefined;
   if (!canal || canal === "General") {
-    margenFinalConPersonales = Math.round((margenNetoNegocioBase - gastosPersonales) * 100) / 100;
+    margenFinalConPersonales = Math.round((margenNetoNegocioBase - gastosPersonales + totalIngresosPersonales) * 100) / 100;
   }
 
     // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_reclamo ====
@@ -459,8 +473,9 @@ export async function calcularEERR(
   const margenOperativoConPerdidas = Math.round((margenOperativo - perdidasPorDevoluciones) * 100) / 100
 
   // Recompute margenFinalConPersonales based on the adjusted margin after devoluciones
+  // Ingresos personales SUMAN (compensan los gastos personales)
   margenFinalConPersonales = (!canal || canal === "General")
-    ? Math.round((margenOperativoConPerdidas - otrosGastos + otrosIngresos - gastosPersonales) * 100) / 100
+    ? Math.round((margenOperativoConPerdidas - otrosGastos + otrosIngresos - gastosPersonales + totalIngresosPersonales) * 100) / 100
     : margenFinalConPersonales
 
   return {
@@ -487,7 +502,9 @@ export async function calcularEERR(
       otrosGastos: Math.round(otrosGastos * 100) / 100,
       detalleOtrosGastos: otrosGastosData || [],
   otrosIngresos: Math.round(otrosIngresos * 100) / 100,
-      detalleOtrosIngresos: otrosIngresosFiltrados || [],
+      detalleOtrosIngresos: ingresosNegocio || [], // Solo ingresos del negocio (sin personales)
+      ingresosPersonales: Math.round(totalIngresosPersonales * 100) / 100,
+      detalleIngresosPersonales: ingresosPersonales || [], // Ingresos personales separados
       margenNetoNegocio: Math.round((margenOperativoConPerdidas - otrosGastos + otrosIngresos) * 100) / 100,
       ventasBrutas: Math.round(ventasTotales.ventasTotales * 100) / 100,
   precioNeto: precioNetoAjustado,

@@ -2496,6 +2496,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .not("categoria", "eq", "Gastos del negocio - ADS")
     
     // IGUAL QUE EERR: Excluir gastos personales y Pago de Importación
+    // Nota: Solo filtramos gastos personales aquí. Los ingresos personales se excluyen en eerr.ts
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"]
     const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"]
     // TAMBIÉN excluir "Gastos del negocio - Envios devoluciones" porque ya están en pérdidas de devoluciones

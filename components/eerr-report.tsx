@@ -53,6 +53,13 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     'Gastos de Sergio',
   ];
   
+  const categoriasIngresosPersonales = [
+    'Ingresos Personales',
+    'Ingresos de Casa',
+    'Ingresos de Geronimo',
+    'Ingresos de Sergio',
+  ];
+  
   // Categorías de negocio que NO deben aparecer en EERR
   const categoriasNegocioExcluir = [
     'Gastos del negocio - ADS',
@@ -718,15 +725,25 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                 </div>
                 {/* Gastos personales y margen final después de gastos personales */}
                 <div className="mb-6">
-                  <h3 className="font-semibold text-lg mb-3 text-pink-700">👤 Gastos Personales</h3>
+                  <h3 className="font-semibold text-lg mb-3 text-pink-700">👤 Gastos e Ingresos Personales</h3>
                   <div className="space-y-2 bg-pink-50 p-3 rounded">
                     {(() => {
+                      // GASTOS PERSONALES
                       const gastosPersonales = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
                         : [];
-                      const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      const totalGastosPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
                       
-                      // Agrupar por categoría
+                      // INGRESOS PERSONALES
+                      const ingresosPersonales = Array.isArray(eerrData.detalleIngresosPersonales)
+                        ? eerrData.detalleIngresosPersonales
+                        : [];
+                      const totalIngresosPersonales = ingresosPersonales.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      
+                      // NETO PERSONAL (Gastos - Ingresos)
+                      const netoPersonal = totalGastosPersonales - totalIngresosPersonales;
+                      
+                      // Agrupar gastos por categoría
                       const gastosPorCategoria = gastosPersonales.reduce((acc: any, gasto: any) => {
                         const cat = gasto.categoria || 'Sin categoría';
                         if (!acc[cat]) {
@@ -736,51 +753,113 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                         return acc;
                       }, {});
                       
-                      const categorias = Object.keys(gastosPorCategoria).sort();
+                      // Agrupar ingresos por categoría
+                      const ingresosPorCategoria = ingresosPersonales.reduce((acc: any, ingreso: any) => {
+                        const cat = ingreso.categoria || 'Sin categoría';
+                        if (!acc[cat]) {
+                          acc[cat] = [];
+                        }
+                        acc[cat].push(ingreso);
+                        return acc;
+                      }, {});
+                      
+                      const categoriasGastos = Object.keys(gastosPorCategoria).sort();
+                      const categoriasIngresos = Object.keys(ingresosPorCategoria).sort();
                       
                       return <>
-                        <div className="flex justify-between text-pink-700 font-semibold">
-                          <span>(-) Total Gastos Personales:</span>
-                          <span>-{formatCurrency(totalPersonales)}</span>
-                        </div>
-                        {gastosPersonales.length > 0 ? (
-                          <div className="mt-3 space-y-3">
-                            {categorias.map((categoria) => {
-                              const gastosDeCategoria = gastosPorCategoria[categoria];
-                              const subtotal = gastosDeCategoria.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
-                              
-                              return (
-                                <div key={categoria} className="border-l-2 border-pink-300 pl-2">
-                                  <div className="font-medium text-sm text-pink-800 mb-1">
-                                    {categoria}
+                        {/* GASTOS PERSONALES */}
+                        {gastosPersonales.length > 0 && (
+                          <>
+                            <div className="flex justify-between text-pink-700 font-semibold">
+                              <span>(-) Total Gastos Personales:</span>
+                              <span>-{formatCurrency(totalGastosPersonales)}</span>
+                            </div>
+                            <div className="mt-3 space-y-3">
+                              {categoriasGastos.map((categoria) => {
+                                const gastosDeCategoria = gastosPorCategoria[categoria];
+                                const subtotal = gastosDeCategoria.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                                
+                                return (
+                                  <div key={categoria} className="border-l-2 border-pink-300 pl-2">
+                                    <div className="font-medium text-sm text-pink-800 mb-1">
+                                      {categoria}
+                                    </div>
+                                    <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                      {gastosDeCategoria.map((gasto: any) => (
+                                        <li key={gasto.id} className="flex justify-between pb-1">
+                                          <span>{gasto.fecha?.slice(0,10) || ''}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
+                                          <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    <div className="flex justify-between text-sm font-semibold text-pink-700 border-t border-pink-200 pt-1">
+                                      <span>Subtotal {categoria}:</span>
+                                      <span>-{formatCurrency(subtotal)}</span>
+                                    </div>
                                   </div>
-                                  <ul className="text-xs text-gray-700 space-y-1 mb-2">
-                                    {gastosDeCategoria.map((gasto: any) => (
-                                      <li key={gasto.id} className="flex justify-between pb-1">
-                                        <span>{gasto.fecha?.slice(0,10) || ''}{gasto.descripcion ? `: ${gasto.descripcion}` : ''}</span>
-                                        <span className="text-pink-700">-{formatCurrency(gasto.montoARS)}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                  <div className="flex justify-between text-sm font-semibold text-pink-700 border-t border-pink-200 pt-1">
-                                    <span>Subtotal {categoria}:</span>
-                                    <span>-{formatCurrency(subtotal)}</span>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* INGRESOS PERSONALES */}
+                        {ingresosPersonales.length > 0 && (
+                          <>
+                            <div className="flex justify-between text-green-700 font-semibold mt-4">
+                              <span>(+) Total Ingresos Personales:</span>
+                              <span>+{formatCurrency(totalIngresosPersonales)}</span>
+                            </div>
+                            <div className="mt-3 space-y-3">
+                              {categoriasIngresos.map((categoria) => {
+                                const ingresosDeCategoria = ingresosPorCategoria[categoria];
+                                const subtotal = ingresosDeCategoria.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                                
+                                return (
+                                  <div key={categoria} className="border-l-2 border-green-300 pl-2">
+                                    <div className="font-medium text-sm text-green-800 mb-1">
+                                      {categoria}
+                                    </div>
+                                    <ul className="text-xs text-gray-700 space-y-1 mb-2">
+                                      {ingresosDeCategoria.map((ingreso: any) => (
+                                        <li key={ingreso.id} className="flex justify-between pb-1">
+                                          <span>{ingreso.fecha?.slice(0,10) || ''}{ingreso.descripcion ? `: ${ingreso.descripcion}` : ''}</span>
+                                          <span className="text-green-700">+{formatCurrency(ingreso.montoARS)}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                    <div className="flex justify-between text-sm font-semibold text-green-700 border-t border-green-200 pt-1">
+                                      <span>Subtotal {categoria}:</span>
+                                      <span>+{formatCurrency(subtotal)}</span>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* NETO PERSONAL */}
+                        {(gastosPersonales.length > 0 || ingresosPersonales.length > 0) && (
+                          <div className="flex justify-between text-purple-800 font-bold text-base mt-4 pt-3 border-t-2 border-purple-300">
+                            <span>Neto Movimientos Personales:</span>
+                            <span className={netoPersonal >= 0 ? "text-red-600" : "text-green-600"}>
+                              {netoPersonal >= 0 ? '-' : '+'}{formatCurrency(Math.abs(netoPersonal))}
+                            </span>
                           </div>
-                        ) : (
-                          <div className="text-xs text-gray-400 mt-2">Sin gastos personales en el período</div>
+                        )}
+                        
+                        {gastosPersonales.length === 0 && ingresosPersonales.length === 0 && (
+                          <div className="text-xs text-gray-400 mt-2">Sin movimientos personales en el período</div>
                         )}
                       </>;
                     })()}
                   </div>
                 </div>
 
-                {/* Margen final después de gastos personales */}
+                {/* Margen final después de movimientos personales */}
                 <div className="mb-6">
-                  <h3 className="font-semibold text-lg mb-3 text-black">💎 Margen Final después de Gastos Personales</h3>
+                  <h3 className="font-semibold text-lg mb-3 text-black">💎 Margen Final después de Movimientos Personales</h3>
                   <div className="space-y-2 bg-lime-50 p-3 rounded">
                     {(() => {
                       // Gastos del negocio: excluir personales, ADS y Pago de Importación
@@ -799,13 +878,23 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                       const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
                       // Total final de otros gastos del negocio incluye la diferencia de envíos
                       const totalNegocio = totalOtrosGastosNegocio + diferenciaEnvios;
+                      
+                      // Movimientos personales
                       const gastosPersonales = Array.isArray(eerrData.detalleOtrosGastos)
                         ? eerrData.detalleOtrosGastos.filter((g: any) => categoriasPersonales.includes(g.categoria))
                         : [];
-                      const totalPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      const totalGastosPersonales = gastosPersonales.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0);
+                      
+                      const ingresosPersonales = Array.isArray(eerrData.detalleIngresosPersonales)
+                        ? eerrData.detalleIngresosPersonales
+                        : [];
+                      const totalIngresosPersonales = ingresosPersonales.reduce((acc: number, i: any) => acc + (i.montoARS || 0), 0);
+                      
                       // Use the adjusted margen operativo (already subtracts devoluciones) so Margen Final is consistent
                       const margenNeto = margenOperativoAjustadoCalc - totalNegocio + eerrData.otrosIngresos;
-                      const margenFinal = margenNeto - totalPersonales;
+                      // Margen Final = Margen Neto - Gastos Personales + Ingresos Personales
+                      const margenFinal = margenNeto - totalGastosPersonales + totalIngresosPersonales;
+                      
                       return <div className="flex justify-between text-black font-bold text-lg">
                         <span>Margen Final:</span>
                         <span className={margenFinal >= 0 ? "text-green-600" : "text-red-600"}>{formatCurrency(margenFinal)}</span>

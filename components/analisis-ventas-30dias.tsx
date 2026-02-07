@@ -100,6 +100,7 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   
   // ========== GASTOS NEGOCIO: Calcular igual que eerr-report.tsx ==========
   // Excluir: categorías personales, ADS, Pago de Importación, Envios devoluciones
+  // Nota: Solo filtramos gastos personales aquí. Los ingresos personales se excluyen en eerr.ts
   const categoriasPersonales = ['Gastos de Casa', 'Gastos de Geronimo', 'Gastos de Sergio']
   const categoriasNegocioExcluir = ['Gastos del negocio - ADS', 'Pago de Importación']
   const categoriasExcluirEERR = [...categoriasPersonales, ...categoriasNegocioExcluir]

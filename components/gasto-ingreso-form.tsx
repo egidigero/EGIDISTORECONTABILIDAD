@@ -226,6 +226,13 @@ export function GastoIngresoForm({ gastoIngreso, onSuccess, onCancel, isModal }:
                     <SelectItem value="Otros Ingresos">Otros Ingresos</SelectItem>
                   </SelectGroup>
                   <SelectGroup>
+                    <SelectLabel>Ingresos Personales</SelectLabel>
+                    <SelectItem value="Ingresos Personales">Ingresos Personales</SelectItem>
+                    <SelectItem value="Ingresos de Casa">Ingresos de Casa</SelectItem>
+                    <SelectItem value="Ingresos de Geronimo">Ingresos de Geronimo</SelectItem>
+                    <SelectItem value="Ingresos de Sergio">Ingresos de Sergio</SelectItem>
+                  </SelectGroup>
+                  <SelectGroup>
                     <SelectLabel>Gastos Personales</SelectLabel>
                     <SelectItem value="Gastos de Casa">Gastos de Casa</SelectItem>
                     <SelectItem value="Gastos de Geronimo">Gastos de Geronimo</SelectItem>
