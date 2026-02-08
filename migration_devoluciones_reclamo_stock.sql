@@ -87,7 +87,7 @@ ALTER TABLE movimientos_stock
   ));
 
 COMMENT ON COLUMN movimientos_stock.origen_tipo IS 
-'Tipo de operación que generó el movimiento: venta, devolucion, ingreso_manual, ajuste, transferencia, perdida, reincorporacion';
+'Tipo de operación que generó el movimiento: venta, venta_eliminada, devolucion, ingreso_manual, ajuste, transferencia, perdida, reincorporacion';
 
 COMMENT ON COLUMN movimientos_stock.origen_id IS 
 'ID de la operación origen (ID de venta, devolución, etc)';

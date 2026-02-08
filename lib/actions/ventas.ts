@@ -312,18 +312,39 @@ export async function deleteVenta(id: string) {
       throw deleteError
     }
 
-    // Restaurar stock del producto
+    // Restaurar stock del producto mediante movimiento de stock
     const producto = venta.producto
     if (producto) {
-      const { error: stockError } = await supabase
-        .from("productos")
-        .update({ 
-          stockPropio: Number(producto.stockPropio || 0) + 1
-        })
-        .eq("id", venta.productoId)
+      console.log("📦 Restaurando stock para producto:", venta.productoId)
       
-      if (stockError) {
-        console.error("Error al restaurar stock:", stockError)
+      try {
+        // Registrar movimiento de ENTRADA para restaurar el stock
+        const movimientoData = {
+          producto_id: venta.productoId.toString(),
+          deposito_origen: 'PROPIO',
+          deposito_destino: null,
+          tipo: 'entrada',
+          cantidad: 1,
+          fecha: new Date().toISOString(),
+          observaciones: `Devolución por eliminación de venta ${venta.saleCode || venta.id} - ${venta.comprador}`,
+          origen_tipo: 'venta_eliminada',
+          origen_id: id
+        }
+        console.log("📦 Datos del movimiento de devolución:", movimientoData)
+        
+        const { data: movData, error: movError } = await supabase
+          .from("movimientos_stock")
+          .insert(movimientoData)
+          .select()
+        
+        if (movError) {
+          console.error("❌ Error al registrar movimiento de devolución:", movError)
+          console.error("❌ Detalles del error:", JSON.stringify(movError, null, 2))
+        } else {
+          console.log("✅ Movimiento de devolución registrado:", movData)
+        }
+      } catch (movError) {
+        console.error("❌ Excepción al registrar movimiento de devolución:", movError)
       }
     }
 
