@@ -813,8 +813,14 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
 
                     // CRITICAL: Check if money was ALREADY retained previously (existing.mp_retenido)
                     const wasAlreadyRetained = Boolean((existing as any).mp_retenido ?? false)
+                    const montoAjusteML = Number(newMonto ?? 0)
+                    const fueReclamoProvided = (parsedPartial as any).fueReclamo ?? (parsedPartial as any).fue_reclamo
+                    const fueReclamoPersistido = (existing as any).fue_reclamo ?? (existing as any).fueReclamo ?? null
+                    const fueReclamoML = plataforma === 'ML' ? (fueReclamoProvided ?? fueReclamoPersistido) : null
+                    const debeRestarEnvioML = plataforma !== 'ML' || fueReclamoML !== false
 
                     if (wasAlreadyRetained) {
+                      delta_mp_retenido += -montoAjusteML
                       // Money was already in mp_retenido from a previous reclamo.
                       // When finalizing Reembolso now, we only subtract shipping from disponible.
                       // The monto will be released from mp_retenido in a later step.
@@ -824,9 +830,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                       // Money was NOT retained before: this is either first-time processing
                       // or money is flowing directly. Subtract monto from the appropriate bucket.
                       if (mpEstadoProvided === 'a_liquidar') {
-                        delta_mp_a_liquidar += -delta
+                        delta_mp_a_liquidar += -montoAjusteML
                       } else {
-                        delta_mp_disponible += -delta
+                        delta_mp_disponible += -montoAjusteML
                       }
                     }
 
@@ -837,7 +843,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                     // flow, subtract the original envío of the venta from MP disponible
                     // so that the liquidation reflects the real cash movement. The
                     // envío itself is still recorded as a gasto_ingreso for EERR.
-                    if (plataforma === 'ML') {
+                    if (debeRestarEnvioML) {
                       try {
                         const envioOriginalFromVenta = Number((venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? (parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
                         if (!Number.isNaN(envioOriginalFromVenta) && envioOriginalFromVenta > 0) {
@@ -847,11 +853,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                       } catch (envEx) {
                         // non-critical, continue
                       }
+                    } else {
+                      console.log('[Reembolso ML sin reclamo] No se descuenta envio de MP disponible')
                     }
 
                     // If user marked to retain money NOW (not previously), add to mp_retenido (positive)
                     if (mpRetenerProvided && !wasAlreadyRetained) {
-                      delta_mp_retenido += delta
+                      delta_mp_retenido += montoAjusteML
                     }
 
                     // Persist deltas into the normalized table `devoluciones_deltas` so we can
@@ -890,12 +898,14 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                         } catch (oldUpdErr: any) {
                           console.warn('Fallback a actualización de liquidaciones directo (no crítico):', oldUpdErr)
                           try {
-                            if (mpRetenerProvided) {
-                              nuevoMpRetenido = Number(nuevoMpRetenido) + Number(delta)
-                              await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar), mp_retenido: nuevoMpRetenido }).eq('fecha', impactoFechaForDeltas)
-                            } else {
-                              await supabase.from('liquidaciones').update({ mp_disponible: Math.max(0, nuevoMpDisponible), mp_a_liquidar: Math.max(0, nuevoMpALiquidar) }).eq('fecha', impactoFechaForDeltas)
+                            const payloadFallback: any = {
+                              mp_disponible: Math.max(0, Number(nuevoMpDisponible) + Number(delta_mp_disponible || 0)),
+                              mp_a_liquidar: Math.max(0, Number(nuevoMpALiquidar) + Number(delta_mp_a_liquidar || 0))
                             }
+                            if (Math.abs(Number(delta_mp_retenido || 0)) > 0.0001 || mpRetenerProvided || wasAlreadyRetained) {
+                              payloadFallback.mp_retenido = Math.max(0, Number(nuevoMpRetenido) + Number(delta_mp_retenido || 0))
+                            }
+                            await supabase.from('liquidaciones').update(payloadFallback).eq('fecha', impactoFechaForDeltas)
                           } catch (uErr) {
                             console.warn('Fallback update liquidaciones falló (no crítico)', uErr)
                           }
