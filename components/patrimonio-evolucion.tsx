@@ -100,7 +100,7 @@ export function PatrimonioEvolucion() {
             <div>
               <CardTitle>📊 Evolución del Patrimonio</CardTitle>
               <CardDescription>
-                Seguimiento histórico del patrimonio total del negocio
+                Seguimiento histórico por snapshots diarios (00:00 AR), no en vivo
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -133,43 +133,48 @@ export function PatrimonioEvolucion() {
         </CardHeader>
         <CardContent>
           {ultimoDato && (
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-muted-foreground">Patrimonio Total</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  ${ultimoDato.patrimonio_total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                </p>
-                {ultimoDato.variacion_dia !== null && (
-                  <p className={`text-sm ${ultimoDato.variacion_dia >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {ultimoDato.variacion_dia >= 0 ? '+' : ''}
-                    ${ultimoDato.variacion_dia.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    {ultimoDato.variacion_porcentaje !== null && 
-                      ` (${ultimoDato.variacion_porcentaje >= 0 ? '+' : ''}${ultimoDato.variacion_porcentaje.toFixed(2)}%)`
-                    }
+            <>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Último snapshot: {parseDateOnly(ultimoDato.fecha).toLocaleDateString("es-AR")}
+              </p>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">Patrimonio Total</p>
+                  <p className="text-2xl font-bold text-blue-600">
+                    ${ultimoDato.patrimonio_total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </p>
-                )}
+                  {ultimoDato.variacion_dia !== null && (
+                    <p className={`text-sm ${ultimoDato.variacion_dia >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {ultimoDato.variacion_dia >= 0 ? '+' : ''}
+                      ${ultimoDato.variacion_dia.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      {ultimoDato.variacion_porcentaje !== null && 
+                        ` (${ultimoDato.variacion_porcentaje >= 0 ? '+' : ''}${ultimoDato.variacion_porcentaje.toFixed(2)}%)`
+                      }
+                    </p>
+                  )}
+                </div>
+                
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">En Stock</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    ${ultimoDato.patrimonio_stock.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {((ultimoDato.patrimonio_stock / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">En Liquidaciones</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    ${ultimoDato.total_liquidaciones.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {((ultimoDato.total_liquidaciones / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
+                  </p>
+                </div>
               </div>
-              
-              <div className="p-4 bg-purple-50 rounded-lg">
-                <p className="text-sm text-muted-foreground">En Stock</p>
-                <p className="text-2xl font-bold text-purple-600">
-                  ${ultimoDato.patrimonio_stock.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {((ultimoDato.patrimonio_stock / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
-                </p>
-              </div>
-              
-              <div className="p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-muted-foreground">En Liquidaciones</p>
-                <p className="text-2xl font-bold text-green-600">
-                  ${ultimoDato.total_liquidaciones.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {((ultimoDato.total_liquidaciones / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
-                </p>
-              </div>
-            </div>
+            </>
           )}
 
           {datos.length > 0 ? (

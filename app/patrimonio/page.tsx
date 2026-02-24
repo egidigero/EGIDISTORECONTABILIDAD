@@ -24,7 +24,8 @@ async function RegistrarPatrimonioButton() {
 }
 
 function formatearFechaLocal(fecha: string) {
-  const [anio, mes, dia] = String(fecha).split("-").map(Number)
+  const fechaSolo = String(fecha).split("T")[0]
+  const [anio, mes, dia] = fechaSolo.split("-").map(Number)
   if (!anio || !mes || !dia) return String(fecha)
   return new Date(anio, mes - 1, dia).toLocaleDateString("es-AR")
 }
