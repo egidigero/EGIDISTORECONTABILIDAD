@@ -14,6 +14,19 @@ interface PatrimonioData {
   variacion_porcentaje: number | null
 }
 
+function formatDateOnly(date: Date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
+function parseDateOnly(value: string) {
+  const [y, m, d] = String(value).split("-").map(Number)
+  if (!y || !m || !d) return new Date(value)
+  return new Date(y, m - 1, d)
+}
+
 export function PatrimonioEvolucion() {
   const [datos, setDatos] = useState<PatrimonioData[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,13 +42,13 @@ export function PatrimonioEvolucion() {
       
       if (rango === '7d') {
         fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 7)
+        fechaInicio.setDate(hoy.getDate() - 6)
       } else if (rango === '30d') {
         fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 30)
+        fechaInicio.setDate(hoy.getDate() - 29)
       } else if (rango === '90d') {
         fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 90)
+        fechaInicio.setDate(hoy.getDate() - 89)
       }
 
       let query = supabase
@@ -44,7 +57,7 @@ export function PatrimonioEvolucion() {
         .order('fecha', { ascending: true })
 
       if (fechaInicio) {
-        query = query.gte('fecha', fechaInicio.toISOString().split('T')[0])
+        query = query.gte('fecha', formatDateOnly(fechaInicio))
       }
 
       const { data, error } = await query
@@ -165,14 +178,14 @@ export function PatrimonioEvolucion() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="fecha" 
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
+                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
                 />
                 <YAxis 
                   tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip 
                   formatter={(value: any) => `$${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString('es-AR', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                  labelFormatter={(label) => parseDateOnly(String(label)).toLocaleDateString('es-AR', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                 />
                 <Legend />
                 <Area 
@@ -220,12 +233,12 @@ export function PatrimonioEvolucion() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
                   dataKey="fecha" 
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
+                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
                 />
                 <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
                 <Tooltip 
                   formatter={(value: any) => `$${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString('es-AR')}
+                  labelFormatter={(label) => parseDateOnly(String(label)).toLocaleDateString('es-AR')}
                 />
                 <Line 
                   type="monotone" 

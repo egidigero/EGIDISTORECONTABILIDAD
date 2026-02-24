@@ -1,6 +1,6 @@
 # Configuración Cron - Patrimonio Diario
 
-Se han configurado **3 opciones** para ejecutar automáticamente el registro de patrimonio diario a las 23:00:
+Se han configurado **3 opciones** para ejecutar automáticamente el registro de patrimonio diario a las 00:00 Argentina (03:00 UTC):
 
 ## Opción 1: Vercel Cron Jobs (RECOMENDADO)
 
@@ -10,7 +10,7 @@ Si tu app está desplegada en Vercel:
 2. Agrega variable de entorno en Vercel Dashboard:
    - `CRON_SECRET=tu-token-secreto-aleatorio`
 3. Despliega: `git push` 
-4. Vercel ejecutará automáticamente `/api/cron/patrimonio` todos los días a las 23:00 UTC
+4. Vercel ejecutará automáticamente `/api/cron/patrimonio` todos los días a las 03:00 UTC
 
 **Verificación:**
 - Ve a Vercel Dashboard > Tu Proyecto > Settings > Cron Jobs
@@ -24,7 +24,7 @@ Si prefieres ejecutar directamente en la base de datos:
 
 1. Ejecuta `migration_cron_patrimonio.sql` en Supabase SQL Editor
 2. Esto programará la función `registrar_patrimonio_diario()` 
-3. Se ejecutará automáticamente a las 23:00 UTC todos los días
+3. Se ejecutará automáticamente a las 03:00 UTC todos los días
 
 **Verificar:**
 ```sql
@@ -46,7 +46,7 @@ LIMIT 10;
 2. Configura URL: `https://tu-dominio.com/api/cron/patrimonio`
 3. Método: GET o POST
 4. Header: `Authorization: Bearer tu-token-secreto`
-5. Schedule: `0 23 * * *` (23:00 diario)
+5. Schedule: `0 3 * * *` (00:00 Argentina / 03:00 UTC)
 
 ---
 
@@ -73,8 +73,9 @@ SELECT registrar_patrimonio_diario();
 ## Zona Horaria
 
 - Vercel Cron usa **UTC** por defecto
-- `23:00 UTC` = `20:00 Argentina` (UTC-3)
+- `03:00 UTC` = `00:00 Argentina` (UTC-3)
 - Para cambiar horario, modifica `"schedule"` en `vercel.json`:
+- `"0 3 * * *"` = 03:00 UTC (00:00 Argentina)
   - `"0 20 * * *"` = 20:00 UTC (17:00 Argentina)
   - `"0 2 * * *"` = 02:00 UTC (23:00 Argentina del día anterior)
 

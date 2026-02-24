@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { getPatrimonioActual, registrarPatrimonioDiario } from "@/lib/actions/patrimonio"
+import { getPatrimonioTiempoReal, registrarPatrimonioDiario } from "@/lib/actions/patrimonio"
 import { PatrimonioEvolucion } from "@/components/patrimonio-evolucion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,19 +23,25 @@ async function RegistrarPatrimonioButton() {
   )
 }
 
+function formatearFechaLocal(fecha: string) {
+  const [anio, mes, dia] = String(fecha).split("-").map(Number)
+  if (!anio || !mes || !dia) return String(fecha)
+  return new Date(anio, mes - 1, dia).toLocaleDateString("es-AR")
+}
+
 async function PatrimonioActualCard() {
-  const { data: patrimonioActual } = await getPatrimonioActual()
+  const { data: patrimonioActual } = await getPatrimonioTiempoReal()
 
   if (!patrimonioActual) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Patrimonio Actual</CardTitle>
-          <CardDescription>No hay datos registrados</CardDescription>
+          <CardTitle>Patrimonio Actual (En Vivo)</CardTitle>
+          <CardDescription>No hay datos para mostrar</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Haz clic en "Registrar Snapshot Hoy" para comenzar a rastrear tu patrimonio
+            Verificá que existan productos o liquidaciones cargadas
           </p>
         </CardContent>
       </Card>
@@ -57,7 +63,7 @@ async function PatrimonioActualCard() {
             ${Number(patrimonioActual.patrimonio_total).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <p className="text-xs text-muted-foreground">
-            Al {new Date(patrimonioActual.fecha).toLocaleDateString('es-AR')}
+            En vivo • Liquidación {formatearFechaLocal(String(patrimonioActual.fecha))}
           </p>
         </CardContent>
       </Card>

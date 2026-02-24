@@ -2,6 +2,8 @@
 
 import { supabase } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
+import { getLiquidaciones } from "@/lib/actions/liquidaciones"
+import { getProductos } from "@/lib/actions/productos"
 
 /**
  * Registra un snapshot del patrimonio para una fecha específica
@@ -66,6 +68,53 @@ export async function getPatrimonioActual() {
     return { success: true, data }
   } catch (error: any) {
     console.error("Error al obtener patrimonio actual:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Obtiene patrimonio actual en tiempo real (mismo criterio que /productos)
+ */
+export async function getPatrimonioTiempoReal() {
+  try {
+    const [productos, liquidaciones] = await Promise.all([
+      getProductos(),
+      getLiquidaciones(),
+    ])
+
+    const patrimonioStock = (productos || []).reduce((total: number, p: any) => {
+      const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+      return total + (Number(p.costoUnitarioARS || 0) * stockTotal)
+    }, 0)
+
+    const unidadesStock = (productos || []).reduce((total: number, p: any) => {
+      return total + Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    }, 0)
+
+    const ultimaLiquidacion = liquidaciones?.[0]
+    const mpDisponible = Number(ultimaLiquidacion?.mp_disponible || 0)
+    const mpALiquidar = Number(ultimaLiquidacion?.mp_a_liquidar || 0)
+    const mpRetenido = Number(ultimaLiquidacion?.mp_retenido || 0)
+    const tnALiquidar = Number(ultimaLiquidacion?.tn_a_liquidar || 0)
+    const totalLiquidaciones = mpDisponible + mpALiquidar + tnALiquidar
+    const patrimonioTotal = patrimonioStock + totalLiquidaciones
+
+    return {
+      success: true,
+      data: {
+        fecha: ultimaLiquidacion?.fecha || new Date().toISOString().split('T')[0],
+        patrimonio_stock: patrimonioStock,
+        unidades_stock: unidadesStock,
+        mp_disponible: mpDisponible,
+        mp_a_liquidar: mpALiquidar,
+        mp_retenido: mpRetenido,
+        tn_a_liquidar: tnALiquidar,
+        total_liquidaciones: totalLiquidaciones,
+        patrimonio_total: patrimonioTotal,
+      },
+    }
+  } catch (error: any) {
+    console.error("Error al obtener patrimonio en tiempo real:", error)
     return { success: false, error: error.message }
   }
 }

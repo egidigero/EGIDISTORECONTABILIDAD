@@ -8,6 +8,7 @@ import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos
 import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
 import { getVentaModelosByIds } from "@/lib/actions/getVentaModelosByIds"
 import { buildModelBreakdown } from "@/lib/eerr/model-breakdown"
+import { supabase } from "@/lib/supabase"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
 import { ROASAnalysisModal } from "@/components/roas-analysis-modal"
@@ -96,6 +97,12 @@ const getAlias = (row: any, keys: string[]): string => {
 const getFirstParam = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value
 
+const parseDateOrFallback = (value: string | undefined, fallback: Date): Date => {
+  if (!value) return fallback
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed
+}
+
 const getPreviousRange = (fechaDesde: Date, fechaHasta: Date) => {
   const durationMs = Math.max(fechaHasta.getTime() - fechaDesde.getTime(), 0) + DAY_MS
   const fechaHastaAnterior = new Date(fechaDesde.getTime() - 1)
@@ -123,6 +130,7 @@ interface ComparativeMetrics {
   colchonCpa: number
   colchonCpaPct: number
   costosPlataformaPct: number
+  devolucionesTasaPct: number
   devolucionesPctSobreVentas: number
 }
 
@@ -145,6 +153,12 @@ interface TopSkuRow {
   sku: string
   devoluciones: number
   perdida: number
+}
+
+interface StockDrainageMetrics {
+  stockViejoInmovilizado: number
+  pctDrenadoMes: number
+  margenPromedioLiquidacionPct: number
 }
 
 const calculateVariationPct = (current: number, previous: number): number | null => {
@@ -177,7 +191,12 @@ const formatVariationPct = (value: number | null): string => {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`
 }
 
-const buildComparativeMetrics = (eerrData: any, detalleVentas: any[], detalleGastosIngresos: any[]): ComparativeMetrics => {
+const buildComparativeMetrics = (
+  eerrData: any,
+  detalleVentas: any[],
+  detalleGastosIngresos: any[],
+  cantidadVentasOverride?: number,
+): ComparativeMetrics => {
   const devoluciones = Array.isArray(eerrData?.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
   const perdidasDevoluciones = round2(
     devoluciones.length > 0
@@ -242,13 +261,19 @@ const buildComparativeMetrics = (eerrData: any, detalleVentas: any[], detalleGas
   const roasNegocioBE = baseNegocioAntesAds > 0 ? round2(ventasNetas / baseNegocioAntesAds) : 0
   const roasActual = inversionMarketing > 0 ? round2(ventasNetas / inversionMarketing) : 0
 
-  const cantidadVentas = Array.isArray(detalleVentas) ? detalleVentas.length : 0
+  const cantidadVentas =
+    typeof cantidadVentasOverride === "number" && Number.isFinite(cantidadVentasOverride)
+      ? cantidadVentasOverride
+      : Array.isArray(detalleVentas)
+        ? detalleVentas.length
+        : 0
   const cpaBeMarketing = cantidadVentas > 0 ? round2(margenContribucion / cantidadVentas) : 0
   const cpaActual = cantidadVentas > 0 ? round2(inversionMarketing / cantidadVentas) : 0
   const colchonCpa = round2(cpaBeMarketing - cpaActual)
   const colchonCpaPct = cpaBeMarketing > 0 ? round2((colchonCpa / cpaBeMarketing) * 100) : 0
 
   const costosPlataformaPct = ventasNetas > 0 ? round2(((comisionesTotales + enviosTotales) / ventasNetas) * 100) : 0
+  const devolucionesTasaPct = cantidadVentas > 0 ? round2((devoluciones.length / cantidadVentas) * 100) : 0
   const devolucionesPctSobreVentas = ventasNetas > 0 ? round2((perdidasDevoluciones / ventasNetas) * 100) : 0
 
   return {
@@ -263,6 +288,7 @@ const buildComparativeMetrics = (eerrData: any, detalleVentas: any[], detalleGas
     colchonCpa,
     colchonCpaPct,
     costosPlataformaPct,
+    devolucionesTasaPct,
     devolucionesPctSobreVentas,
   }
 }
@@ -340,14 +366,150 @@ const buildTopSkuRows = (
     .slice(0, 5)
 }
 
+const STOCK_OLD_DAYS = 90
+
+const getStockDrainageMetrics = async (
+  fechaDesde: Date,
+  fechaHasta: Date,
+  detalleVentas: any[],
+): Promise<StockDrainageMetrics> => {
+  const startSnapshotTs = fechaDesde.getTime() - 1
+  const endSnapshotTs = fechaHasta.getTime()
+  const cutoffStartTs = startSnapshotTs - STOCK_OLD_DAYS * DAY_MS
+  const cutoffEndTs = endSnapshotTs - STOCK_OLD_DAYS * DAY_MS
+
+  const { data: productosData, error: productosError } = await supabase
+    .from("productos")
+    .select("id,costoUnitarioARS")
+
+  if (productosError) {
+    console.warn("No se pudo calcular drenaje de stock: error leyendo productos", productosError)
+    return { stockViejoInmovilizado: 0, pctDrenadoMes: 0, margenPromedioLiquidacionPct: 0 }
+  }
+
+  const movimientos: any[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from("movimientos_stock")
+      .select("producto_id,tipo,cantidad,fecha")
+      .lte("fecha", fechaHasta.toISOString())
+      .order("fecha", { ascending: true })
+      .range(from, from + pageSize - 1)
+
+    if (error) {
+      console.warn("No se pudo calcular drenaje de stock: error leyendo movimientos_stock", error)
+      return { stockViejoInmovilizado: 0, pctDrenadoMes: 0, margenPromedioLiquidacionPct: 0 }
+    }
+
+    if (!data || data.length === 0) break
+    movimientos.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+
+  const costByProduct = new Map<string, number>()
+  for (const producto of productosData || []) {
+    const pid = String((producto as any)?.id ?? "").trim()
+    if (!pid) continue
+    costByProduct.set(pid, toNumber((producto as any)?.costoUnitarioARS))
+  }
+
+  const stockStats = new Map<string, { stockStart: number; recentStart: number; stockEnd: number; recentEnd: number }>()
+  const ensureStats = (pid: string) => {
+    const current = stockStats.get(pid)
+    if (current) return current
+    const created = { stockStart: 0, recentStart: 0, stockEnd: 0, recentEnd: 0 }
+    stockStats.set(pid, created)
+    return created
+  }
+
+  for (const mov of movimientos) {
+    const pid = String(mov?.producto_id ?? "").trim()
+    if (!pid) continue
+    const tipo = String(mov?.tipo ?? "").toLowerCase()
+    const qty = Math.abs(toNumber(mov?.cantidad))
+    if (qty <= 0 || (tipo !== "entrada" && tipo !== "salida")) continue
+    const ts = new Date(mov?.fecha).getTime()
+    if (Number.isNaN(ts)) continue
+    const delta = tipo === "salida" ? -qty : qty
+    const stats = ensureStats(pid)
+
+    if (ts <= startSnapshotTs) {
+      stats.stockStart += delta
+      if (tipo === "entrada" && ts > cutoffStartTs) stats.recentStart += qty
+    }
+    if (ts <= endSnapshotTs) {
+      stats.stockEnd += delta
+      if (tipo === "entrada" && ts > cutoffEndTs) stats.recentEnd += qty
+    }
+  }
+
+  let oldValueStart = 0
+  let oldValueEnd = 0
+  const drainedUnitsByProduct = new Map<string, number>()
+
+  for (const [pid, cost] of costByProduct.entries()) {
+    const stats = stockStats.get(pid) ?? { stockStart: 0, recentStart: 0, stockEnd: 0, recentEnd: 0 }
+    const oldStartUnits = Math.max(0, stats.stockStart - stats.recentStart)
+    const oldEndUnits = Math.max(0, stats.stockEnd - stats.recentEnd)
+    const drainedUnits = Math.max(0, oldStartUnits - oldEndUnits)
+
+    oldValueStart += oldStartUnits * cost
+    oldValueEnd += oldEndUnits * cost
+    if (drainedUnits > 0) drainedUnitsByProduct.set(pid, drainedUnits)
+  }
+
+  const pctDrenadoMes = oldValueStart > 0 ? round2((Math.max(0, oldValueStart - oldValueEnd) / oldValueStart) * 100) : 0
+
+  const ventasByProduct = new Map<string, { count: number; revenue: number; margin: number }>()
+  for (const venta of Array.isArray(detalleVentas) ? detalleVentas : []) {
+    const pid = String(
+      venta?.productoId ?? venta?.producto_id ?? venta?.producto?.id ?? venta?.productos?.id ?? "",
+    ).trim()
+    if (!pid) continue
+    const revenue = toNumber(venta?.pvBruto ?? venta?.pv_bruto)
+    const margin = toNumber(venta?.ingresoMargen ?? venta?.ingreso_margen)
+    const current = ventasByProduct.get(pid) ?? { count: 0, revenue: 0, margin: 0 }
+    current.count += 1
+    current.revenue += revenue
+    current.margin += margin
+    ventasByProduct.set(pid, current)
+  }
+
+  let liquidationRevenue = 0
+  let liquidationMargin = 0
+  for (const [pid, drainedUnits] of drainedUnitsByProduct.entries()) {
+    const sales = ventasByProduct.get(pid)
+    if (!sales || sales.count <= 0) continue
+    const unitsUsed = Math.min(drainedUnits, sales.count)
+    const avgRevenue = sales.revenue / sales.count
+    const avgMargin = sales.margin / sales.count
+    liquidationRevenue += avgRevenue * unitsUsed
+    liquidationMargin += avgMargin * unitsUsed
+  }
+
+  const margenPromedioLiquidacionPct =
+    liquidationRevenue > 0 ? round2((liquidationMargin / liquidationRevenue) * 100) : 0
+
+  return {
+    stockViejoInmovilizado: round2(oldValueEnd),
+    pctDrenadoMes,
+    margenPromedioLiquidacionPct,
+  }
+}
+
 export async function EERRReport({ searchParams: searchParamsPromise }: EERRReportProps) {
   const searchParams = await searchParamsPromise
   const fechaDesdeParam = getFirstParam(searchParams.fechaDesde)
   const fechaHastaParam = getFirstParam(searchParams.fechaHasta)
   const canalParam = getFirstParam(searchParams.canal)
 
-  const fechaDesde = fechaDesdeParam ? new Date(fechaDesdeParam) : new Date(Date.now() - 30 * DAY_MS)
-  const fechaHasta = fechaHastaParam ? new Date(fechaHastaParam) : new Date()
+  const parsedDesde = parseDateOrFallback(fechaDesdeParam, new Date(Date.now() - 30 * DAY_MS))
+  const parsedHasta = parseDateOrFallback(fechaHastaParam, new Date())
+  const fechaDesde = parsedDesde.getTime() <= parsedHasta.getTime() ? parsedDesde : parsedHasta
+  const fechaHasta = parsedDesde.getTime() <= parsedHasta.getTime() ? parsedHasta : parsedDesde
   const canal = canalParam && canalParam !== "all" ? (canalParam as Plataforma | "General") : undefined
 
   const { fechaDesdeAnterior, fechaHastaAnterior } = getPreviousRange(fechaDesde, fechaHasta)
@@ -480,10 +642,28 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     colchonCpa: round2(cpaBeMarketing - cpaActual),
     colchonCpaPct: cpaBeMarketing > 0 ? round2(((cpaBeMarketing - cpaActual) / cpaBeMarketing) * 100) : 0,
     costosPlataformaPct: ventasNetas > 0 ? round2(((comisionesTotales + enviosTotales) / ventasNetas) * 100) : 0,
+    devolucionesTasaPct: Array.isArray(detalleVentas) && detalleVentas.length > 0 ? round2((devoluciones.length / detalleVentas.length) * 100) : 0,
     devolucionesPctSobreVentas: ventasNetas > 0 ? round2((perdidasDevoluciones / ventasNetas) * 100) : 0,
   }
 
-  const metricsAnterior = buildComparativeMetrics(eerrDataAnterior, detalleVentasAnterior, detalleGastosIngresosAnterior)
+  const { cantidadVentas: cantidadVentasAnterior } = buildModelBreakdown({
+    detalleVentas: Array.isArray(detalleVentasAnterior) ? detalleVentasAnterior : [],
+    devoluciones: Array.isArray(eerrDataAnterior?.detalleDevoluciones) ? eerrDataAnterior.detalleDevoluciones : [],
+    ventasNetas: round2(toNumber(eerrDataAnterior?.ventasNetas)),
+  })
+
+  const metricsAnterior = buildComparativeMetrics(
+    eerrDataAnterior,
+    detalleVentasAnterior,
+    detalleGastosIngresosAnterior,
+    cantidadVentasAnterior,
+  )
+  const stockDrainageActual = await getStockDrainageMetrics(fechaDesde, fechaHasta, detalleVentas)
+  const stockDrainageAnterior = await getStockDrainageMetrics(
+    fechaDesdeAnterior,
+    fechaHastaAnterior,
+    detalleVentasAnterior,
+  )
   const topSkuRows = buildTopSkuRows(devoluciones, detalleVentas, ventaIdToModelFallback)
   const marginStatus = getMarginStatus(metricsActual.margenOperativoPct)
   const escalaBadge = getEscalaBadge(metricsActual.margenOperativoPct)
@@ -493,7 +673,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     metricsActual.roasEscalaBE,
     metricsActual.colchonCpa,
   )
-  const devolucionesStatus = getDevolucionesStatus(metricsActual.devolucionesPctSobreVentas)
+  const devolucionesStatus = getDevolucionesStatus(metricsActual.devolucionesTasaPct)
   const negocioRentable = metricsActual.roasNegocioBE > 0 && metricsActual.roasActual >= metricsActual.roasNegocioBE
 
   const trendMargenOperativoPct = buildTrend(metricsActual.margenOperativoPct, metricsAnterior.margenOperativoPct, true)
@@ -501,10 +681,22 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const trendFacturacion = buildTrend(metricsActual.ventasNetas, metricsAnterior.ventasNetas, true)
   const trendCostosPlataforma = buildTrend(metricsActual.costosPlataformaPct, metricsAnterior.costosPlataformaPct, false)
   const trendDevoluciones = buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false)
+  const trendDevolucionesTasa = buildTrend(metricsActual.devolucionesTasaPct, metricsAnterior.devolucionesTasaPct, false)
+  const trendStockViejo = buildTrend(
+    stockDrainageActual.stockViejoInmovilizado,
+    stockDrainageAnterior.stockViejoInmovilizado,
+    false,
+  )
+  const trendDrenajeMes = buildTrend(stockDrainageActual.pctDrenadoMes, stockDrainageAnterior.pctDrenadoMes, true)
+  const trendMargenLiquidacion = buildTrend(
+    stockDrainageActual.margenPromedioLiquidacionPct,
+    stockDrainageAnterior.margenPromedioLiquidacionPct,
+    true,
+  )
 
   const objetivosEnRiesgo: string[] = []
   if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen operativo")
-  if (metricsActual.devolucionesPctSobreVentas > 10) objetivosEnRiesgo.push("Devoluciones")
+  if (metricsActual.devolucionesTasaPct > 10) objetivosEnRiesgo.push("Devoluciones")
   if (metricsActual.colchonCpa < 0) objetivosEnRiesgo.push("CPA marketing")
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
@@ -597,14 +789,14 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     },
     {
       key: "devoluciones_pct",
-      label: "% devoluciones / ventas",
+      label: "% perdida devoluciones / ventas",
       current: metricsActual.devolucionesPctSobreVentas,
       previous: metricsAnterior.devolucionesPctSobreVentas,
       higherIsBetter: false,
       formatter: formatPercent,
       tooltip: {
-        queMide: "Perdida por devoluciones sobre ventas netas.",
-        paraQueSirve: "Detecta riesgo de postventa.",
+        queMide: "Perdida economica de devoluciones sobre ventas netas.",
+        paraQueSirve: "Detecta erosion de margen por postventa.",
         comoDecidir: "Arriba de 10% activar plan urgente.",
       },
       trend: buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false),
@@ -645,7 +837,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             Estado del negocio
           </CardTitle>
           <CardDescription>
-            Panel automatico para responder: rentabilidad, escalamiento, comparativo y riesgo.
+            {`Actual: ${fechaDesde.toLocaleDateString()} - ${fechaHasta.toLocaleDateString()} | Anterior: ${fechaDesdeAnterior.toLocaleDateString()} - ${fechaHastaAnterior.toLocaleDateString()}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -889,22 +1081,36 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Warehouse className="h-5 w-5 text-slate-700" />
-            Drenaje de stock (preparado)
+            Drenaje de stock
           </CardTitle>
-          <CardDescription>Objetivo #3: estructura lista para conectar datos futuros.</CardDescription>
+          <CardDescription>
+            Objetivo #3: antigüedad &gt;= {STOCK_OLD_DAYS} días (estimación FIFO sobre movimientos de stock).
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
             <div className="text-sm font-medium">$ stock viejo inmovilizado</div>
-            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+            <div className="text-2xl font-semibold">{formatCurrency(stockDrainageActual.stockViejoInmovilizado)}</div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatCurrency(stockDrainageAnterior.stockViejoInmovilizado)}`}</span>
+              {renderTrend(trendStockViejo)}
+            </div>
           </div>
-          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
             <div className="text-sm font-medium">% drenado en el mes</div>
-            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+            <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.pctDrenadoMes)}</div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(stockDrainageAnterior.pctDrenadoMes)}`}</span>
+              {renderTrend(trendDrenajeMes)}
+            </div>
           </div>
-          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
             <div className="text-sm font-medium">Margen promedio de liquidacion</div>
-            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+            <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.margenPromedioLiquidacionPct)}</div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(stockDrainageAnterior.margenPromedioLiquidacionPct)}`}</span>
+              {renderTrend(trendMargenLiquidacion)}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -922,19 +1128,22 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <div className="flex items-center gap-1 text-sm font-medium">
               % devoluciones
               <MetricInfoTooltip
-                queMide="Perdida de devoluciones sobre ventas netas."
-                paraQueSirve="Semaforo operativo del riesgo postventa."
+                queMide="Tasa de devoluciones por cantidad: devoluciones / ventas del periodo."
+                paraQueSirve="Semaforo operativo de calidad y postventa."
                 comoDecidir="Meta < 5%; alerta entre 5% y 10%; critico > 10%."
               />
             </div>
-            <div className={`text-3xl font-bold ${devolucionesStatus.className}`}>{formatPercent(metricsActual.devolucionesPctSobreVentas)}</div>
+            <div className={`text-3xl font-bold ${devolucionesStatus.className}`}>{formatPercent(metricsActual.devolucionesTasaPct)}</div>
             <div className="flex items-center justify-between">
               <Badge variant={devolucionesStatus.variant}>{`${devolucionesStatus.emoji} ${devolucionesStatus.label}`}</Badge>
-              <span className="text-xs text-muted-foreground">{`${devoluciones.length} devoluciones`}</span>
+              <span className="text-xs text-muted-foreground">{`${devoluciones.length} devoluciones sobre ${Array.isArray(detalleVentas) ? detalleVentas.length : 0} ventas`}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.devolucionesPctSobreVentas)}`}</span>
-              {renderTrend(trendDevoluciones)}
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.devolucionesTasaPct)}`}</span>
+              {renderTrend(trendDevolucionesTasa)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {`Impacto economico (perdida/ventas): ${formatPercent(metricsActual.devolucionesPctSobreVentas)}`}
             </div>
           </div>
 
