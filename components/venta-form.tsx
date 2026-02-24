@@ -208,7 +208,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       if (producto) {
         // getCostosEstimados30Dias solo acepta 'TN' | 'ML', usar TN como default para 'Directo'
         const plataformaParaCostos = plataforma === 'Directo' ? 'TN' : plataforma
-        getCostosEstimados30Dias(Number(productoId), plataformaParaCostos, producto.sku)
+        getCostosEstimados30Dias(productoId, plataformaParaCostos, producto.sku)
           .then(datos => {
             console.log('📊 Costos estimados recibidos:', datos)
             setCostosEstimados(datos)

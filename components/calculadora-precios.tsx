@@ -26,7 +26,7 @@ interface CalculadoraPreciosProps {
     costoDevolucionesPorVenta: number
     costoGastosNegocioPorVenta: number
   }
-  productoId?: number
+  productoId?: string
   productoSku?: string
 }
 

@@ -2358,7 +2358,7 @@ export async function getEstadisticasDevoluciones(
 }
 
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
-export async function getCostosEstimados30Dias(productoId?: number, plataforma?: 'TN' | 'ML', productoSku?: string) {
+export async function getCostosEstimados30Dias(productoId?: string, plataforma?: 'TN' | 'ML', productoSku?: string) {
   try {
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
@@ -2374,8 +2374,8 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
-      .gte('fecha_compra', fechaInicioDevoluciones)
-      .lte('fecha_compra', fechaFin)
+      .gte('fecha_reclamo', fechaInicioDevoluciones)
+      .lte('fecha_reclamo', fechaFin)
     
     if (productoSku) {
       console.log('[getCostosEstimados30Dias] Filtrando devoluciones por SKU:', productoSku)
@@ -2389,7 +2389,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     if (devoluciones && devoluciones.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra devoluciones (primeras 3):', devoluciones.slice(0, 3).map(d => ({
         sku: d.producto_sku,
-        fecha_compra: d.fecha_compra,
+        fecha_reclamo: d.fecha_reclamo,
         perdida: calcularPerdidaTotalAjustada(d)
       })))
     }
@@ -2404,8 +2404,21 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
     const { data: ventasGenerales } = await ventasGeneralesQuery
     const totalVentasGenerales = ventasGenerales?.length || 0
-    const cantidadDevoluciones = devoluciones?.length || 0
-    const unidadesVendidasNoDevueltas = totalVentasGenerales - cantidadDevoluciones
+
+    // Para costo de devoluciones por unidad del modelo: excluir ventas con reembolso/en devolución
+    // usando la misma regla de exclusión que EERR.
+    const ventaIdsExclModeloSet = new Set<string>()
+    for (const d of devoluciones || []) {
+      const tipo = String(d.tipo_resolucion || '')
+      const estado = String(d.estado || '')
+      const isReembolso = tipo.toLowerCase().includes('reembolso')
+      const isEnDevolucion = estado === 'En devolución'
+      if ((isReembolso || isEnDevolucion) && d.venta_id) {
+        ventaIdsExclModeloSet.add(String(d.venta_id))
+      }
+    }
+    const cantidadDevoluciones = ventaIdsExclModeloSet.size
+    const unidadesVendidasNoDevueltas = (ventasGenerales || []).filter(v => !ventaIdsExclModeloSet.has(String(v.id))).length
 
     // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma) para cálculos específicos de plataforma
     let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio).lte('fecha', fechaFin)
@@ -2638,31 +2651,16 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('   - Total gastos del negocio:', totalGastosNegocio)
     console.log('   - Cantidad de gastos incluidos:', gastosNegocio.length)
     
-    // Obtener TODAS las ventas de los últimos 30 días (GENERAL, sin filtros)
-    const { data: todasVentas30d } = await supabase
-      .from('ventas')
-      .select('id')
-      .gte('fecha', fechaInicio)
-      .lte('fecha', fechaFin)
+    // Para prorrateo de estructura, usar MISMA base que EERR:
+    // ventas del período excluyendo reembolsadas/en devolución (general, sin canal).
+    const totalVentasGenerales30d = todasVentasRoas?.length || 0
+    const cantidadDevoluciones30d = ventaIdsExclSet.size
+    const ventasNoDevueltas30d = ventasFiltradas.length
     
-    const totalVentasGenerales30d = todasVentas30d?.length || 0
-    
-    // Obtener devoluciones de los últimos 30 días para calcular ventas no devueltas
-    const { data: devoluciones30d } = await supabase
-      .from('devoluciones_resumen')
-      .select('id')
-      .neq('estado', 'Rechazada')
-      .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
-      .gte('fecha_compra', fechaInicio)
-      .lte('fecha_compra', fechaFin)
-    
-    const cantidadDevoluciones30d = devoluciones30d?.length || 0
-    const ventasNoDevueltas30d = totalVentasGenerales30d - cantidadDevoluciones30d
-    
-    console.log('[getCostosEstimados30Dias] 📊 DETALLE VENTAS/DEVOLUCIONES 30d:')
-    console.log('   - Total ventas 30d:', totalVentasGenerales30d)
-    console.log('   - Total devoluciones 30d (por fecha_compra):', cantidadDevoluciones30d)
-    console.log('   - Ventas no devueltas:', ventasNoDevueltas30d)
+    console.log('[getCostosEstimados30Dias] 📊 DETALLE VENTAS/DEVOLUCIONES 30d (base EERR):')
+    console.log('   - Total ventas 30d (antes exclusión):', totalVentasGenerales30d)
+    console.log('   - Ventas excluidas (reembolso/en devolución):', cantidadDevoluciones30d)
+    console.log('   - Ventas netas sin reembolsos:', ventasNoDevueltas30d)
     
     // Calcular costo de gastos del negocio por venta (dividir por ventas NO devueltas)
     const costoGastosNegocioPorVenta = ventasNoDevueltas30d > 0

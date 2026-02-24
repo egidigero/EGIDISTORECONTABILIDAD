@@ -87,7 +87,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
   const cargarCostosEstimados = async () => {
     setLoadingCostos(true)
     try {
-      const datos = await getCostosEstimados30Dias(Number(producto.id), undefined, producto.sku)
+      const datos = await getCostosEstimados30Dias(producto.id, undefined, producto.sku)
       console.log("📊 Costos estimados recibidos para producto", producto.modelo, ":", datos)
       setCostosEstimados(datos)
     } catch (error) {
@@ -451,7 +451,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
         onOpenChange={setShowCalculadora}
         onPrecioCalculado={handlePrecioCalculado}
         trigger={<div style={{ display: 'none' }} />}
-        productoId={Number(producto.id)}
+        productoId={producto.id}
         productoSku={producto.sku}
       />
 
