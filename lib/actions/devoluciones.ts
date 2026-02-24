@@ -112,6 +112,34 @@ function normalizeDateLike(val: any): any {
   return val
 }
 
+async function enrichDevolucionesConFueReclamo(rows: any[]): Promise<any[]> {
+  const safeRows = Array.isArray(rows) ? rows : []
+  if (safeRows.length === 0) return safeRows
+
+  try {
+    const ids = safeRows.map((row: any) => row?.id).filter(Boolean)
+    if (ids.length === 0) return safeRows
+
+    const { data: flags, error } = await supabase
+      .from('devoluciones')
+      .select('id,fue_reclamo')
+      .in('id', ids)
+
+    if (error || !Array.isArray(flags) || flags.length === 0) return safeRows
+
+    const byId = new Map<string, any>()
+    for (const flag of flags) byId.set(String((flag as any).id), (flag as any).fue_reclamo)
+
+    return safeRows.map((row: any) => ({
+      ...row,
+      fue_reclamo: byId.has(String(row?.id)) ? byId.get(String(row?.id)) : row?.fue_reclamo,
+    }))
+  } catch (err) {
+    console.warn('No se pudo enriquecer devoluciones con fue_reclamo (no critico)', err)
+    return safeRows
+  }
+}
+
 // Helper: Obtener datos de la venta para auto-completar
 async function obtenerDatosVenta(ventaId: string) {
   try {
@@ -194,27 +222,7 @@ export async function getDevoluciones() {
     } catch (dbg) {
       // ignore debug errors
     }
-    let rows = Array.isArray(data) ? data : []
-    // Enriquecer con fue_reclamo desde tabla base para reglas de pérdida ML sin reclamo.
-    try {
-      const ids = rows.map((r: any) => r?.id).filter(Boolean)
-      if (ids.length > 0) {
-        const { data: flags } = await supabase
-          .from('devoluciones')
-          .select('id,fue_reclamo')
-          .in('id', ids)
-        if (Array.isArray(flags) && flags.length > 0) {
-          const byId = new Map<string, any>()
-          for (const f of flags) byId.set(String((f as any).id), (f as any).fue_reclamo)
-          rows = rows.map((r: any) => ({
-            ...r,
-            fue_reclamo: byId.has(String(r?.id)) ? byId.get(String(r?.id)) : r?.fue_reclamo,
-          }))
-        }
-      }
-    } catch (flagErr) {
-      console.warn('getDevoluciones: no se pudo enriquecer fue_reclamo (no crítico)', flagErr)
-    }
+    let rows = await enrichDevolucionesConFueReclamo(Array.isArray(data) ? data : [])
     // Normalize rows to camelCase so front-end receives stable keys
     try {
       return rows
@@ -2262,38 +2270,39 @@ export async function getEstadisticasDevoluciones(
       }
     }
 
-    const { data: devoluciones, error } = await query
+    const { data: devolucionesData, error } = await query
 
     if (error) throw error
+    const devoluciones = await enrichDevolucionesConFueReclamo(devolucionesData || [])
 
     // Calcular estadísticas
-    const total = devoluciones?.length || 0
+    const total = devoluciones.length || 0
     
-    const porEstado = devoluciones?.reduce((acc, dev) => {
+    const porEstado = devoluciones.reduce((acc, dev) => {
       acc[dev.estado] = (acc[dev.estado] || 0) + 1
       return acc
-    }, {} as Record<string, number>) || {}
+    }, {} as Record<string, number>)
 
-    const porPlataforma = devoluciones?.reduce((acc, dev) => {
+    const porPlataforma = devoluciones.reduce((acc, dev) => {
       acc[dev.plataforma] = (acc[dev.plataforma] || 0) + 1
       return acc
-    }, {} as Record<string, number>) || {}
+    }, {} as Record<string, number>)
 
-    const porTipoResolucion = devoluciones?.reduce((acc, dev) => {
+    const porTipoResolucion = devoluciones.reduce((acc, dev) => {
       if (dev.tipo_resolucion) {
         acc[dev.tipo_resolucion] = (acc[dev.tipo_resolucion] || 0) + 1
       }
       return acc
-    }, {} as Record<string, number>) || {}
+    }, {} as Record<string, number>)
 
-    const perdidaTotal = devoluciones?.reduce((sum, dev) => sum + calcularPerdidaTotalAjustada(dev), 0) || 0
-    const impactoVentasNetas = devoluciones?.reduce((sum, dev) => sum + (dev.impacto_ventas_netas || 0), 0) || 0
+    const perdidaTotal = devoluciones.reduce((sum, dev) => sum + calcularPerdidaTotalAjustada(dev), 0)
+    const impactoVentasNetas = devoluciones.reduce((sum, dev) => sum + (dev.impacto_ventas_netas || 0), 0)
 
     // Top motivos
-    const motivosCount = devoluciones?.reduce((acc, dev) => {
+    const motivosCount = devoluciones.reduce((acc, dev) => {
       acc[dev.motivo] = (acc[dev.motivo] || 0) + 1
       return acc
-    }, {} as Record<string, number>) || {}
+    }, {} as Record<string, number>)
 
     const topMotivos = Object.entries(motivosCount)
       .sort(([, a], [, b]) => (b as number) - (a as number))
@@ -2301,7 +2310,7 @@ export async function getEstadisticasDevoluciones(
       .map(([motivo, count]) => ({ motivo, count: count as number }))
 
     // Promedio de pérdida
-    const devolucionesConPerdida = devoluciones?.filter(d => calcularPerdidaTotalAjustada(d) > 0) || []
+    const devolucionesConPerdida = devoluciones.filter(d => calcularPerdidaTotalAjustada(d) > 0)
     const perdidaPromedio = devolucionesConPerdida.length > 0
       ? perdidaTotal / devolucionesConPerdida.length
       : 0
@@ -2339,7 +2348,7 @@ export async function getEstadisticasDevoluciones(
       topMotivos,
       perdidaPromedio,
       devolucionesConPerdida: devolucionesConPerdida.length,
-      data: devoluciones || [],
+      data: devoluciones,
       totalVentas
     }
   } catch (error) {
@@ -2363,12 +2372,11 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'productoSku:', productoSku, 'plataforma:', plataforma)
 
     // Obtener devoluciones de los últimos 60 días (SIN FILTRAR POR PLATAFORMA - dato general)
-    // Excluir rechazadas y sin reembolso, INCLUIR las que están "En devolución" (tipo_resolucion = null)
+    // Excluir solo rechazadas; la pérdida ajustada canónica resuelve sin reembolso/ML sin reclamo.
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
-      .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
       .gte('fecha_compra', fechaInicioDevoluciones)
     
     if (productoSku) {
@@ -2377,8 +2385,9 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     }
     // NO filtrar por plataforma - queremos dato general
     
-    const { data: devoluciones, error: errorDev } = await devolucionesQuery
-    console.log('[getCostosEstimados30Dias] Devoluciones (60d) encontradas:', devoluciones?.length, 'error:', errorDev)
+    const { data: devolucionesRaw, error: errorDev } = await devolucionesQuery
+    const devoluciones = await enrichDevolucionesConFueReclamo(devolucionesRaw || [])
+    console.log('[getCostosEstimados30Dias] Devoluciones (60d) encontradas:', devoluciones.length, 'error:', errorDev)
     if (devoluciones && devoluciones.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra devoluciones (primeras 3):', devoluciones.slice(0, 3).map(d => ({
         sku: d.producto_sku,

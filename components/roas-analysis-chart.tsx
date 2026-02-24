@@ -120,6 +120,9 @@ export function ROASAnalysisChart({
   const colchonAcosEscalaPct = acosBeEscala > 0 ? (colchonAcosEscala / acosBeEscala) * 100 : 0
   const colchonCpa = cpaBeMarketing - cpaActual
   const colchonCpaPct = cpaBeMarketing > 0 ? (colchonCpa / cpaBeMarketing) * 100 : 0
+  const margenObjetivoPct = 0.1
+  const inversionMaxMargenObjetivo = Math.max(baseNegocioAntesAds - ventasNetas * margenObjetivoPct, 0)
+  const roasObjetivoMargen = inversionMaxMargenObjetivo > 0 ? ventasNetas / inversionMaxMargenObjetivo : 0
 
   const interesesMP = resultadoNetoFinal - resultadoNetoSinInteresesMP
 
@@ -251,6 +254,18 @@ export function ROASAnalysisChart({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div
+            className={`mb-3 rounded-md border px-3 py-2 text-sm ${
+              inversionMarketing <= inversionMaxMargenObjetivo ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            <div className="font-medium">
+              Inversion maxima manteniendo margen operativo &gt;= 10%: {formatCurrency(inversionMaxMargenObjetivo)}
+            </div>
+            <div className="text-xs">
+              Inversion actual: {formatCurrency(inversionMarketing)}
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -274,14 +289,22 @@ export function ROASAnalysisChart({
               <Legend />
 
               <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="5 5" />
-              <ReferenceLine x={roasEscalaBE.toFixed(1)} stroke="#2563eb" strokeDasharray="4 4" label={{ value: `BE Escala ${roasEscalaBE.toFixed(2)}x`, position: "top", fill: "#2563eb" }} />
-              <ReferenceLine x={roasNegocioBE.toFixed(1)} stroke="#7c3aed" strokeDasharray="4 4" label={{ value: `BE Negocio ${roasNegocioBE.toFixed(2)}x`, position: "top", fill: "#7c3aed" }} />
+              <ReferenceLine x={roasEscalaBE} stroke="#2563eb" strokeDasharray="4 4" label={{ value: `BE Escala ${roasEscalaBE.toFixed(2)}x`, position: "top", fill: "#2563eb" }} />
+              <ReferenceLine x={roasNegocioBE} stroke="#7c3aed" strokeDasharray="4 4" label={{ value: `BE Negocio ${roasNegocioBE.toFixed(2)}x`, position: "top", fill: "#7c3aed" }} />
+              {roasObjetivoMargen > 0 && Number.isFinite(roasObjetivoMargen) && (
+                <ReferenceLine
+                  x={roasObjetivoMargen}
+                  stroke="#f59e0b"
+                  strokeDasharray="4 3"
+                  label={{ value: `Margen 10% ${roasObjetivoMargen.toFixed(2)}x`, position: "bottom", fill: "#b45309" }}
+                />
+              )}
               {inversionMarketing > 0 && (
                 <ReferenceLine
-                  x={roasActual.toFixed(1)}
+                  x={roasActual}
                   stroke="#16a34a"
                   strokeDasharray="3 3"
-                  label={{ value: "Hoy estas aca", position: "top", fill: "#16a34a" }}
+                  label={{ value: "Hoy estás acá", position: "top", fill: "#16a34a" }}
                 />
               )}
 

@@ -5,6 +5,7 @@
 import { supabase } from "@/lib/supabase"
 import type { EERRData, Plataforma, MetodoPago } from "@/lib/types"
 import { calcularVenta, getTarifa } from "@/lib/calculos"
+import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
 
 export async function calcularEERR(
   fechaDesde: Date,
@@ -338,10 +339,6 @@ export async function calcularEERR(
   let devolucionesPerdidaTotal = 0
   let devolucionesComisionesRecuperadas = 0
   let devolucionesEnviosTotal = 0
-  // New detailed aggregations
-  let devolucionesCostoProductoOriginalTotal = 0
-  let devolucionesCostoProductoNuevoTotal = 0
-  let devolucionesEnvioNuevoTotal = 0
     for (const d of devoluciones) {
     try {
       // Debug: log key fields for each devolución to diagnose zero totals
@@ -377,47 +374,11 @@ export async function calcularEERR(
       const isReembolso = tipo.includes('Reembolso') || Number(d.monto_reembolsado || 0) > 0
       if (isReembolso) devolucionesTotal += pvDevol
 
+      // Unificar perdida con la misma regla usada en tabla/reporte de devoluciones.
+      devolucionesPerdidaTotal += calcularPerdidaTotalAjustada(d)
+
       // Envíos: preferir el agregado DB `total_costos_envio`, sino sumar los envíos individuales
       const totalCostosEnvioRow = Number((d as any).total_costos_envio ?? ((d.costo_envio_original || 0) + (d.costo_envio_devolucion || 0) + (d.costo_envio_nuevo || 0)))
-
-      // Producto original y nuevo, y nuevo envío: extraer campos y aplicar reglas
-      const perdidaTotalRow = Number((d as any).perdida_total ?? 0)
-      const productoRecuperableRaw = (d as any).producto_recuperable
-      const productoRecuperable = (
-        productoRecuperableRaw === true ||
-        productoRecuperableRaw === 'true' ||
-        productoRecuperableRaw === 't' ||
-        Number(productoRecuperableRaw || 0) === 1
-      )
-
-      // costo_producto_original: persisted column or derived from venta if available
-      const costoProductoOriginalRowRaw = Number((d as any).costo_producto_original ?? venta?.costoProductoOriginal ?? 0)
-      const costoProductoOriginalRow = productoRecuperable ? 0 : Math.max(0, Math.round(costoProductoOriginalRowRaw * 100) / 100)
-
-      // costo_producto_nuevo: if present (replacement product cost)
-      const costoProductoNuevoRow = Math.max(0, Number((d as any).costo_producto_nuevo ?? (d as any).costoProductoNuevo ?? 0))
-
-      // costo_envio_nuevo: outbound shipping for the replacement
-      const costoEnvioNuevoRow = Math.max(0, Number((d as any).costo_envio_nuevo ?? (d as any).costoEnvioNuevo ?? 0))
-
-      // Determine product loss portion (explicit prefer aggregated total_costo_productos when available)
-      let costoProductosRow = 0
-      if (productoRecuperable) {
-        costoProductosRow = 0
-      } else if (typeof (d as any).total_costo_productos !== 'undefined' && (d as any).total_costo_productos !== null) {
-        costoProductosRow = Number((d as any).total_costo_productos || 0)
-      } else if (perdidaTotalRow && totalCostosEnvioRow) {
-        costoProductosRow = Math.max(0, Math.round((perdidaTotalRow - totalCostosEnvioRow) * 100) / 100)
-      } else {
-        costoProductosRow = Number((d as any).costo_producto_perdido ?? perdidaTotalRow ?? 0)
-      }
-
-      // Aggregate: product loss (we'll also keep separate original/new totals)
-      devolucionesPerdidaTotal += costoProductosRow
-      devolucionesEnviosTotal += totalCostosEnvioRow
-      devolucionesCostoProductoOriginalTotal += costoProductoOriginalRow
-      devolucionesCostoProductoNuevoTotal += costoProductoNuevoRow
-      devolucionesEnvioNuevoTotal += costoEnvioNuevoRow
 
       // Comisiones recuperadas: derivar desde la venta (comision base + IVA + IIBB)
   const comisionBase = Number(venta?.comision ?? d.comision ?? 0)
@@ -438,19 +399,11 @@ export async function calcularEERR(
   devolucionesEnviosTotal = Math.round(devolucionesEnviosTotal * 100) / 100
   const devolucionesComisionesTotal = devolucionesComisionesRecuperadas
   const devolucionesCount = devoluciones.length
-  const porcentajeDevolucionesSobreVentas = ventasDespuesDescuentos > 0 ? Math.round((devolucionesTotal / ventasDespuesDescuentos) * 10000) / 100 : 0
+  const porcentajeDevolucionesSobreVentas =
+    ventasDespuesDescuentos > 0 ? Math.round((devolucionesTotal / ventasDespuesDescuentos) * 10000) / 100 : 0
 
-  // Pérdidas derivadas de devoluciones: según nueva definición del negocio
-  // ahora consideramos explícitamente:
-  // - costo del producto ORIGINAL (si no se recupera)
-  // - costo del producto NUEVO (reemplazo)
-  // - nuevo envío de ida (costo_envio_nuevo)
-  // Esto evita duplicar con el agregado `total_costos_envio` y refleja la pérdida real.
-  const devolucionesCostoProductoOriginalTotalRounded = Math.round((devolucionesCostoProductoOriginalTotal || 0) * 100) / 100
-  const devolucionesCostoProductoNuevoTotalRounded = Math.round((devolucionesCostoProductoNuevoTotal || 0) * 100) / 100
-  const devolucionesEnvioNuevoTotalRounded = Math.round((devolucionesEnvioNuevoTotal || 0) * 100) / 100
-
-  const perdidasPorDevoluciones = Math.round((devolucionesCostoProductoOriginalTotalRounded + devolucionesCostoProductoNuevoTotalRounded + devolucionesEnvioNuevoTotalRounded) * 100) / 100
+  // Unificado con reporte/tabla de devoluciones.
+  const perdidasPorDevoluciones = devolucionesPerdidaTotal
 
   // IMPORTANT: refunded sales were excluded from the ventas query above, therefore
   // we should NOT restar (subtract) PV/comisiones de devoluciones de las ventas totals again.

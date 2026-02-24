@@ -5,12 +5,27 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { calcularEERR } from "@/lib/actions/eerr"
 import { getDetalleVentas } from "@/lib/actions/getDetalleVentas"
 import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos"
+import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
 import { getVentaModelosByIds } from "@/lib/actions/getVentaModelosByIds"
 import { buildModelBreakdown } from "@/lib/eerr/model-breakdown"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
 import { ROASAnalysisModal } from "@/components/roas-analysis-modal"
-import { DollarSign, Receipt, ShoppingCart, Target, TrendingUp } from "lucide-react"
+import { MetricInfoTooltip } from "@/components/metric-info-tooltip"
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  DollarSign,
+  Gauge,
+  Receipt,
+  Rocket,
+  ShoppingCart,
+  Target,
+  TrendingUp,
+  Warehouse,
+} from "lucide-react"
 import type { Plataforma } from "@/lib/types"
 
 interface EERRReportProps {
@@ -31,6 +46,7 @@ const ADS_CATEGORY = "Gastos del negocio - ADS"
 const ENVIO_CATEGORY = "Gastos del negocio - Envios"
 const ENVIO_DEVOLUCIONES_CATEGORY = "Gastos del negocio - Envios devoluciones"
 const PAGO_IMPORTACION_CATEGORY = "Pago de Importacion"
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const toNumber = (value: unknown): number => {
   const n = Number(value ?? 0)
@@ -67,19 +83,289 @@ const groupByCategoria = (rows: any[]): Array<[string, any[]]> => {
     .sort((a, b) => a[0].localeCompare(b[0])) as Array<[string, any[]]>
 }
 
+const getAlias = (row: any, keys: string[]): string => {
+  for (const key of keys) {
+    const value = row?.[key]
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim()
+    }
+  }
+  return ""
+}
+
+const getFirstParam = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value
+
+const getPreviousRange = (fechaDesde: Date, fechaHasta: Date) => {
+  const durationMs = Math.max(fechaHasta.getTime() - fechaDesde.getTime(), 0) + DAY_MS
+  const fechaHastaAnterior = new Date(fechaDesde.getTime() - 1)
+  const fechaDesdeAnterior = new Date(fechaHastaAnterior.getTime() - durationMs + 1)
+  return { fechaDesdeAnterior, fechaHastaAnterior }
+}
+
+type TrendTone = "up" | "down" | "neutral"
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline"
+
+interface TrendInfo {
+  deltaPct: number | null
+  tone: TrendTone
+}
+
+interface ComparativeMetrics {
+  ventasNetas: number
+  margenOperativoMonto: number
+  margenOperativoPct: number
+  roasActual: number
+  roasNegocioBE: number
+  roasEscalaBE: number
+  cpaActual: number
+  cpaBeMarketing: number
+  colchonCpa: number
+  colchonCpaPct: number
+  costosPlataformaPct: number
+  devolucionesPctSobreVentas: number
+}
+
+interface MetricComparison {
+  key: string
+  label: string
+  current: number
+  previous: number
+  higherIsBetter: boolean
+  formatter: (value: number) => string
+  tooltip: {
+    queMide: string
+    paraQueSirve: string
+    comoDecidir: string
+  }
+  trend: TrendInfo
+}
+
+interface TopSkuRow {
+  sku: string
+  devoluciones: number
+  perdida: number
+}
+
+const calculateVariationPct = (current: number, previous: number): number | null => {
+  if (Math.abs(previous) < 0.000001) {
+    if (Math.abs(current) < 0.000001) return 0
+    return null
+  }
+  return round2(((current - previous) / Math.abs(previous)) * 100)
+}
+
+const getTrendTone = (deltaPct: number | null, higherIsBetter: boolean): TrendTone => {
+  if (deltaPct === null || Math.abs(deltaPct) < 0.1) return "neutral"
+  const improved = higherIsBetter ? deltaPct > 0 : deltaPct < 0
+  return improved ? "up" : "down"
+}
+
+const buildTrend = (current: number, previous: number, higherIsBetter: boolean): TrendInfo => {
+  const deltaPct = calculateVariationPct(current, previous)
+  return { deltaPct, tone: getTrendTone(deltaPct, higherIsBetter) }
+}
+
+const trendClass = (tone: TrendTone): string => {
+  if (tone === "up") return "text-emerald-700"
+  if (tone === "down") return "text-red-700"
+  return "text-muted-foreground"
+}
+
+const formatVariationPct = (value: number | null): string => {
+  if (value === null) return "N/A"
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`
+}
+
+const buildComparativeMetrics = (eerrData: any, detalleVentas: any[], detalleGastosIngresos: any[]): ComparativeMetrics => {
+  const devoluciones = Array.isArray(eerrData?.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
+  const perdidasDevoluciones = round2(
+    devoluciones.length > 0
+      ? devoluciones.reduce((acc: number, row: any) => acc + calcularPerdidaTotalAjustada(row), 0)
+      : toNumber(eerrData?.devolucionesPerdidaTotal),
+  )
+
+  const ventasNetas = round2(toNumber(eerrData?.ventasNetas))
+  const costoProducto = round2(toNumber(eerrData?.costoProducto))
+  const comisionesTotales = round2(toNumber(eerrData?.comisiones))
+  const enviosTotales = round2(toNumber(eerrData?.enviosTotales))
+  const margenContribucion = round2(ventasNetas - (costoProducto + comisionesTotales + enviosTotales + perdidasDevoluciones))
+
+  const movimientos = Array.isArray(detalleGastosIngresos) ? detalleGastosIngresos : []
+  const gastosUGC = round2(
+    movimientos
+      .filter((row: any) => String(row?.tipo) === "Gasto" && isUGC(row))
+      .reduce((acc: number, row: any) => acc + Math.abs(toNumber(row?.montoARS)), 0),
+  )
+  const gastosAds = round2(toNumber(eerrData?.publicidad))
+  const inversionMarketing = round2(gastosAds + gastosUGC)
+
+  const detalleOtrosGastos = Array.isArray(eerrData?.detalleOtrosGastos) ? eerrData.detalleOtrosGastos : []
+  const gastosEstructuraBase = detalleOtrosGastos.filter((row: any) => {
+    const categoria = normalize(row?.categoria)
+    if (categoriasPersonales.map(normalize).includes(categoria)) return false
+    if (categoria === normalize(PAGO_IMPORTACION_CATEGORY)) return false
+    if (categoria === normalize(ENVIO_DEVOLUCIONES_CATEGORY)) return false
+    if (categoria === normalize(ADS_CATEGORY)) return false
+    if (isUGC(row)) return false
+    return true
+  })
+  const enviosTNRows = gastosEstructuraBase.filter(
+    (row: any) => normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN",
+  )
+  const totalEnviosTNRows = round2(enviosTNRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
+  const totalEnviosCostosPlataformaTN = round2(toNumber(eerrData?.envios))
+  const diferenciaEnviosTN = round2(totalEnviosTNRows - totalEnviosCostosPlataformaTN)
+  const estructuraRows = gastosEstructuraBase.filter(
+    (row: any) => !(normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN"),
+  )
+  const estructuraRowsTotal = round2(estructuraRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
+  const estructuraTotal = round2(estructuraRowsTotal + diferenciaEnviosTN)
+
+  const detalleOtrosIngresos = Array.isArray(eerrData?.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : []
+  const interesesMPRows = detalleOtrosIngresos.filter((row: any) =>
+    categoriasInteresesMP.map(normalize).includes(normalize(row?.categoria)),
+  )
+  const totalInteresesMP = round2(interesesMPRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
+  const otrosIngresosOperativos = round2(
+    detalleOtrosIngresos
+      .filter((row: any) => !categoriasInteresesMP.map(normalize).includes(normalize(row?.categoria)))
+      .reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0),
+  )
+
+  const baseNegocioAntesAds = round2(margenContribucion - estructuraTotal + otrosIngresosOperativos)
+  const resultadoNetoSinInteresesMP = round2(margenContribucion - inversionMarketing - estructuraTotal + otrosIngresosOperativos)
+  const margenOperativoMonto = resultadoNetoSinInteresesMP
+  const margenOperativoPct = ventasNetas > 0 ? round2((margenOperativoMonto / ventasNetas) * 100) : 0
+
+  const roasEscalaBE = margenContribucion > 0 ? round2(ventasNetas / margenContribucion) : 0
+  const roasNegocioBE = baseNegocioAntesAds > 0 ? round2(ventasNetas / baseNegocioAntesAds) : 0
+  const roasActual = inversionMarketing > 0 ? round2(ventasNetas / inversionMarketing) : 0
+
+  const cantidadVentas = Array.isArray(detalleVentas) ? detalleVentas.length : 0
+  const cpaBeMarketing = cantidadVentas > 0 ? round2(margenContribucion / cantidadVentas) : 0
+  const cpaActual = cantidadVentas > 0 ? round2(inversionMarketing / cantidadVentas) : 0
+  const colchonCpa = round2(cpaBeMarketing - cpaActual)
+  const colchonCpaPct = cpaBeMarketing > 0 ? round2((colchonCpa / cpaBeMarketing) * 100) : 0
+
+  const costosPlataformaPct = ventasNetas > 0 ? round2(((comisionesTotales + enviosTotales) / ventasNetas) * 100) : 0
+  const devolucionesPctSobreVentas = ventasNetas > 0 ? round2((perdidasDevoluciones / ventasNetas) * 100) : 0
+
+  return {
+    ventasNetas,
+    margenOperativoMonto,
+    margenOperativoPct,
+    roasActual,
+    roasNegocioBE,
+    roasEscalaBE,
+    cpaActual,
+    cpaBeMarketing,
+    colchonCpa,
+    colchonCpaPct,
+    costosPlataformaPct,
+    devolucionesPctSobreVentas,
+  }
+}
+
+const getMarginStatus = (margenOperativoPct: number): { label: string; emoji: string; variant: BadgeVariant } => {
+  if (margenOperativoPct < 10) return { label: "Escala pausada", emoji: "🔴", variant: "destructive" }
+  if (margenOperativoPct < 15) return { label: "Rentable", emoji: "🟡", variant: "secondary" }
+  if (margenOperativoPct <= 20) return { label: "Optimo", emoji: "🟢", variant: "default" }
+  return { label: "Escalable agresivo", emoji: "🚀", variant: "default" }
+}
+
+const getEscalaBadge = (margenOperativoPct: number): { label: string; variant: BadgeVariant } => {
+  if (margenOperativoPct >= 15) return { label: "✔ Escalable", variant: "default" }
+  if (margenOperativoPct >= 10) return { label: "⚠ Escalar con control", variant: "secondary" }
+  return { label: "✖ No escalar", variant: "destructive" }
+}
+
+const getScaleCapacity = (
+  margenOperativoPct: number,
+  roasActual: number,
+  roasEscalaBE: number,
+  colchonCpa: number,
+): { label: string; emoji: string; variant: BadgeVariant } => {
+  const margenFuerte = margenOperativoPct >= 15
+  const margenMinimo = margenOperativoPct >= 10
+  const roasEscalaOk = roasEscalaBE > 0 && roasActual >= roasEscalaBE
+  const cpaOk = colchonCpa >= 0
+
+  if (margenFuerte && roasEscalaOk && cpaOk) return { label: "listo para escalar", emoji: "🟢", variant: "default" }
+  if (margenMinimo && (roasEscalaOk || cpaOk)) return { label: "escala controlada", emoji: "🟡", variant: "secondary" }
+  return { label: "no escalar", emoji: "🔴", variant: "destructive" }
+}
+
+const getDevolucionesStatus = (
+  devolucionesPct: number,
+): { label: string; emoji: string; className: string; variant: BadgeVariant } => {
+  if (devolucionesPct < 5) return { label: "Controlado", emoji: "🟢", className: "text-emerald-700", variant: "default" }
+  if (devolucionesPct <= 10) return { label: "Atencion", emoji: "🟡", className: "text-amber-700", variant: "secondary" }
+  return { label: "Critico", emoji: "🔴", className: "text-red-700", variant: "destructive" }
+}
+
+const buildTopSkuRows = (
+  devoluciones: any[],
+  detalleVentas: any[],
+  ventaIdToModelFallback: Record<string, string>,
+): TopSkuRow[] => {
+  const ventaIdToSku = new Map<string, string>()
+  for (const venta of Array.isArray(detalleVentas) ? detalleVentas : []) {
+    const ventaId = String(venta?.id ?? "").trim()
+    if (!ventaId) continue
+    const sku = getAlias(venta?.producto, ["sku"]) || getAlias(venta?.productos, ["sku"]) || getAlias(venta, ["sku"])
+    if (sku) ventaIdToSku.set(ventaId, sku)
+  }
+
+  const grouped = new Map<string, TopSkuRow>()
+  for (const devolucion of Array.isArray(devoluciones) ? devoluciones : []) {
+    const ventaId = String(devolucion?.venta_id ?? "").trim()
+    const sku =
+      getAlias(devolucion, ["producto_sku", "productoSku", "sku"]) ||
+      (ventaId ? ventaIdToSku.get(ventaId) ?? "" : "") ||
+      getAlias(devolucion, ["producto_modelo", "productoModelo", "modelo"]) ||
+      (ventaId ? String(ventaIdToModelFallback[ventaId] ?? "").trim() : "") ||
+      "Sin SKU"
+    const current = grouped.get(sku) ?? { sku, devoluciones: 0, perdida: 0 }
+    current.devoluciones += 1
+    current.perdida = round2(current.perdida + calcularPerdidaTotalAjustada(devolucion))
+    grouped.set(sku, current)
+  }
+
+  return Array.from(grouped.values())
+    .sort((a, b) => {
+      if (b.devoluciones !== a.devoluciones) return b.devoluciones - a.devoluciones
+      return b.perdida - a.perdida
+    })
+    .slice(0, 5)
+}
+
 export async function EERRReport({ searchParams: searchParamsPromise }: EERRReportProps) {
   const searchParams = await searchParamsPromise
-  const fechaDesde = searchParams.fechaDesde
-    ? new Date(searchParams.fechaDesde as string)
-    : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const fechaHasta = searchParams.fechaHasta ? new Date(searchParams.fechaHasta as string) : new Date()
-  const canal =
-    searchParams.canal && searchParams.canal !== "all" ? (searchParams.canal as Plataforma | "General") : undefined
+  const fechaDesdeParam = getFirstParam(searchParams.fechaDesde)
+  const fechaHastaParam = getFirstParam(searchParams.fechaHasta)
+  const canalParam = getFirstParam(searchParams.canal)
 
-  const [eerrData, detalleVentas, detalleGastosIngresos] = await Promise.all([
+  const fechaDesde = fechaDesdeParam ? new Date(fechaDesdeParam) : new Date(Date.now() - 30 * DAY_MS)
+  const fechaHasta = fechaHastaParam ? new Date(fechaHastaParam) : new Date()
+  const canal = canalParam && canalParam !== "all" ? (canalParam as Plataforma | "General") : undefined
+
+  const { fechaDesdeAnterior, fechaHastaAnterior } = getPreviousRange(fechaDesde, fechaHasta)
+
+  const [
+    eerrData,
+    eerrDataAnterior,
+    detalleVentas,
+    detalleVentasAnterior,
+    detalleGastosIngresos,
+    detalleGastosIngresosAnterior,
+  ] = await Promise.all([
     calcularEERR(fechaDesde, fechaHasta, canal),
+    calcularEERR(fechaDesdeAnterior, fechaHastaAnterior, canal),
     getDetalleVentas(fechaDesde, fechaHasta, canal),
+    getDetalleVentas(fechaDesdeAnterior, fechaHastaAnterior, canal),
     getDetalleGastosIngresos(fechaDesde, fechaHasta, canal),
+    getDetalleGastosIngresos(fechaDesdeAnterior, fechaHastaAnterior, canal),
   ])
 
   const formatCurrency = (amount: number) => `$${Math.round(amount).toLocaleString()}`
@@ -90,7 +376,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const devoluciones = Array.isArray(eerrData.detalleDevoluciones) ? eerrData.detalleDevoluciones : []
   const perdidasDevoluciones = round2(
     devoluciones.length > 0
-      ? devoluciones.reduce((acc: number, row: any) => acc + toNumber(row?.perdida_total), 0)
+      ? devoluciones.reduce((acc: number, row: any) => acc + calcularPerdidaTotalAjustada(row), 0)
       : toNumber(eerrData.devolucionesPerdidaTotal),
   )
 
@@ -182,6 +468,158 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   )
   const resultadoFinalConPersonales = round2(resultadoNetoFinal - totalGastosPersonales + totalIngresosPersonales)
 
+  const metricsActual: ComparativeMetrics = {
+    ventasNetas,
+    margenOperativoMonto: resultadoNetoSinInteresesMP,
+    margenOperativoPct: ventasNetas > 0 ? round2((resultadoNetoSinInteresesMP / ventasNetas) * 100) : 0,
+    roasActual,
+    roasNegocioBE,
+    roasEscalaBE,
+    cpaActual,
+    cpaBeMarketing,
+    colchonCpa: round2(cpaBeMarketing - cpaActual),
+    colchonCpaPct: cpaBeMarketing > 0 ? round2(((cpaBeMarketing - cpaActual) / cpaBeMarketing) * 100) : 0,
+    costosPlataformaPct: ventasNetas > 0 ? round2(((comisionesTotales + enviosTotales) / ventasNetas) * 100) : 0,
+    devolucionesPctSobreVentas: ventasNetas > 0 ? round2((perdidasDevoluciones / ventasNetas) * 100) : 0,
+  }
+
+  const metricsAnterior = buildComparativeMetrics(eerrDataAnterior, detalleVentasAnterior, detalleGastosIngresosAnterior)
+  const topSkuRows = buildTopSkuRows(devoluciones, detalleVentas, ventaIdToModelFallback)
+  const marginStatus = getMarginStatus(metricsActual.margenOperativoPct)
+  const escalaBadge = getEscalaBadge(metricsActual.margenOperativoPct)
+  const scaleCapacity = getScaleCapacity(
+    metricsActual.margenOperativoPct,
+    metricsActual.roasActual,
+    metricsActual.roasEscalaBE,
+    metricsActual.colchonCpa,
+  )
+  const devolucionesStatus = getDevolucionesStatus(metricsActual.devolucionesPctSobreVentas)
+  const negocioRentable = metricsActual.roasNegocioBE > 0 && metricsActual.roasActual >= metricsActual.roasNegocioBE
+
+  const trendMargenOperativoPct = buildTrend(metricsActual.margenOperativoPct, metricsAnterior.margenOperativoPct, true)
+  const trendMargenOperativoMonto = buildTrend(metricsActual.margenOperativoMonto, metricsAnterior.margenOperativoMonto, true)
+  const trendFacturacion = buildTrend(metricsActual.ventasNetas, metricsAnterior.ventasNetas, true)
+  const trendCostosPlataforma = buildTrend(metricsActual.costosPlataformaPct, metricsAnterior.costosPlataformaPct, false)
+  const trendDevoluciones = buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false)
+
+  const objetivosEnRiesgo: string[] = []
+  if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen operativo")
+  if (metricsActual.devolucionesPctSobreVentas > 10) objetivosEnRiesgo.push("Devoluciones")
+  if (metricsActual.colchonCpa < 0) objetivosEnRiesgo.push("CPA marketing")
+
+  const formatPercent = (value: number) => `${value.toFixed(1)}%`
+  const formatRatio = (value: number) => `${value.toFixed(2)}x`
+
+  const comparisonMetrics: MetricComparison[] = [
+    {
+      key: "margen_operativo_pct",
+      label: "Margen operativo %",
+      current: metricsActual.margenOperativoPct,
+      previous: metricsAnterior.margenOperativoPct,
+      higherIsBetter: true,
+      formatter: formatPercent,
+      tooltip: {
+        queMide: "Resultado operativo neto sobre ventas netas.",
+        paraQueSirve: "Mide la salud principal del negocio.",
+        comoDecidir: "Si cae debajo del 10%, se pausa el escalamiento.",
+      },
+      trend: buildTrend(metricsActual.margenOperativoPct, metricsAnterior.margenOperativoPct, true),
+    },
+    {
+      key: "margen_operativo_ars",
+      label: "Margen operativo $",
+      current: metricsActual.margenOperativoMonto,
+      previous: metricsAnterior.margenOperativoMonto,
+      higherIsBetter: true,
+      formatter: formatCurrency,
+      tooltip: {
+        queMide: "Resultado operativo neto en pesos.",
+        paraQueSirve: "Mide capacidad real de caja para crecer.",
+        comoDecidir: "Si cae vs periodo anterior, escalar con control.",
+      },
+      trend: buildTrend(metricsActual.margenOperativoMonto, metricsAnterior.margenOperativoMonto, true),
+    },
+    {
+      key: "facturacion",
+      label: "Facturacion mensual",
+      current: metricsActual.ventasNetas,
+      previous: metricsAnterior.ventasNetas,
+      higherIsBetter: true,
+      formatter: formatCurrency,
+      tooltip: {
+        queMide: "Ventas netas del periodo filtrado.",
+        paraQueSirve: "Mide traccion comercial del mes.",
+        comoDecidir: "Escalar solo cuando crece junto al margen.",
+      },
+      trend: buildTrend(metricsActual.ventasNetas, metricsAnterior.ventasNetas, true),
+    },
+    {
+      key: "roas_total",
+      label: "ROAS total",
+      current: metricsActual.roasActual,
+      previous: metricsAnterior.roasActual,
+      higherIsBetter: true,
+      formatter: formatRatio,
+      tooltip: {
+        queMide: "Ventas netas por cada peso en marketing.",
+        paraQueSirve: "Mide eficiencia de adquisicion.",
+        comoDecidir: "Escalar solo por encima del ROAS BE.",
+      },
+      trend: buildTrend(metricsActual.roasActual, metricsAnterior.roasActual, true),
+    },
+    {
+      key: "cpa_actual",
+      label: "CPA actual",
+      current: metricsActual.cpaActual,
+      previous: metricsAnterior.cpaActual,
+      higherIsBetter: false,
+      formatter: formatCurrency,
+      tooltip: {
+        queMide: "Costo por adquisicion por venta.",
+        paraQueSirve: "Controla la eficiencia del crecimiento.",
+        comoDecidir: "Si supera CPA BE, frenar o optimizar.",
+      },
+      trend: buildTrend(metricsActual.cpaActual, metricsAnterior.cpaActual, false),
+    },
+    {
+      key: "costos_plataforma",
+      label: "% costos plataforma / ventas",
+      current: metricsActual.costosPlataformaPct,
+      previous: metricsAnterior.costosPlataformaPct,
+      higherIsBetter: false,
+      formatter: formatPercent,
+      tooltip: {
+        queMide: "(Comisiones + envios) / ventas netas.",
+        paraQueSirve: "Mide friccion estructural de plataforma.",
+        comoDecidir: "Si sube, revisar tarifas, pricing y logistica.",
+      },
+      trend: buildTrend(metricsActual.costosPlataformaPct, metricsAnterior.costosPlataformaPct, false),
+    },
+    {
+      key: "devoluciones_pct",
+      label: "% devoluciones / ventas",
+      current: metricsActual.devolucionesPctSobreVentas,
+      previous: metricsAnterior.devolucionesPctSobreVentas,
+      higherIsBetter: false,
+      formatter: formatPercent,
+      tooltip: {
+        queMide: "Perdida por devoluciones sobre ventas netas.",
+        paraQueSirve: "Detecta riesgo de postventa.",
+        comoDecidir: "Arriba de 10% activar plan urgente.",
+      },
+      trend: buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false),
+    },
+  ]
+
+  const renderTrend = (trend: TrendInfo) => (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${trendClass(trend.tone)}`}>
+      {trend.tone === "up" && <ArrowUp className="h-3 w-3" />}
+      {trend.tone === "down" && <ArrowDown className="h-3 w-3" />}
+      {trend.tone === "neutral" && <ArrowRight className="h-3 w-3" />}
+      {formatVariationPct(trend.deltaPct)}
+    </span>
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
@@ -199,6 +637,331 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           devolucionesNoAsignadas={devolucionesNoAsignadas}
         />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gauge className="h-5 w-5 text-blue-700" />
+            Estado del negocio
+          </CardTitle>
+          <CardDescription>
+            Panel automatico para responder: rentabilidad, escalamiento, comparativo y riesgo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-lg border p-4 bg-blue-50/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-sm font-medium">
+                  Margen operativo %
+                  <MetricInfoTooltip
+                    queMide="Resultado operativo neto (sin intereses MP) sobre ventas netas."
+                    paraQueSirve="Es el KPI principal para habilitar o frenar escalamiento."
+                    comoDecidir="Debajo de 10% se pausa escala; arriba de 15% se habilita escala fuerte."
+                  />
+                </div>
+                <Badge variant={marginStatus.variant}>{`${marginStatus.emoji} ${marginStatus.label}`}</Badge>
+              </div>
+              <div className="text-3xl font-bold">{formatPercent(metricsActual.margenOperativoPct)}</div>
+              <div className="text-xs text-muted-foreground">Objetivo: &gt;= 10%</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.margenOperativoPct)}`}</span>
+                {renderTrend(trendMargenOperativoPct)}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4 bg-slate-50/70 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-sm font-medium">
+                  Margen operativo $
+                  <MetricInfoTooltip
+                    queMide="Resultado operativo neto en pesos."
+                    paraQueSirve="Muestra capacidad de caja para sostener crecimiento."
+                    comoDecidir="Si baja vs periodo anterior, escalar con control o pausar."
+                  />
+                </div>
+                <Badge variant={escalaBadge.variant}>{escalaBadge.label}</Badge>
+              </div>
+              <div className={`text-3xl font-bold ${metricsActual.margenOperativoMonto >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                {formatCurrency(metricsActual.margenOperativoMonto)}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{`Anterior: ${formatCurrency(metricsAnterior.margenOperativoMonto)}`}</span>
+                {renderTrend(trendMargenOperativoMonto)}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="rounded-md border p-3 bg-emerald-50/60">
+              <div className="text-xs text-muted-foreground">¿El negocio es rentable?</div>
+              <div className={`text-base font-semibold ${negocioRentable ? "text-emerald-700" : "text-red-700"}`}>
+                {negocioRentable ? "Si" : "No"}
+              </div>
+            </div>
+            <div className="rounded-md border p-3 bg-blue-50/60">
+              <div className="text-xs text-muted-foreground">¿Se puede escalar?</div>
+              <div className="text-base font-semibold">{`${scaleCapacity.emoji} ${scaleCapacity.label}`}</div>
+            </div>
+            <div className="rounded-md border p-3 bg-slate-50/80">
+              <div className="text-xs text-muted-foreground">¿Mejor o peor que antes?</div>
+              <div className={`text-base font-semibold ${trendClass(trendMargenOperativoMonto.tone)}`}>
+                {trendMargenOperativoMonto.tone === "up"
+                  ? "Mejor"
+                  : trendMargenOperativoMonto.tone === "down"
+                    ? "Peor"
+                    : "Estable"}
+              </div>
+            </div>
+            <div className="rounded-md border p-3 bg-amber-50/70">
+              <div className="text-xs text-muted-foreground">Objetivo en riesgo</div>
+              <div className={`text-base font-semibold ${objetivosEnRiesgo.length > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                {objetivosEnRiesgo.length > 0 ? objetivosEnRiesgo.join(" + ") : "Sin riesgo critico"}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Comparativo vs periodo anterior</CardTitle>
+          <CardDescription>
+            {`Mismo rango temporal anterior (${fechaDesdeAnterior.toLocaleDateString()} - ${fechaHastaAnterior.toLocaleDateString()}).`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {comparisonMetrics.map((metric) => (
+              <div key={metric.key} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium leading-tight">{metric.label}</div>
+                  <MetricInfoTooltip
+                    queMide={metric.tooltip.queMide}
+                    paraQueSirve={metric.tooltip.paraQueSirve}
+                    comoDecidir={metric.tooltip.comoDecidir}
+                  />
+                </div>
+                <div className="text-xl font-semibold">{metric.formatter(metric.current)}</div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{`Anterior: ${metric.formatter(metric.previous)}`}</span>
+                  {renderTrend(metric.trend)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-emerald-700" />
+            Rentabilidad
+          </CardTitle>
+          <CardDescription>Objetivo #1</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="rounded-lg border p-4 space-y-2 bg-emerald-50/50">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              ROAS total vs ROAS BE negocio
+              <MetricInfoTooltip
+                queMide="ROAS actual comparado contra el break-even del negocio."
+                paraQueSirve="Confirma si el marketing sostiene resultado neto."
+                comoDecidir="Solo rentable si ROAS actual supera ROAS BE negocio."
+              />
+            </div>
+            <div className="flex justify-between text-sm"><span>ROAS actual</span><span className="font-semibold">{formatRatio(metricsActual.roasActual)}</span></div>
+            <div className="flex justify-between text-sm"><span>ROAS BE</span><span className="font-semibold">{formatRatio(metricsActual.roasNegocioBE)}</span></div>
+            <Badge variant={negocioRentable ? "default" : "destructive"}>{negocioRentable ? "🟢 rentable" : "🔴 no rentable"}</Badge>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-2 bg-blue-50/40">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              CPA actual vs CPA BE
+              <MetricInfoTooltip
+                queMide="Costo por venta actual frente al maximo permitido."
+                paraQueSirve="Evita escalar perdiendo margen."
+                comoDecidir="Si CPA actual supera CPA BE, ajustar inversion."
+              />
+            </div>
+            <div className="flex justify-between text-sm"><span>CPA actual</span><span className={`font-semibold ${metricsActual.cpaActual <= metricsActual.cpaBeMarketing ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(metricsActual.cpaActual)}</span></div>
+            <div className="flex justify-between text-sm"><span>CPA BE</span><span className="font-semibold">{formatCurrency(metricsActual.cpaBeMarketing)}</span></div>
+            <div className="flex justify-between text-sm"><span>Colchon CPA</span><span className={`font-semibold ${metricsActual.colchonCpa >= 0 ? "text-emerald-700" : "text-red-700"}`}>{`${formatCurrency(metricsActual.colchonCpa)} (${metricsActual.colchonCpaPct >= 0 ? "+" : ""}${metricsActual.colchonCpaPct.toFixed(1)}%)`}</span></div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-2">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              % costos plataforma / ventas
+              <MetricInfoTooltip
+                queMide="(Comisiones + envios) / ventas netas."
+                paraQueSirve="Mide friccion estructural del canal."
+                comoDecidir="Si sube mes a mes, corregir costos y pricing."
+              />
+            </div>
+            <div className="text-2xl font-bold">{formatPercent(metricsActual.costosPlataformaPct)}</div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.costosPlataformaPct)}`}</span>
+              {renderTrend(trendCostosPlataforma)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-2">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              % devoluciones sobre ventas
+              <MetricInfoTooltip
+                queMide="Perdida por devoluciones sobre ventas netas."
+                paraQueSirve="Mide impacto real de devoluciones en margen."
+                comoDecidir="Si supera 10%, activar plan de correccion urgente."
+              />
+            </div>
+            <div className="text-2xl font-bold">{formatPercent(metricsActual.devolucionesPctSobreVentas)}</div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.devolucionesPctSobreVentas)}`}</span>
+              {renderTrend(trendDevoluciones)}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="h-5 w-5 text-blue-700" />
+            Escalamiento
+          </CardTitle>
+          <CardDescription>Objetivo #2</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-lg border p-4 space-y-2">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              Facturacion mensual
+              <MetricInfoTooltip
+                queMide="Ventas netas del periodo filtrado."
+                paraQueSirve="Mide traccion comercial mensual."
+                comoDecidir="Escalar cuando facturacion y margen mejoran en paralelo."
+              />
+            </div>
+            <div className="text-3xl font-bold">{formatCurrency(metricsActual.ventasNetas)}</div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatCurrency(metricsAnterior.ventasNetas)}`}</span>
+              {renderTrend(trendFacturacion)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1 text-sm font-medium">
+                Capacidad de escala
+                <MetricInfoTooltip
+                  queMide="Estado derivado de margen %, ROAS escala y colchon CPA."
+                  paraQueSirve="Resume si se puede ampliar inversion."
+                  comoDecidir="Verde escala, amarillo control, rojo no escalar."
+                />
+              </div>
+              <Badge variant={scaleCapacity.variant}>{`${scaleCapacity.emoji} ${scaleCapacity.label}`}</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+              <div className="rounded-md bg-slate-50 p-2">
+                <div className="text-xs text-muted-foreground">Margen operativo</div>
+                <div className={`font-semibold ${metricsActual.margenOperativoPct >= 10 ? "text-emerald-700" : "text-red-700"}`}>
+                  {formatPercent(metricsActual.margenOperativoPct)}
+                </div>
+              </div>
+              <div className="rounded-md bg-slate-50 p-2">
+                <div className="text-xs text-muted-foreground">ROAS escala</div>
+                <div className={`font-semibold ${metricsActual.roasActual >= metricsActual.roasEscalaBE ? "text-emerald-700" : "text-red-700"}`}>
+                  {`${formatRatio(metricsActual.roasActual)} / ${formatRatio(metricsActual.roasEscalaBE)}`}
+                </div>
+              </div>
+              <div className="rounded-md bg-slate-50 p-2">
+                <div className="text-xs text-muted-foreground">Colchon CPA</div>
+                <div className={`font-semibold ${metricsActual.colchonCpa >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                  {`${formatCurrency(metricsActual.colchonCpa)} (${metricsActual.colchonCpaPct >= 0 ? "+" : ""}${metricsActual.colchonCpaPct.toFixed(1)}%)`}
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Warehouse className="h-5 w-5 text-slate-700" />
+            Drenaje de stock (preparado)
+          </CardTitle>
+          <CardDescription>Objetivo #3: estructura lista para conectar datos futuros.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+            <div className="text-sm font-medium">$ stock viejo inmovilizado</div>
+            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+          </div>
+          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+            <div className="text-sm font-medium">% drenado en el mes</div>
+            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+          </div>
+          <div className="rounded-lg border border-dashed p-4 bg-slate-50/80">
+            <div className="text-sm font-medium">Margen promedio de liquidacion</div>
+            <div className="text-2xl font-semibold text-muted-foreground">--</div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-700" />
+            Devoluciones
+          </CardTitle>
+          <CardDescription>Objetivo #4</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-lg border p-4 space-y-2">
+            <div className="flex items-center gap-1 text-sm font-medium">
+              % devoluciones
+              <MetricInfoTooltip
+                queMide="Perdida de devoluciones sobre ventas netas."
+                paraQueSirve="Semaforo operativo del riesgo postventa."
+                comoDecidir="Meta < 5%; alerta entre 5% y 10%; critico > 10%."
+              />
+            </div>
+            <div className={`text-3xl font-bold ${devolucionesStatus.className}`}>{formatPercent(metricsActual.devolucionesPctSobreVentas)}</div>
+            <div className="flex items-center justify-between">
+              <Badge variant={devolucionesStatus.variant}>{`${devolucionesStatus.emoji} ${devolucionesStatus.label}`}</Badge>
+              <span className="text-xs text-muted-foreground">{`${devoluciones.length} devoluciones`}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.devolucionesPctSobreVentas)}`}</span>
+              {renderTrend(trendDevoluciones)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <div className="mb-3 flex items-center gap-1 text-sm font-medium">
+              Top SKUs con devoluciones
+              <MetricInfoTooltip
+                queMide="SKUs/modelos con mayor frecuencia de devoluciones."
+                paraQueSirve="Prioriza acciones sobre productos con mayor perdida."
+                comoDecidir="Atacar primero mayor cantidad y mayor impacto economico."
+              />
+            </div>
+            {topSkuRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Sin devoluciones en el periodo.</div>
+            ) : (
+              <ul className="space-y-2">
+                {topSkuRows.map((row) => (
+                  <li key={row.sku} className="flex items-center justify-between text-sm border-b pb-2 last:border-b-0">
+                    <span className="font-medium">{row.sku}</span>
+                    <span className="text-muted-foreground">{`${row.devoluciones} dev. | -${formatCurrency(row.perdida)}`}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
