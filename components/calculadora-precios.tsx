@@ -40,7 +40,7 @@ interface ParametrosCalculo {
   usarComisionManual: boolean // Habilita el campo de comisión manual
   comisionManual?: number // Valor de comisión manual
   costoDevoluciones: number // Costo estimado de devoluciones por venta
-  costoGastosNegocio: number // Costo estimado de gastos del negocio por venta
+  costoGastosNegocio: number // Estructura prorrateada por unidad (costo fijo unitario)
   cuotas?: number // Cantidad de cuotas para TN + MercadoPago + Cuotas sin interés
 }
 
@@ -351,7 +351,7 @@ export function CalculadoraPrecios({
     
     const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + tarifa.fijoPorOperacion
 
-    // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Gastos Negocio
+    // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Estructura prorrateada
     const margenOperativo = resultadoOperativo - totalCostosPlataforma - parametros.costoDevoluciones - parametros.costoGastosNegocio
 
     // 5. Costo de Publicidad (calculado por ROAS)
@@ -692,7 +692,7 @@ export function CalculadoraPrecios({
 
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
-                      Gastos del Negocio por Venta (ARS)
+                      Estructura prorrateada por unidad (ARS)
                     </Label>
                     <Input
                       type="number"
@@ -705,6 +705,9 @@ export function CalculadoraPrecios({
                       placeholder="0.00"
                       disabled={modoAnalisis30Dias}
                     />
+                    <div className="text-xs text-muted-foreground">
+                      Estructura total / ventas netas (sin devoluciones)
+                    </div>
                     {modoAnalisis30Dias && datosReales30Dias ? (
                       <div className="text-xs text-blue-600">
                         ✓ Usando promedio real: ${datosReales30Dias.gastosNegocioPromedio.toFixed(2)}
@@ -1095,7 +1098,7 @@ export function CalculadoraPrecios({
                         )}
                         {parametros.costoGastosNegocio > 0 && (
                           <div className="flex justify-between text-orange-600">
-                            <span>Gastos del Negocio (30d):</span>
+                            <span>Estructura prorrateada (30d):</span>
                             <span className="font-mono">-${parametros.costoGastosNegocio.toFixed(2)}</span>
                           </div>
                         )}

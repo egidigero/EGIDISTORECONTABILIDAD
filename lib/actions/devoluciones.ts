@@ -2363,21 +2363,19 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
+    const fechaFin = new Date().toISOString().split('T')[0]
+    const fechaInicioDevoluciones = fechaInicio
 
-    // Para devoluciones, usar 60 días para tener mejor muestra
-    const hace60Dias = new Date()
-    hace60Dias.setDate(hace60Dias.getDate() - 60)
-    const fechaInicioDevoluciones = hace60Dias.toISOString().split('T')[0]
+    console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'hasta:', fechaFin, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'productoSku:', productoSku, 'plataforma:', plataforma)
 
-    console.log('[getCostosEstimados30Dias] Ventas desde:', fechaInicio, 'Devoluciones desde:', fechaInicioDevoluciones, 'productoId:', productoId, 'productoSku:', productoSku, 'plataforma:', plataforma)
-
-    // Obtener devoluciones de los últimos 60 días (SIN FILTRAR POR PLATAFORMA - dato general)
+    // Obtener devoluciones de los últimos 30 días (SIN FILTRAR POR PLATAFORMA - dato general)
     // Excluir solo rechazadas; la pérdida ajustada canónica resuelve sin reembolso/ML sin reclamo.
     let devolucionesQuery = supabase
       .from('devoluciones_resumen')
       .select('*')
       .neq('estado', 'Rechazada')
       .gte('fecha_compra', fechaInicioDevoluciones)
+      .lte('fecha_compra', fechaFin)
     
     if (productoSku) {
       console.log('[getCostosEstimados30Dias] Filtrando devoluciones por SKU:', productoSku)
@@ -2387,7 +2385,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     const { data: devolucionesRaw, error: errorDev } = await devolucionesQuery
     const devoluciones = await enrichDevolucionesConFueReclamo(devolucionesRaw || [])
-    console.log('[getCostosEstimados30Dias] Devoluciones (60d) encontradas:', devoluciones.length, 'error:', errorDev)
+    console.log('[getCostosEstimados30Dias] Devoluciones (30d) encontradas:', devoluciones.length, 'error:', errorDev)
     if (devoluciones && devoluciones.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra devoluciones (primeras 3):', devoluciones.slice(0, 3).map(d => ({
         sku: d.producto_sku,
@@ -2399,8 +2397,8 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       console.error('[getCostosEstimados30Dias] Error completo devoluciones:', JSON.stringify(errorDev))
     }
 
-    // Obtener ventas de los últimos 60 días (SIN FILTRAR POR PLATAFORMA) para cálculo de devoluciones
-    let ventasGeneralesQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicioDevoluciones)
+    // Obtener ventas de los últimos 30 días (SIN FILTRAR POR PLATAFORMA) para cálculo de devoluciones
+    let ventasGeneralesQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicioDevoluciones).lte('fecha', fechaFin)
     if (productoId) {
       ventasGeneralesQuery = ventasGeneralesQuery.eq('productoId', productoId)
     }
@@ -2410,7 +2408,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const unidadesVendidasNoDevueltas = totalVentasGenerales - cantidadDevoluciones
 
     // Obtener ventas de los últimos 30 días (filtrar por producto y plataforma) para cálculos específicos de plataforma
-    let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio)
+    let ventasQuery = supabase.from('ventas').select('*').gte('fecha', fechaInicio).lte('fecha', fechaFin)
     
     if (productoId) {
       ventasQuery = ventasQuery.eq('productoId', productoId)
@@ -2433,12 +2431,12 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + calcularPerdidaTotalAjustada(dev), 0) || 0
 
     // Calcular costo de incidencia de devoluciones (GENERAL, no por plataforma):
-    // Pérdidas totales del modelo (60d) / unidades vendidas no devueltas del modelo (60d)
+    // Pérdidas totales del modelo (30d) / unidades vendidas no devueltas del modelo (30d)
     const costoDevolucionesPorVenta = unidadesVendidasNoDevueltas > 0 
       ? Math.round((perdidaTotalDevoluciones / unidadesVendidasNoDevueltas) * 100) / 100
       : 0
     
-    console.log('[getCostosEstimados30Dias] Devoluciones (60d):', cantidadDevoluciones, 'Ventas generales (60d):', totalVentasGenerales, 'No devueltas:', unidadesVendidasNoDevueltas, 'Pérdidas:', perdidaTotalDevoluciones, 'Costo/venta:', costoDevolucionesPorVenta)
+    console.log('[getCostosEstimados30Dias] Devoluciones (30d):', cantidadDevoluciones, 'Ventas generales (30d):', totalVentasGenerales, 'No devueltas:', unidadesVendidasNoDevueltas, 'Pérdidas:', perdidaTotalDevoluciones, 'Costo/venta:', costoDevolucionesPorVenta)
 
     // Primero verificar si hay gastos en general
     const { data: gastosTotales } = await supabase
@@ -2446,6 +2444,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .select('categoria, tipo, fecha')
       .eq('tipo', 'Gasto')
       .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
       .limit(5)
     console.log('[getCostosEstimados30Dias] Muestra de gastos totales:', gastosTotales)
 
@@ -2456,6 +2455,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .eq('tipo', 'Gasto')
       .or('categoria.eq.Gastos del negocio - ADS,descripcion.ilike.%Meta ADS%')
       .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
 
     console.log('[getCostosEstimados30Dias] Gastos ADS encontrados:', gastosAds?.length, 'error:', errorAds)
     if (gastosAds && gastosAds.length > 0) {
@@ -2492,6 +2492,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .from('devoluciones')
       .select('id, venta_id, tipo_resolucion, estado')
       .gte('fecha_reclamo', fechaInicio)
+      .lte('fecha_reclamo', fechaFin)
     
     const devolucionesExcl = devolucionesForExclusion || []
     
@@ -2519,6 +2520,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .from('ventas')
       .select('id, pvBruto, plataforma, cargoEnvioCosto')
       .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
     
     // IGUAL QUE EERR: Si hay ids a excluir, usar .not('id','in',`(1,2,3)`)
     const ventaIdsExcluir = Array.from(ventaIdsExclSet)
@@ -2567,7 +2569,6 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     
     // IGUAL QUE EERR: Otros gastos (todos, excluyendo solo ADS)
     // NOTA: Incluimos "Gastos del negocio - Envios" porque necesitamos calcular la diferencia con los envíos de plataforma
-    const fechaFin = new Date().toISOString()
     const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
       .from("gastos_ingresos")
       .select("montoARS,categoria,canal")
@@ -2642,6 +2643,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .from('ventas')
       .select('id')
       .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
     
     const totalVentasGenerales30d = todasVentas30d?.length || 0
     
@@ -2652,6 +2654,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       .neq('estado', 'Rechazada')
       .or('tipo_resolucion.neq.Sin reembolso,tipo_resolucion.is.null')
       .gte('fecha_compra', fechaInicio)
+      .lte('fecha_compra', fechaFin)
     
     const cantidadDevoluciones30d = devoluciones30d?.length || 0
     const ventasNoDevueltas30d = totalVentasGenerales30d - cantidadDevoluciones30d

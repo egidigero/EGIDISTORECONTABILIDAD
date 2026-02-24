@@ -378,7 +378,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envío + fijo + IIBB manual adicional
           : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
-      // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Gastos Negocio
+      // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Estructura prorrateada
       const costoDevoluciones = costosEstimados?.costoDevolucionesPorVenta || 0
       const costoGastosNegocio = costosEstimados?.costoGastosNegocioPorVenta || 0
       const margenOperativo = resultadoOperativo - totalCostosPlataforma - costoDevoluciones - costoGastosNegocio
@@ -1021,7 +1021,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       <span className="font-mono">-${preview.data.costoDevoluciones.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Gastos negocio estimados:</span>
+                      <span>Estructura prorrateada estimada:</span>
                       <span className="font-mono">-${preview.data.costoGastosNegocio.toFixed(2)}</span>
                     </div>
                     <div className="border-t pt-1 mt-2">
