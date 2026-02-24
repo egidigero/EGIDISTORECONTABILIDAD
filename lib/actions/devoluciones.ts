@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 import { devolucionSchema, devolucionSchemaBase, devolucionSchemaWithRecoveryCheck, type DevolucionFormData, type GastoIngresoFormData } from "@/lib/validations"
 import { eliminarVentaDeLiquidacion } from "@/lib/actions/actualizar-liquidacion"
 import { recalcularLiquidacionesEnCascada } from "@/lib/actions/recalcular-liquidaciones"
+import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
 
 // Helper: convert camelCase object keys to snake_case for PostgREST/Supabase
 function toSnakeCase(obj: any): any {
@@ -193,9 +194,30 @@ export async function getDevoluciones() {
     } catch (dbg) {
       // ignore debug errors
     }
+    let rows = Array.isArray(data) ? data : []
+    // Enriquecer con fue_reclamo desde tabla base para reglas de pérdida ML sin reclamo.
+    try {
+      const ids = rows.map((r: any) => r?.id).filter(Boolean)
+      if (ids.length > 0) {
+        const { data: flags } = await supabase
+          .from('devoluciones')
+          .select('id,fue_reclamo')
+          .in('id', ids)
+        if (Array.isArray(flags) && flags.length > 0) {
+          const byId = new Map<string, any>()
+          for (const f of flags) byId.set(String((f as any).id), (f as any).fue_reclamo)
+          rows = rows.map((r: any) => ({
+            ...r,
+            fue_reclamo: byId.has(String(r?.id)) ? byId.get(String(r?.id)) : r?.fue_reclamo,
+          }))
+        }
+      }
+    } catch (flagErr) {
+      console.warn('getDevoluciones: no se pudo enriquecer fue_reclamo (no crítico)', flagErr)
+    }
     // Normalize rows to camelCase so front-end receives stable keys
     try {
-      return (data || [])
+      return rows
         // Excluir devoluciones 'Sin reembolso' de estados en camino y finalizados
         .filter(d => {
           const sinReembolso = d.tipo_resolucion === 'Sin reembolso' || (d.tipoResolucion && d.tipoResolucion === 'Sin reembolso');
@@ -253,7 +275,7 @@ export async function getDevoluciones() {
     } catch (normErr) {
       // If normalization fails, still return raw data to avoid breaking callers
       console.warn('getDevoluciones: normalization failed, returning raw rows', normErr)
-      return data
+      return rows
     }
   } catch (error) {
     console.error("Error al obtener devoluciones:", error)
@@ -331,6 +353,22 @@ export async function createDevolucion(data: DevolucionFormData) {
     // que la columna generada `perdida_total` muestre la pérdida de producto
     // antes de que la devolución sea finalizada.
     const isProvisional = (devolucionCompleta.estado === 'En devolución' || !devolucionCompleta.tipoResolucion)
+    const plataformaCreacion = (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN'
+    const esSinReembolsoCreacion =
+      devolucionCompleta.tipoResolucion === 'Sin reembolso' ||
+      (typeof devolucionCompleta.estado === 'string' && devolucionCompleta.estado.includes('Sin reembolso'))
+    const fueReclamoCreacion = (devolucionCompleta as any).fueReclamo ?? (devolucionCompleta as any).fue_reclamo
+    const esMLSinReclamoCreacion = plataformaCreacion === 'ML' && fueReclamoCreacion === false
+    const costoEnvioOriginalCreacion =
+      esSinReembolsoCreacion || esMLSinReclamoCreacion
+        ? 0
+        : Number(devolucionCompleta.costoEnvioOriginal ?? 0)
+    const costoEnvioDevolucionCreacion = esSinReembolsoCreacion || esMLSinReclamoCreacion
+      ? 0
+      : Number(devolucionCompleta.costoEnvioDevolucion ?? 0)
+    const costoEnvioNuevoCreacion = esSinReembolsoCreacion || esMLSinReclamoCreacion
+      ? 0
+      : Number(devolucionCompleta.costoEnvioNuevo ?? 0)
 
     const dbRow: any = {
       venta_id: devolucionCompleta.ventaId,
@@ -346,7 +384,7 @@ export async function createDevolucion(data: DevolucionFormData) {
       motivo: devolucionCompleta.motivo,
   // plataforma is NOT NULL in the DB; if we couldn't fetch it from the venta or the form,
   // default to 'TN' (Tienda Nube) to avoid DB constraint violation. Adjust as needed.
-  plataforma: (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN',
+  plataforma: plataformaCreacion,
       estado: devolucionCompleta.estado ?? 'En devolución',
       tipo_resolucion: devolucionCompleta.tipoResolucion ?? null,
   // Persistir costo de producto ORIGINAL siempre (para trazabilidad),
@@ -355,15 +393,17 @@ export async function createDevolucion(data: DevolucionFormData) {
   // El costo de producto nuevo y la bandera de recuperabilidad solo se aplican
   // cuando la devolución se finaliza (o se proveen explícitamente).
   costo_producto_nuevo: isProvisional ? 0 : Number(devolucionCompleta.costoProductoNuevo ?? 0),
-  producto_recuperable: isProvisional ? false : Boolean((devolucionCompleta as any).productoRecuperable ?? false),
-      costo_envio_original: Number(devolucionCompleta.costoEnvioOriginal ?? 0),
-      costo_envio_devolucion: Number(devolucionCompleta.costoEnvioDevolucion ?? 0),
-  costo_envio_nuevo: Number(devolucionCompleta.costoEnvioNuevo ?? 0),
+  producto_recuperable: isProvisional
+    ? false
+    : Boolean((devolucionCompleta as any).productoRecuperable ?? (esSinReembolsoCreacion ? true : false)),
+      costo_envio_original: costoEnvioOriginalCreacion,
+      costo_envio_devolucion: costoEnvioDevolucionCreacion,
+  costo_envio_nuevo: costoEnvioNuevoCreacion,
   // total_costos_envio is a GENERATED column in the DB (calculated from the three envio columns).
   // Do not attempt to insert/update it explicitly; the DB computes it automatically.
       monto_venta_original: Number(devolucionCompleta.montoVentaOriginal ?? 0),
       // No persistir montoReembolsado en informes provisionales
-      monto_reembolsado: isProvisional ? 0 : Number(devolucionCompleta.montoReembolsado ?? 0),
+      monto_reembolsado: isProvisional || esSinReembolsoCreacion ? 0 : Number(devolucionCompleta.montoReembolsado ?? 0),
       observaciones: devolucionCompleta.observaciones ?? null,
       // Persist MP-related choices if the client provided them (optional columns in DB)
       mp_estado: (devolucionCompleta as any).mpEstado ?? null,
@@ -778,9 +818,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                 const mpRetenerProvided = Boolean((parsedPartial as any).mpRetener ?? (parsedPartial as any).mp_retener ?? false)
                 // Persist desglose de envíos si fue provisto
                 try {
-                  const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                  const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
-                  const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  const fueReclamoEarly = (parsedPartial as any).fueReclamo ?? (parsedPartial as any).fue_reclamo ?? (existing as any).fue_reclamo
+                  const envioOriginalValRaw = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                  const envioOriginalVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioOriginalValRaw
+                  const envioVueltaValRaw = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                  const envioVueltaVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioVueltaValRaw
+                  const envioNuevoValRaw = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  const envioNuevoVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioNuevoValRaw
                   await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
                 } catch (envErrEarly) {
                   console.warn('No se pudo persistir desglose de envíos en flujo ML (no crítico)', envErrEarly)
@@ -1025,9 +1069,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                       console.error('[DEBUG TN UPDATE] ERROR:', updateResult.error)
                     }
                     try {
-                      const envioOriginalVal = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                      const envioVueltaVal = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
-                      const envioNuevoVal = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                      const fueReclamoEarly = (parsedPartial as any).fueReclamo ?? (parsedPartial as any).fue_reclamo ?? (existing as any).fue_reclamo
+                      const envioOriginalValRaw = Number((parsedPartial as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                      const envioOriginalVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioOriginalValRaw
+                      const envioVueltaValRaw = Number((parsedPartial as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                      const envioVueltaVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioVueltaValRaw
+                      const envioNuevoValRaw = Number((parsedPartial as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                      const envioNuevoVal = (plataforma === 'ML' && fueReclamoEarly === false) ? 0 : envioNuevoValRaw
                       await supabase.from('devoluciones').update({ costo_envio_original: envioOriginalVal, costo_envio_devolucion: envioVueltaVal, costo_envio_nuevo: envioNuevoVal }).eq('id', id)
                     } catch (envErrEarly) {
                       console.warn('No se pudo persistir desglose de envíos en flujo temprano de Reembolso (no crítico)', envErrEarly)
@@ -1530,9 +1578,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
           // para que la columna generada `perdida_total` incluya envío ida + vuelta.
           try {
             const envioOriginalFromVenta = (venta as any)?.costoEnvio ?? (venta as any)?.costo_envio ?? null
-            const envioOriginal = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? (datosVenta as any)?.costoEnvioOriginal ?? envioOriginalFromVenta ?? 0)
-            const envioVuelta = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? (datosVenta as any)?.costoEnvioDevolucion ?? 0)
-            const envioNuevo = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+            const fueReclamoMerged = (merged as any).fueReclamo ?? (merged as any).fue_reclamo ?? (existing as any).fue_reclamo
+            const envioOriginalRaw = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? (datosVenta as any)?.costoEnvioOriginal ?? envioOriginalFromVenta ?? 0)
+            const envioOriginal = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioOriginalRaw
+            const envioVueltaRaw = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? (datosVenta as any)?.costoEnvioDevolucion ?? 0)
+            const envioVuelta = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioVueltaRaw
+            const envioNuevoRaw = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+            const envioNuevo = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioNuevoRaw
             await supabase.from('devoluciones').update({ costo_envio_original: envioOriginal, costo_envio_devolucion: envioVuelta, costo_envio_nuevo: envioNuevo }).eq('id', updated?.id ?? (merged as any).id)
           } catch (envPersistErr) {
             console.warn('No se pudo persistir desglose de envíos al finalizar (no crítico)', envPersistErr)
@@ -1595,7 +1647,7 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
             // Para cambio, solo aplicar el costo de envío de devolución (diferencia o monto nuevo si se convirtió ahora)
             ajusteHoy = diffShipping !== 0 ? diffShipping : (becameCambio && !wasCambio ? newShipping : 0)
             aplicarRecalculo = ajusteHoy !== 0
-          } else if (becameSinReembolso && !wasSinReembolso) {
+          } else if (becameSinReembolso) {
             // Sin reembolso: es como que NO PASÓ NADA
             // Marcar producto como recuperado y actualizar estado para que no aparezca en camino ni permita registrar recepción
             console.log('[Sin reembolso] === INICIO FLUJO SIN REEMBOLSO ===')
@@ -1620,8 +1672,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
               console.error('[Sin reembolso] ✗ Error actualizando campos:', snErr)
             }
 
-            // Liberar dinero retenido (si hay) usando fechaAccion
-            try {
+            if (!wasSinReembolso) {
+              // Liberar dinero retenido (si hay) usando fechaAccion
+              try {
               const plataforma = (venta as any).plataforma ?? null
               const metodoPago = (venta as any).metodoPago ?? null
 
@@ -1682,8 +1735,9 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
               } else {
                 console.log('[Sin reembolso] ✗ No es ML/MercadoPago - skip liberación')
               }
-            } catch (liberarErr) {
-              console.error('[Sin reembolso] ✗✗✗ Error liberando dinero retenido:', liberarErr)
+              } catch (liberarErr) {
+                console.error('[Sin reembolso] ✗✗✗ Error liberando dinero retenido:', liberarErr)
+              }
             }
             
             console.log('[Sin reembolso] === FIN FLUJO - aplicarRecalculo:', aplicarRecalculo, '===')
@@ -1718,9 +1772,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
           if (false && ajusteHoy !== 0) {
                 // Ensure we persist envio breakdown and total on finalization
                 try {
-                  const envioOriginal = Number(merged.costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                  const envioVuelta = Number(merged.costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
-                  const envioNuevo = Number(merged.costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  const fueReclamoMerged = (merged as any).fueReclamo ?? (merged as any).fue_reclamo ?? (existing as any).fue_reclamo
+                  const envioOriginalRaw = Number(merged.costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                  const envioOriginal = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioOriginalRaw
+                  const envioVueltaRaw = Number(merged.costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                  const envioVuelta = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioVueltaRaw
+                  const envioNuevoRaw = Number(merged.costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                  const envioNuevo = ((venta as any)?.plataforma === 'ML' && fueReclamoMerged === false) ? 0 : envioNuevoRaw
                   const envioTotal = envioOriginal + envioVuelta + envioNuevo
                   await supabase.from('devoluciones').update({ costo_envio_original: envioOriginal, costo_envio_devolucion: envioVuelta, costo_envio_nuevo: envioNuevo }).eq('id', updated?.id ?? (merged as any).id)
                 } catch (envErr) {
@@ -1921,9 +1979,13 @@ export async function updateDevolucion(id: string, data: Partial<DevolucionFormD
                         // La migración DB debería tener una columna que permita almacenar este valor; si no existe, el try/catch evita fallos.
                         try {
                 // Persistir pérdida como suma del costo del producto + envíos (ida + vuelta + nuevo)
-                const envioOriginalVal = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
-                const envioVueltaVal = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
-                const envioNuevoVal = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                const fueReclamoMergedLoss = (merged as any).fueReclamo ?? (merged as any).fue_reclamo ?? (existing as any).fue_reclamo
+                const envioOriginalValRaw = Number((merged as any).costoEnvioOriginal ?? (existing as any).costo_envio_original ?? 0)
+                const envioOriginalVal = ((venta as any)?.plataforma === 'ML' && fueReclamoMergedLoss === false) ? 0 : envioOriginalValRaw
+                const envioVueltaValRaw = Number((merged as any).costoEnvioDevolucion ?? (existing as any).costo_envio_devolucion ?? 0)
+                const envioVueltaVal = ((venta as any)?.plataforma === 'ML' && fueReclamoMergedLoss === false) ? 0 : envioVueltaValRaw
+                const envioNuevoValRaw = Number((merged as any).costoEnvioNuevo ?? (existing as any).costo_envio_nuevo ?? 0)
+                const envioNuevoVal = ((venta as any)?.plataforma === 'ML' && fueReclamoMergedLoss === false) ? 0 : envioNuevoValRaw
                 const perdidaCalculada = Number(costoProducto) + envioOriginalVal + envioVueltaVal + envioNuevoVal
                 await supabase.from('devoluciones').update({ costo_producto_perdido: perdidaCalculada }).eq('id', updated?.id ?? (merged as any).id)
                           // Revalidar EERR para que la pérdida aparezca en reportes
@@ -2224,7 +2286,7 @@ export async function getEstadisticasDevoluciones(
       return acc
     }, {} as Record<string, number>) || {}
 
-    const perdidaTotal = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
+    const perdidaTotal = devoluciones?.reduce((sum, dev) => sum + calcularPerdidaTotalAjustada(dev), 0) || 0
     const impactoVentasNetas = devoluciones?.reduce((sum, dev) => sum + (dev.impacto_ventas_netas || 0), 0) || 0
 
     // Top motivos
@@ -2239,7 +2301,7 @@ export async function getEstadisticasDevoluciones(
       .map(([motivo, count]) => ({ motivo, count: count as number }))
 
     // Promedio de pérdida
-    const devolucionesConPerdida = devoluciones?.filter(d => (d.perdida_total || 0) > 0) || []
+    const devolucionesConPerdida = devoluciones?.filter(d => calcularPerdidaTotalAjustada(d) > 0) || []
     const perdidaPromedio = devolucionesConPerdida.length > 0
       ? perdidaTotal / devolucionesConPerdida.length
       : 0
@@ -2321,7 +2383,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
       console.log('[getCostosEstimados30Dias] Muestra devoluciones (primeras 3):', devoluciones.slice(0, 3).map(d => ({
         sku: d.producto_sku,
         fecha_compra: d.fecha_compra,
-        perdida: d.perdida_total
+        perdida: calcularPerdidaTotalAjustada(d)
       })))
     }
     if (errorDev) {
@@ -2359,7 +2421,7 @@ export async function getCostosEstimados30Dias(productoId?: number, plataforma?:
     const totalVentas = ventas?.length || 0
 
     // Calcular pérdida total por devoluciones del modelo específico (general, no por plataforma)
-    const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + (dev.perdida_total || 0), 0) || 0
+    const perdidaTotalDevoluciones = devoluciones?.reduce((sum, dev) => sum + calcularPerdidaTotalAjustada(dev), 0) || 0
 
     // Calcular costo de incidencia de devoluciones (GENERAL, no por plataforma):
     // Pérdidas totales del modelo (60d) / unidades vendidas no devueltas del modelo (60d)

@@ -6,6 +6,7 @@ import { DevolucionActions } from "@/components/devolucion-actions"
 import { useEffect, useState } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { calcularPerdidaTotalAjustada, costoEnvioDevolucionPerdido, costoEnvioOriginalPerdido } from "@/lib/devoluciones-loss"
 
 const plataformaLabels = {
   TN: "Tienda Nube",
@@ -198,8 +199,7 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
       key: "perdida_total",
       header: "Pérdida",
       render: (devolucion: any) => {
-        const perdidaVal = getAlias(devolucion, ['perdida_total', 'perdidaTotal', 'perdida', 'loss', 'total_perdida'], 0)
-        const perdida = Number(perdidaVal || 0)
+        const perdida = calcularPerdidaTotalAjustada(devolucion)
         const id = getAlias(devolucion, ['id_devolucion', 'numeroDevolucion', 'idDevolucion', 'id'])
         const isExpanded = expandedRows.has(id)
         
@@ -276,16 +276,12 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                               <div className="flex justify-between">
                                 <span>Envío original:</span>
                                 <span className="font-medium">
-                                  ${(() => {
-                                    const tipoRes = getAlias(devolucion, ['tipo_resolucion', 'tipoResolucion'], '')
-                                    const esCambio = tipoRes === 'Cambio mismo producto' || tipoRes === 'Cambio otro producto'
-                                    return esCambio ? '0' : Number(getAlias(devolucion, ['costo_envio_original', 'costoEnvioOriginal'], 0)).toLocaleString()
-                                  })()}
+                                  ${costoEnvioOriginalPerdido(devolucion).toLocaleString()}
                                 </span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Envío devolución:</span>
-                                <span className="font-medium">${Number(getAlias(devolucion, ['costo_envio_devolucion', 'costoEnvioDevolucion'], 0)).toLocaleString()}</span>
+                                <span className="font-medium">${costoEnvioDevolucionPerdido(devolucion).toLocaleString()}</span>
                               </div>
                               {Number(getAlias(devolucion, ['costo_envio_nuevo', 'costoEnvioNuevo'], 0)) > 0 && (
                                 <div className="flex justify-between">
@@ -301,7 +297,7 @@ export function DevolucionesTable({ devoluciones }: DevolucionesTableProps) {
                               )}
                               <div className="flex justify-between pt-2 border-t font-semibold text-foreground">
                                 <span>Total pérdida:</span>
-                                <span className="text-red-600">${Number(getAlias(devolucion, ['perdida_total', 'perdidaTotal'], 0)).toLocaleString()}</span>
+                                <span className="text-red-600">${calcularPerdidaTotalAjustada(devolucion).toLocaleString()}</span>
                               </div>
                               <div className="pt-2 border-t text-xs">
                                 <span className="text-muted-foreground">N° Seguimiento:</span>

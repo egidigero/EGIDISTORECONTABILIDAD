@@ -35,6 +35,7 @@ interface ROASAnalysisModalProps {
   gastosUGC: number
   cantidadVentas: number
   modelBreakdown: ModelBreakdownRow[]
+  devolucionesNoAsignadas: number
 }
 
 export function ROASAnalysisModal({
@@ -48,6 +49,7 @@ export function ROASAnalysisModal({
   gastosUGC,
   cantidadVentas,
   modelBreakdown,
+  devolucionesNoAsignadas,
 }: ROASAnalysisModalProps) {
   const [open, setOpen] = useState(false)
 
@@ -77,6 +79,7 @@ export function ROASAnalysisModal({
           gastosUGC={gastosUGC}
           cantidadVentas={cantidadVentas}
           modelBreakdown={modelBreakdown}
+          devolucionesNoAsignadas={devolucionesNoAsignadas}
         />
       </DialogContent>
     </Dialog>

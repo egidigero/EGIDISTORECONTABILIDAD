@@ -5,9 +5,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { calcularEERR } from "@/lib/actions/eerr"
 import { getDetalleVentas } from "@/lib/actions/getDetalleVentas"
 import { getDetalleGastosIngresos } from "@/lib/actions/getDetalleGastosIngresos"
+import { getVentaModelosByIds } from "@/lib/actions/getVentaModelosByIds"
+import { buildModelBreakdown } from "@/lib/eerr/model-breakdown"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
-import { ROASAnalysisModal, type ModelBreakdownRow } from "@/components/roas-analysis-modal"
+import { ROASAnalysisModal } from "@/components/roas-analysis-modal"
 import { DollarSign, Receipt, ShoppingCart, Target, TrendingUp } from "lucide-react"
 import type { Plataforma } from "@/lib/types"
 
@@ -146,91 +148,27 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const resultadoNetoSinInteresesMP = round2(resultadoOperativoMarketing - estructuraTotal + otrosIngresosOperativos)
   const resultadoNetoFinal = round2(resultadoNetoSinInteresesMP + totalInteresesMP)
 
+  const devolucionVentaIds = Array.from(
+    new Set(
+      devoluciones
+        .map((row: any) => String(row?.venta_id ?? "").trim())
+        .filter((id) => id.length > 0),
+    ),
+  )
+  const ventaIdToModelFallback = await getVentaModelosByIds(devolucionVentaIds)
+  const { modelBreakdown, devolucionesNoAsignadas, cantidadVentas } = buildModelBreakdown({
+    detalleVentas: Array.isArray(detalleVentas) ? detalleVentas : [],
+    devoluciones,
+    ventasNetas,
+    ventaIdToModelFallback,
+  })
+
   const roasEscalaBE = margenContribucion > 0 ? round2(ventasNetas / margenContribucion) : 0
   const roasNegocioBE = baseNegocioAntesAds > 0 ? round2(ventasNetas / baseNegocioAntesAds) : 0
   const roasActual = inversionMarketing > 0 ? round2(ventasNetas / inversionMarketing) : 0
   const acosBeEscala = ventasNetas > 0 ? round2(margenContribucion / ventasNetas) : 0
-  const cpaBeMarketing = (detalleVentas?.length || 0) > 0 ? round2(margenContribucion / (detalleVentas?.length || 1)) : 0
-  const cpaActual = (detalleVentas?.length || 0) > 0 ? round2(inversionMarketing / (detalleVentas?.length || 1)) : 0
-
-  const devolucionesExclusionIds = new Set<string>()
-  for (const d of devoluciones) {
-    const tipo = normalize(d?.tipo_resolucion || d?.estado)
-    const isReembolso = tipo.includes("reembolso") || toNumber(d?.monto_reembolsado) > 0
-    const isEnDevolucion = normalize(d?.estado) === normalize("En devolucion")
-    if ((isReembolso || isEnDevolucion) && d?.venta_id) {
-      devolucionesExclusionIds.add(String(d.venta_id))
-    }
-  }
-
-  const salesForModels = (Array.isArray(detalleVentas) ? detalleVentas : []).filter(
-    (row: any) => !devolucionesExclusionIds.has(String(row?.id ?? "")),
-  )
-
-  const byModel = new Map<string, ModelBreakdownRow & { costoBase: number }>()
-  const saleIdToModel = new Map<string, string>()
-  for (const sale of salesForModels) {
-    const saleId = String(sale?.id ?? "")
-    const modelo = String(sale?.producto?.modelo ?? sale?.productos?.modelo ?? "Sin modelo")
-    const pvBruto = toNumber(sale?.pvBruto ?? sale?.pv_bruto)
-    const costo = toNumber(sale?.costoProducto ?? sale?.costo_producto)
-    const comisionTotal = toNumber(sale?.comision) + toNumber(sale?.iva) + toNumber(sale?.iibb)
-    const envio = toNumber(sale?.cargoEnvioCosto ?? sale?.cargo_envio_costo)
-    const contribucion = round2(pvBruto - costo - comisionTotal - envio)
-
-    if (!byModel.has(modelo)) {
-      byModel.set(modelo, {
-        modelo,
-        ventas: 0,
-        contribucionBruta: 0,
-        devolucionesAsignadas: 0,
-        contribucionNeta: 0,
-        cpaBreakEven: 0,
-        pctPV: 0,
-        pctCosto: 0,
-        costoBase: 0,
-      })
-    }
-    const row = byModel.get(modelo)!
-    row.ventas += 1
-    row.contribucionBruta = round2(row.contribucionBruta + contribucion)
-    row.costoBase = round2(row.costoBase + costo)
-    if (saleId) saleIdToModel.set(saleId, modelo)
-  }
-
-  let devolucionesNoAsignadas = 0
-  for (const devolucion of devoluciones) {
-    const saleId = String(devolucion?.venta_id ?? "")
-    const perdida = toNumber(devolucion?.perdida_total)
-    if (!saleId || perdida === 0) continue
-    const modelo = saleIdToModel.get(saleId)
-    if (!modelo) {
-      devolucionesNoAsignadas = round2(devolucionesNoAsignadas + perdida)
-      continue
-    }
-    const row = byModel.get(modelo)
-    if (!row) {
-      devolucionesNoAsignadas = round2(devolucionesNoAsignadas + perdida)
-      continue
-    }
-    row.devolucionesAsignadas = round2(row.devolucionesAsignadas + perdida)
-  }
-
-  const modelBreakdown: ModelBreakdownRow[] = Array.from(byModel.values())
-    .map((row) => {
-      const contribucionNeta = round2(row.contribucionBruta - row.devolucionesAsignadas)
-      return {
-        modelo: row.modelo,
-        ventas: row.ventas,
-        contribucionBruta: row.contribucionBruta,
-        devolucionesAsignadas: row.devolucionesAsignadas,
-        contribucionNeta,
-        cpaBreakEven: row.ventas > 0 ? round2(contribucionNeta / row.ventas) : 0,
-        pctPV: ventasNetas > 0 ? round2((contribucionNeta / ventasNetas) * 100) : 0,
-        pctCosto: row.costoBase > 0 ? round2((contribucionNeta / row.costoBase) * 100) : 0,
-      }
-    })
-    .sort((a, b) => b.contribucionNeta - a.contribucionNeta)
+  const cpaBeMarketing = cantidadVentas > 0 ? round2(margenContribucion / cantidadVentas) : 0
+  const cpaActual = cantidadVentas > 0 ? round2(inversionMarketing / cantidadVentas) : 0
 
   const gastosPersonalesRows = detalleOtrosGastos.filter((row: any) =>
     categoriasPersonales.map(normalize).includes(normalize(row?.categoria)),
@@ -256,8 +194,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           inversionMarketing={inversionMarketing}
           gastosAds={gastosAds}
           gastosUGC={gastosUGC}
-          cantidadVentas={salesForModels.length}
+          cantidadVentas={cantidadVentas}
           modelBreakdown={modelBreakdown}
+          devolucionesNoAsignadas={devolucionesNoAsignadas}
         />
       </div>
 
@@ -352,23 +291,23 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
       <Card>
         <CardHeader>
-          <CardTitle>Estado de Resultados por Capas</CardTitle>
+          <CardTitle>Estado de Resultados</CardTitle>
           <CardDescription>
             Periodo: {fechaDesde.toLocaleDateString()} - {fechaHasta.toLocaleDateString()}
             {canal && ` | Canal: ${canalLabels[canal as keyof typeof canalLabels]}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="rounded-md border p-4 bg-blue-50/60 space-y-2">
-            <div className="font-semibold text-blue-900">CAPA 1 - Ingresos</div>
+          <div className="rounded-lg border border-blue-200/70 bg-blue-50/35 p-4 shadow-sm space-y-2">
+            <div className="font-semibold text-blue-900">Ingresos</div>
             <div className="flex justify-between">
               <span>Ventas Netas</span>
               <span className="font-semibold">{formatCurrency(ventasNetas)}</span>
             </div>
           </div>
 
-          <div className="rounded-md border p-4 bg-amber-50/60 space-y-2">
-            <div className="font-semibold text-amber-900">CAPA 2 - Costos Variables</div>
+          <div className="rounded-lg border border-amber-200/70 bg-amber-50/35 p-4 shadow-sm space-y-2">
+            <div className="font-semibold text-amber-900">Costos Variables</div>
             <div className="flex justify-between text-red-600"><span>(-) Costo productos</span><span>-{formatCurrency(costoProducto)}</span></div>
             <div className="flex justify-between text-red-600"><span>(-) Comisiones totales</span><span>-{formatCurrency(comisionesTotales)}</span></div>
             <div className="flex justify-between text-red-600 text-xs pl-4"><span>Base + IVA + IIBB</span><span>{formatCurrency(toNumber(eerrData.comisionesBase))} + {formatCurrency(toNumber(eerrData.ivaComisiones))} + {formatCurrency(toNumber(eerrData.iibbComisiones))}</span></div>
@@ -384,14 +323,14 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             </div>
           </div>
 
-          <div className="rounded-md border p-4 bg-violet-50/60 space-y-2">
-            <div className="font-semibold text-violet-900">CAPA 3 - Marketing</div>
+          <div className="rounded-lg border border-violet-200/70 bg-violet-50/35 p-4 shadow-sm space-y-2">
+            <div className="font-semibold text-violet-900">Marketing</div>
             <div className="flex justify-between text-red-600"><span>(-) Ads</span><span>-{formatCurrency(gastosAds)}</span></div>
             <div className="flex justify-between text-red-600"><span>(-) UGC</span><span>-{formatCurrency(gastosUGC)}</span></div>
             <div className="flex justify-between text-red-600 font-medium"><span>(-) Inversion Marketing</span><span>-{formatCurrency(inversionMarketing)}</span></div>
-            <div className="grid md:grid-cols-2 gap-2 text-xs pt-1">
-              <div>ROAS Escala BE: <span className="font-semibold">{roasEscalaBE.toFixed(2)}x</span></div>
-              <div>ROAS Negocio BE: <span className="font-semibold">{roasNegocioBE.toFixed(2)}x</span></div>
+            <div className="grid md:grid-cols-2 gap-2 text-xs pt-1 rounded-md border bg-white/70 p-2">
+              <div>ROAS para ESCALAR ADS (BE): <span className="font-semibold">{roasEscalaBE.toFixed(2)}x</span></div>
+              <div>ROAS para NO PERDER PLATA (BE): <span className="font-semibold">{roasNegocioBE.toFixed(2)}x</span></div>
               <div>ROAS Actual: <span className="font-semibold">{roasActual.toFixed(2)}x</span></div>
               <div>ACOS BE Escala: <span className="font-semibold">{acosBeEscala.toFixed(2)}</span></div>
               <div>CPA BE Marketing: <span className="font-semibold">{formatCurrency(cpaBeMarketing)}</span></div>
@@ -407,8 +346,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             </div>
           </div>
 
-          <div className="rounded-md border p-4 bg-slate-50/80 space-y-2">
-            <div className="font-semibold text-slate-900">CAPA 4 - Estructura (Gastos Fijos)</div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 shadow-sm space-y-2">
+            <div className="font-semibold text-slate-900">Estructura (Gastos Fijos)</div>
             <div className="flex justify-between text-red-700 font-medium">
               <span>(-) Total Estructura</span>
               <span>-{formatCurrency(estructuraTotal)}</span>
@@ -450,18 +389,24 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             )}
           </div>
 
-          <div className="rounded-md border p-4 bg-lime-50/70 space-y-2">
-            <div className="font-semibold text-lime-900">CAPA 5 - Resultado Neto</div>
+          <div className="rounded-lg border border-lime-200/70 bg-lime-50/35 p-4 shadow-sm space-y-2">
+            <div className="font-semibold text-lime-900">Resultado Neto</div>
             <div className="flex justify-between">
-              <span>Base Negocio antes de Ads (sin intereses MP)</span>
-              <span>{formatCurrency(baseNegocioAntesAds)}</span>
+              <span>Resultado Operativo Marketing</span>
+              <span>{formatCurrency(resultadoOperativoMarketing)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Otros ingresos operativos (sin intereses MP)</span>
-              <span>{formatCurrency(otrosIngresosOperativos)}</span>
+            <div className="flex justify-between text-red-700">
+              <span>(-) Estructura</span>
+              <span>-{formatCurrency(estructuraTotal)}</span>
             </div>
+            {otrosIngresosOperativos !== 0 && (
+              <div className="flex justify-between text-emerald-700">
+                <span>(+) Otros ingresos operativos (sin intereses MP)</span>
+                <span>+{formatCurrency(otrosIngresosOperativos)}</span>
+              </div>
+            )}
             <div className="flex justify-between border-t pt-2 font-semibold">
-              <span>= Resultado Neto sin Intereses MP</span>
+              <span>= Margen Neto s/ Intereses MP</span>
               <span className={resultadoNetoSinInteresesMP >= 0 ? "text-green-700" : "text-red-700"}>{formatCurrency(resultadoNetoSinInteresesMP)}</span>
             </div>
             <div className="flex gap-1">
@@ -567,11 +512,6 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             </div>
           </div>
 
-          {devolucionesNoAsignadas > 0 && (
-            <div className="text-xs text-muted-foreground">
-              Nota: hay {formatCurrency(devolucionesNoAsignadas)} de devoluciones no asignadas a modelo en CPA por modelo.
-            </div>
-          )}
         </CardContent>
       </Card>
 

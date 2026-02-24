@@ -3,16 +3,22 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { 
-  TrendingDown, 
-  Package, 
-  DollarSign, 
+import {
+  TrendingDown,
+  Package,
+  DollarSign,
   AlertCircle,
   RotateCcw,
   Truck,
   ShoppingCart,
   Calendar
 } from "lucide-react"
+import {
+  calcularPerdidaTotalAjustada,
+  costoEnvioDevolucionPerdido,
+  costoEnvioNuevoPerdido,
+  costoEnvioOriginalPerdido,
+} from "@/lib/devoluciones-loss"
 
 interface DevolucionesReporteProps {
   estadisticas: {
@@ -71,20 +77,16 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
 
   // Calcular detalle de pérdidas por tipo (usar MISMA lógica que columna generada en DB)
   const detallePerdidas = estadisticas.data.reduce((acc, dev) => {
-    const tipoResolucion = dev.tipo_resolucion
-    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
     const esRecuperable = dev.producto_recuperable === true
     
-    // Envío original: se pierde siempre EXCEPTO en cambios
-    if (!esCambio) {
-      acc.envioOriginal += Number(dev.costo_envio_original ?? 0)
-    }
+    // Ajuste negocio: en Sin reembolso y ML sin reclamo, envío original no se pierde.
+    acc.envioOriginal += costoEnvioOriginalPerdido(dev)
     
     // Envío de devolución (vuelta): siempre es pérdida
-    acc.envioDevolucion += Number(dev.costo_envio_devolucion ?? 0)
+    acc.envioDevolucion += costoEnvioDevolucionPerdido(dev)
     
     // Envío nuevo (ida del cambio): siempre es pérdida
-    acc.envioNuevo += Number(dev.costo_envio_nuevo ?? 0)
+    acc.envioNuevo += costoEnvioNuevoPerdido(dev)
     
     // Productos perdidos: depende si es recuperable
     if (esRecuperable) {
@@ -110,7 +112,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
 
   // Calcular pérdida total (la DB ya tiene la lógica de no incluir envío original en cambios)
   const perdidaTotalAjustada = estadisticas.data.reduce((sum, dev) => {
-    return sum + Number(dev.perdida_total || dev.perdidaTotal || 0)
+    return sum + calcularPerdidaTotalAjustada(dev)
   }, 0)
 
   // Agrupar por motivo
@@ -144,12 +146,10 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     }
     acc[producto].cantidad++
     
-    // Pérdida ya viene calculada correctamente de la DB
-    const perdidaTotal = Number(dev.perdida_total || dev.perdidaTotal || 0)
+    // Pérdida ajustada a reglas de negocio.
+    const perdidaTotal = calcularPerdidaTotalAjustada(dev)
     acc[producto].perdidaTotal += perdidaTotal
     
-    const tipoResolucion = dev.tipo_resolucion
-    const esCambio = tipoResolucion === 'Cambio mismo producto' || tipoResolucion === 'Cambio otro producto'
     const esRecuperable = dev.producto_recuperable === true
     
     const motivo = dev.motivo || 'Sin especificar'
@@ -161,12 +161,10 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       acc[producto].noRecuperables++
     }
     
-    // Calcular detalle de pérdidas (mismo criterio que DB)
-    if (!esCambio) {
-      acc[producto].perdidaEnvioOriginal += Number(dev.costo_envio_original ?? 0)
-    }
-    acc[producto].perdidaEnvioDevolucion += Number(dev.costo_envio_devolucion ?? 0)
-    acc[producto].perdidaEnvioNuevo += Number(dev.costo_envio_nuevo ?? 0)
+    // Calcular detalle de pérdidas (mismo criterio ajustado).
+    acc[producto].perdidaEnvioOriginal += costoEnvioOriginalPerdido(dev)
+    acc[producto].perdidaEnvioDevolucion += costoEnvioDevolucionPerdido(dev)
+    acc[producto].perdidaEnvioNuevo += costoEnvioNuevoPerdido(dev)
     
     // Productos: si es recuperable, solo el nuevo; si no, ambos
     if (esRecuperable) {
