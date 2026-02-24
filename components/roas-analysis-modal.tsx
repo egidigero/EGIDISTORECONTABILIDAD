@@ -63,7 +63,7 @@ export function ROASAnalysisModal({
       </DialogTrigger>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Panel ROAS y CPA (escala, negocio y por modelo)</DialogTitle>
+          <DialogTitle>Panel ROAS y contribucion por modelo</DialogTitle>
           <DialogDescription>
             Incluye ROAS BE de escala, ROAS BE de negocio, ACOS/CPA operativos y sensibilidad.
           </DialogDescription>
