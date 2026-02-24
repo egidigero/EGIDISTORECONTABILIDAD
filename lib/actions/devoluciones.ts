@@ -2360,6 +2360,19 @@ export async function getEstadisticasDevoluciones(
 // Obtener costos estimados de los últimos 30 días para la calculadora de precios
 export async function getCostosEstimados30Dias(productoId?: string, plataforma?: 'TN' | 'ML', productoSku?: string) {
   try {
+    const normalize = (value: unknown): string =>
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim()
+
+    const isUGC = (row: any): boolean => {
+      const categoria = normalize(row?.categoria)
+      const descripcion = normalize(row?.descripcion)
+      return categoria.includes("ugc") || descripcion.includes("ugc")
+    }
+
     const hace30Dias = new Date()
     hace30Dias.setDate(hace30Dias.getDate() - 30)
     const fechaInicio = hace30Dias.toISOString().split('T')[0]
@@ -2482,6 +2495,20 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     
     console.log('[getCostosEstimados30Dias] Total gastos ADS:', totalGastosAds)
 
+    // UGC se considera marketing (igual que EERR), no estructura
+    const { data: gastosUGCData, error: errorUGC } = await supabase
+      .from('gastos_ingresos')
+      .select('montoARS, categoria, descripcion, fecha')
+      .eq('tipo', 'Gasto')
+      .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
+
+    const totalGastosUGC = Math.round((gastosUGCData?.reduce((sum, g) => {
+      if (!isUGC(g)) return sum
+      return sum + Math.abs(Number(g.montoARS) || 0)
+    }, 0) || 0) * 100) / 100
+    console.log('[getCostosEstimados30Dias] Total gastos UGC:', totalGastosUGC, 'error:', errorUGC)
+
     // Calcular envío promedio (total envíos / cantidad de ventas) por plataforma
     const totalEnvios = ventas?.reduce((sum, v) => {
       const envio = Number(v.cargoEnvioCosto || v.cargo_envio_costo || v.costo_envio || v.costoEnvio) || 0
@@ -2571,11 +2598,14 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
       return sum + precio
     }, 0)) * 100) / 100
     
-    const roas = totalGastosAds > 0 ? Math.round((totalVentasBruto / totalGastosAds) * 100) / 100 : 0
+    const inversionMarketing = Math.round((totalGastosAds + totalGastosUGC) * 100) / 100
+    const roas = inversionMarketing > 0 ? Math.round((totalVentasBruto / inversionMarketing) * 100) / 100 : 0
     
     console.log('💰 ROAS DETALLADO:')
     console.log('   - Total ventas bruto (sin reembolsos):', totalVentasBruto)
     console.log('   - Total ADS:', totalGastosAds)
+    console.log('   - Total UGC:', totalGastosUGC)
+    console.log('   - Inversión marketing (ADS+UGC):', inversionMarketing)
     console.log('   - ROAS calculado:', roas)
     console.log('   - Cantidad ventas incluidas:', ventasFiltradas.length)
     console.log('   - Cantidad ventas excluidas:', ventaIdsExcluir.length)
@@ -2584,7 +2614,7 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     // NOTA: Incluimos "Gastos del negocio - Envios" porque necesitamos calcular la diferencia con los envíos de plataforma
     const { data: otrosGastosData, error: errorGastosNegocio } = await supabase
       .from("gastos_ingresos")
-      .select("montoARS,categoria,canal")
+      .select("montoARS,categoria,canal,descripcion")
       .gte("fecha", fechaInicio)
       .lte("fecha", fechaFin)
       .eq("tipo", "Gasto")
