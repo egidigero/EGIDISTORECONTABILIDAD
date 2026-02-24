@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, LineChart, Line, ReferenceLine } from "recharts"
+import { ResponsiveContainer, XAxis, YAxis, Tooltip, LineChart, Line, ReferenceLine } from "recharts"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 import { getRecargoCuotasMP } from "@/lib/calculos"
 
@@ -57,6 +57,7 @@ interface ResultadoCalculo {
   costo: number
   descuentoAplicado: number
   resultadoOperativo: number
+  margenContribucion: number
   comision: number
   comisionExtra: number
   comisionSinIva?: number
@@ -67,10 +68,14 @@ interface ResultadoCalculo {
   totalCostosPlataforma: number
   margenOperativo: number
   costoPublicidad: number
+  roasBE: number
+  porcentajeAdsSobreContribucion: number
   margenNeto: number
   margenSobrePrecio: number
   margenSobreCosto: number
 }
+
+type ModoEscenario = "conservador" | "optimista"
 
 interface DatosReales30Dias {
   precioVentaPromedio: number
@@ -163,12 +168,12 @@ export function CalculadoraPrecios({
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
   const [loadingTarifa, setLoadingTarifa] = useState(false)
   const [vistaGrafico, setVistaGrafico] = useState(false)
-  const [showChart, setShowChart] = useState(false)
   
   // Estado para modo análisis de últimos 30 días
   const [modoAnalisis30Dias, setModoAnalisis30Dias] = useState(false)
   const [datosReales30Dias, setDatosReales30Dias] = useState<DatosReales30Dias | null>(null)
   const [loadingDatosReales, setLoadingDatosReales] = useState(false)
+  const [modoEscenario, setModoEscenario] = useState<ModoEscenario>("conservador")
 
   // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
   useEffect(() => {
@@ -351,16 +356,25 @@ export function CalculadoraPrecios({
     
     const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + tarifa.fijoPorOperacion
 
-    // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Estructura prorrateada
-    const margenOperativo = resultadoOperativo - totalCostosPlataforma - parametros.costoDevoluciones - parametros.costoGastosNegocio
+    // 4. Margen de contribución = Resultado bruto - Costos plataforma - Devoluciones
+    const margenContribucion = resultadoOperativo - totalCostosPlataforma - parametros.costoDevoluciones
 
     // 5. Costo de Publicidad (calculado por ROAS)
     const costoPublicidad = parametros.roas > 0 ? precio / parametros.roas : 0
 
-    // 6. Margen Neto = Margen Operativo - Costo Publicidad
-    const margenNeto = margenOperativo - costoPublicidad
+    // 6. Margen Operativo = Margen de contribución - Publicidad
+    const margenOperativo = margenContribucion - costoPublicidad
 
-    // 7. Porcentajes
+    // 7. Margen Neto = Margen operativo - Estructura prorrateada
+    const margenNeto = margenOperativo - parametros.costoGastosNegocio
+
+    // 8. KPIs ROAS
+    const roasBE = margenContribucion > 0 ? precio / margenContribucion : 0
+    const porcentajeAdsSobreContribucion = margenContribucion > 0
+      ? (costoPublicidad / margenContribucion) * 100
+      : 0
+
+    // 9. Porcentajes
     const margenSobrePrecio = (margenNeto / precio) * 100
     const margenSobreCosto = (margenNeto / costo) * 100
 
@@ -369,6 +383,7 @@ export function CalculadoraPrecios({
       costo,
       descuentoAplicado,
       resultadoOperativo,
+      margenContribucion,
       comision,
       comisionExtra,
       ...(parametros.plataforma === 'TN' && {
@@ -381,6 +396,8 @@ export function CalculadoraPrecios({
       totalCostosPlataforma,
       margenOperativo,
       costoPublicidad,
+      roasBE,
+      porcentajeAdsSobreContribucion,
       margenNeto,
       margenSobrePrecio,
       margenSobreCosto
@@ -395,6 +412,40 @@ export function CalculadoraPrecios({
     }
     setOpen(false)
   }
+
+  const getSaludProducto = (margenNeto: number, margenSobrePrecio: number) => {
+    if (margenNeto < 0) {
+      return { label: "Negativo", className: "bg-red-100 text-red-700 border-red-300" }
+    }
+    if (Math.abs(margenNeto) <= Math.max(1, parametros.precioVenta * 0.01)) {
+      return { label: "Break even", className: "bg-amber-100 text-amber-700 border-amber-300" }
+    }
+    if (margenSobrePrecio >= 10) {
+      return { label: "Escalable", className: "bg-emerald-100 text-emerald-700 border-emerald-300" }
+    }
+    return { label: "Rentable", className: "bg-green-100 text-green-700 border-green-300" }
+  }
+
+  const saludProducto = resultado ? getSaludProducto(resultado.margenNeto, resultado.margenSobrePrecio) : null
+
+  const factorEscenario = modoEscenario === "conservador" ? 1.15 : 0.85
+  const tituloEscenario = modoEscenario === "conservador" ? "Modo conservador" : "Modo optimista"
+  const descripcionEscenario = modoEscenario === "conservador"
+    ? "Visualiza una comisión más exigente y método más costoso."
+    : "Visualiza una comisión más baja tipo transferencia."
+
+  const comparativaEscenario = resultado
+    ? (() => {
+        const costosPlataformaEscenario = resultado.totalCostosPlataforma * factorEscenario
+        const margenContribucionEscenario = resultado.resultadoOperativo - costosPlataformaEscenario - parametros.costoDevoluciones
+        const margenOperativoEscenario = margenContribucionEscenario - resultado.costoPublicidad
+        const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
+        return {
+          costosPlataformaEscenario,
+          margenNetoEscenario,
+        }
+      })()
+    : null
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -724,186 +775,56 @@ export function CalculadoraPrecios({
               </CardContent>
             </Card>
 
-            {/* Comparación de ROAS */}
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg">📊 Comparación de ROAS</CardTitle>
-                    <CardDescription>Análisis de diferentes niveles de inversión publicitaria</CardDescription>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant={!vistaGrafico ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setVistaGrafico(false)}
-                    >
-                      <List className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant={vistaGrafico ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setVistaGrafico(true)}
-                    >
-                      <BarChart3 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                <CardTitle className="text-lg">Vista de Escenario</CardTitle>
+                <CardDescription>Comparación visual de peor y mejor caso (no modifica los cálculos base).</CardDescription>
               </CardHeader>
-              <CardContent>
-                {resultado && parametros.precioVenta > 0 ? (
-                  <div className="space-y-3">
-                    {!vistaGrafico ? (
-                      // Vista de tabla (existente)
-                      <>
-                        {[2, 3, 4, 5, 6].map(roas => {
-                          const costoPublicidad = parametros.precioVenta / roas
-                          const margenNeto = resultado.margenOperativo - costoPublicidad
-                          const margenSobrePrecio = (margenNeto / parametros.precioVenta) * 100
-                          const isCurrentRoas = roas === parametros.roas
-                          
-                          return (
-                            <div 
-                              key={roas}
-                              className={`flex justify-between items-center p-2 rounded ${
-                                isCurrentRoas ? 'bg-blue-100 border-l-4 border-blue-500' : 'bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className={`font-mono ${isCurrentRoas ? 'font-bold text-blue-700' : ''}`}>
-                                  ROAS {roas}x:
-                                </span>
-                                <span className={`text-sm ${margenNeto > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  ${margenNeto.toFixed(2)}
-                                </span>
-                              </div>
-                              <div className="text-right">
-                                <div className={`text-sm ${margenNeto > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  {margenSobrePrecio.toFixed(1)}%
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  Publicidad: ${costoPublicidad.toFixed(2)}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                        <div className="text-xs text-muted-foreground mt-2 p-2 bg-yellow-50 rounded">
-                          💡 El ROAS actual está resaltado. Verde = ganancia, Rojo = pérdida
-                        </div>
-                      </>
-                    ) : (
-                      // Vista de gráfico
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart
-                            data={(() => {
-                              // Calcular el ROAS de breakeven (donde ganancia = 0)
-                              const breakevenRoas = resultado.margenOperativo > 0 ? parametros.precioVenta / resultado.margenOperativo : null
-                              
-                              // Generar más puntos para una línea más suave, incluyendo el breakeven
-                              let roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7]
-                              
-                              // Agregar el punto de breakeven si está en el rango
-                              if (breakevenRoas && breakevenRoas >= 1.5 && breakevenRoas <= 7) {
-                                roasValues.push(breakevenRoas)
-                                roasValues.sort((a, b) => a - b)
-                              }
-                              
-                              return roasValues.map(roas => {
-                                const costoPublicidad = parametros.precioVenta / roas
-                                const margenNeto = resultado.margenOperativo - costoPublicidad
-                                const margenSobrePrecio = (margenNeto / parametros.precioVenta) * 100
-                                const isCurrentRoas = Math.abs(roas - parametros.roas) < 0.1
-                                const isBreakeven = breakevenRoas && Math.abs(roas - breakevenRoas) < 0.01
-                                
-                                return {
-                                  roas: roas,
-                                  roasLabel: `${roas}x`,
-                                  margenNeto: Number(margenNeto.toFixed(2)),
-                                  margenPorcentaje: Number(margenSobrePrecio.toFixed(1)),
-                                  isActual: isCurrentRoas,
-                                  isBreakeven: isBreakeven
-                                }
-                              })
-                            })()}
-                          >
-                            <XAxis 
-                              dataKey="roas" 
-                              type="number"
-                              domain={['dataMin', 'dataMax']}
-                              tickFormatter={(value) => `${value}x`}
-                            />
-                            <YAxis 
-                              tickFormatter={(value) => `$${value}`}
-                            />
-                            <Tooltip 
-                              formatter={(value, name) => {
-                                if (name === 'margenNeto') return [`$${value}`, 'Margen Neto']
-                                return [value, name]
-                              }}
-                              labelFormatter={(value) => `ROAS: ${value}x`}
-                            />
-                            {/* Línea de breakeven horizontal (ganancia = 0) */}
-                            <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="5 5" />
-                            
-                            {/* Línea de breakeven vertical (ROAS exacto donde ganancia = 0) */}
-                            {(() => {
-                              const breakevenRoas = resultado.margenOperativo > 0 ? parametros.precioVenta / resultado.margenOperativo : null
-                              if (breakevenRoas && breakevenRoas >= 1.5 && breakevenRoas <= 7) {
-                                return (
-                                  <ReferenceLine 
-                                    x={breakevenRoas} 
-                                    stroke="#ef4444" 
-                                    strokeDasharray="3 3"
-                                    label={{ 
-                                      value: `Breakeven: ${breakevenRoas.toFixed(2)}x`, 
-                                      position: "top",
-                                      style: { fill: '#ef4444', fontSize: '11px' }
-                                    }}
-                                  />
-                                )
-                              }
-                              return null
-                            })()}
-                            
-                            {/* Línea de ganancia */}
-                            <Line 
-                              type="monotone" 
-                              dataKey="margenNeto" 
-                              stroke="#22c55e" 
-                              strokeWidth={3}
-                              dot={(props) => {
-                                const { payload } = props
-                                if (payload?.isBreakeven) {
-                                  return <circle {...props} fill="#ef4444" stroke="#ef4444" strokeWidth={3} r={6} />
-                                }
-                                return <circle {...props} fill="#22c55e" strokeWidth={2} r={4} />
-                              }}
-                              activeDot={{ r: 6, stroke: '#22c55e', strokeWidth: 2 }}
-                            />
-                            
-                            {/* Marcar el ROAS actual */}
-                            <ReferenceLine 
-                              x={parametros.roas} 
-                              stroke="#3b82f6" 
-                              strokeDasharray="3 3"
-                              label={{ value: "ROAS Actual", position: "top" }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                        <div className="text-xs text-muted-foreground mt-2 p-2 bg-yellow-50 rounded">
-                          � <span className="text-green-600">Línea verde:</span> Ganancia | 
-                          <span className="text-red-600"> Línea roja punteada:</span> Breakeven (ganancia = $0) | 
-                          <span className="text-blue-600"> Línea azul:</span> Tu ROAS actual
-                        </div>
-                      </div>
-                    )}
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={modoEscenario === "conservador" ? "default" : "outline"}
+                    onClick={() => setModoEscenario("conservador")}
+                  >
+                    Modo conservador
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={modoEscenario === "optimista" ? "default" : "outline"}
+                    onClick={() => setModoEscenario("optimista")}
+                  >
+                    Modo optimista
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {tituloEscenario}: {descripcionEscenario}
+                </div>
+                {resultado && comparativaEscenario ? (
+                  <div className="rounded-md border p-3 text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span>Costos plataforma (actual):</span>
+                      <span className="font-mono">${resultado.totalCostosPlataforma.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Costos plataforma ({modoEscenario}):</span>
+                      <span className="font-mono">${comparativaEscenario.costosPlataformaEscenario.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Margen neto (actual):</span>
+                      <span className="font-mono">${resultado.margenNeto.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Margen neto ({modoEscenario}):</span>
+                      <span className={`font-mono ${comparativaEscenario.margenNetoEscenario >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        ${comparativaEscenario.margenNetoEscenario.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 ) : (
-                  <div className="text-center text-muted-foreground py-4">
-                    Ingresa un precio de venta para ver la comparación
-                  </div>
+                  <div className="text-sm text-muted-foreground">Ingresa un precio para ver la comparación.</div>
                 )}
               </CardContent>
             </Card>
@@ -1078,9 +999,12 @@ export function CalculadoraPrecios({
                       </div>
                     </div>
 
-                    {/* Margen Operativo */}
-                    <div className="p-4 bg-purple-50 rounded-lg">
-                      <div className="text-lg font-semibold mb-2">Margen Operativo</div>
+                    {/* Margen de Contribución */}
+                    <div className="p-4 bg-indigo-50 rounded-lg">
+                      <div className="text-lg font-semibold mb-2 flex items-center gap-2">
+                        Margen de contribución
+                        <span className="text-xs text-muted-foreground cursor-help" title="Es el dinero disponible para pagar publicidad y generar ganancia.">ⓘ</span>
+                      </div>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span>Resultado Bruto:</span>
@@ -1090,22 +1014,17 @@ export function CalculadoraPrecios({
                           <span>Costos Plataforma:</span>
                           <span className="font-mono">-${resultado.totalCostosPlataforma.toFixed(2)}</span>
                         </div>
-                        {parametros.costoDevoluciones > 0 && (
-                          <div className="flex justify-between text-amber-600">
-                            <span>Costo Devoluciones (30d):</span>
-                            <span className="font-mono">-${parametros.costoDevoluciones.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {parametros.costoGastosNegocio > 0 && (
-                          <div className="flex justify-between text-orange-600">
-                            <span>Estructura prorrateada (30d):</span>
-                            <span className="font-mono">-${parametros.costoGastosNegocio.toFixed(2)}</span>
-                          </div>
-                        )}
+                        <div className="flex justify-between text-amber-700">
+                          <span>Costo Devoluciones (30d):</span>
+                          <span className="font-mono">-${parametros.costoDevoluciones.toFixed(2)}</span>
+                        </div>
                         <Separator />
-                        <div className="flex justify-between font-semibold text-purple-700">
-                          <span>Margen Operativo:</span>
-                          <span className="font-mono">${resultado.margenOperativo.toFixed(2)}</span>
+                        <div className="flex justify-between font-semibold text-indigo-700">
+                          <span>Margen de contribución:</span>
+                          <span className="font-mono">${resultado.margenContribucion.toFixed(2)}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Es la base que financia publicidad y crecimiento.
                         </div>
                       </div>
                     </div>
@@ -1115,27 +1034,86 @@ export function CalculadoraPrecios({
                       <div className="text-lg font-semibold mb-2">Costo de Publicidad</div>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
-                          <span>ROAS {parametros.roas}x:</span>
+                          <span>ROAS actual ({parametros.roas.toFixed(2)}x):</span>
                           <span className="font-mono">${resultado.costoPublicidad.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>% del margen de contribución (ads):</span>
+                          <span className="font-mono">
+                            {resultado.porcentajeAdsSobreContribucion > 0 ? `${resultado.porcentajeAdsSobreContribucion.toFixed(1)}%` : "-"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="flex items-center gap-2">
+                            ROAS BE
+                            <span className="text-xs text-muted-foreground cursor-help" title="ROAS mínimo para cubrir publicidad desde el margen de contribución.">ⓘ</span>
+                          </span>
+                          <span className="font-mono">{resultado.roasBE > 0 ? `${resultado.roasBE.toFixed(2)}x` : "-"}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>ROAS objetivo (futuro):</span>
+                          <span className="font-mono">{resultado.roasBE > 0 ? `${(resultado.roasBE * 1.25).toFixed(2)}x` : "-"}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Margen Neto Antes de Impuestos */}
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <div className="text-lg font-semibold mb-2">Margen Neto Antes de Impuestos</div>
+                    {/* Margen Operativo */}
+                    <div className="p-4 bg-purple-50 rounded-lg">
+                      <div className="text-lg font-semibold mb-2">Margen operativo</div>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
-                          <span>Margen Operativo:</span>
-                          <span className="font-mono">${resultado.margenOperativo.toFixed(2)}</span>
+                          <span>Margen de contribución:</span>
+                          <span className="font-mono">${resultado.margenContribucion.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Costo Publicidad:</span>
                           <span className="font-mono">-${resultado.costoPublicidad.toFixed(2)}</span>
                         </div>
                         <Separator />
+                        <div className="flex justify-between font-semibold text-purple-700">
+                          <span>Margen operativo:</span>
+                          <span className="font-mono">${resultado.margenOperativo.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Estructura prorrateada */}
+                    <div className="p-4 bg-violet-50 rounded-lg">
+                      <div className="text-lg font-semibold mb-2 flex items-center gap-2">
+                        Estructura prorrateada
+                        <span className="text-xs text-muted-foreground cursor-help" title="Estructura total prorrateada por ventas netas sin devoluciones.">ⓘ</span>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Estructura prorrateada (30d):</span>
+                          <span className="font-mono">-${parametros.costoGastosNegocio.toFixed(2)}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">Estructura total / ventas netas (sin devoluciones).</div>
+                      </div>
+                    </div>
+
+                    {/* Margen Neto Antes de Impuestos */}
+                    <div className="p-4 bg-green-50 rounded-lg">
+                      <div className="text-lg font-semibold mb-2 flex items-center justify-between">
+                        <span>Margen Neto Antes de Impuestos</span>
+                        {saludProducto && (
+                          <span className={`text-xs border rounded-full px-2 py-1 ${saludProducto.className}`}>
+                            {saludProducto.label}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Margen operativo:</span>
+                          <span className="font-mono">${resultado.margenOperativo.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Estructura prorrateada:</span>
+                          <span className="font-mono">-${parametros.costoGastosNegocio.toFixed(2)}</span>
+                        </div>
+                        <Separator />
                         <div className="flex justify-between font-bold text-lg">
-                          <span>Margen Neto:</span>
+                          <span>Margen neto:</span>
                           <span className={`font-mono ${resultado.margenNeto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ${resultado.margenNeto.toFixed(2)}
                           </span>
@@ -1151,9 +1129,38 @@ export function CalculadoraPrecios({
                       </div>
                     </div>
 
+                    {/* Costos Variables vs Fijos */}
+                    <div className="p-4 bg-slate-50 rounded-lg border">
+                      <div className="text-lg font-semibold mb-2">Costos Variables vs Costos Fijos</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="rounded-md bg-blue-50 p-3">
+                          <div className="font-medium text-blue-700 mb-2">Costos Variables por venta</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between"><span>Costo producto</span><span className="font-mono">${resultado.costo.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Comisiones + impuestos</span><span className="font-mono">${Math.max(resultado.totalCostosPlataforma - resultado.envio - (tarifa?.fijoPorOperacion || 0), 0).toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Envío</span><span className="font-mono">${resultado.envio.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Devoluciones</span><span className="font-mono">${parametros.costoDevoluciones.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Publicidad</span><span className="font-mono">${resultado.costoPublicidad.toFixed(2)}</span></div>
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-violet-50 p-3">
+                          <div className="font-medium text-violet-700 mb-2">Costos Fijos prorrateados</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between">
+                              <span>Estructura por unidad</span>
+                              <span className="font-mono">${parametros.costoGastosNegocio.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Dinero Recibido Neto en Plataforma */}
                     <div className="p-4 bg-cyan-50 rounded-lg border-l-4 border-cyan-400">
-                      <div className="text-lg font-semibold mb-2 text-cyan-800">💰 Dinero Recibido Neto en Plataforma</div>
+                      <div className="text-lg font-semibold mb-2 text-cyan-800 flex items-center gap-2">
+                        Dinero Neto Recibido en Plataforma
+                        <span className="text-xs text-cyan-700 cursor-help" title="Ingreso de venta menos descuentos de plataforma y comisiones.">ⓘ</span>
+                      </div>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span>Precio de Venta:</span>
@@ -1168,14 +1175,142 @@ export function CalculadoraPrecios({
                           <span>Dinero Neto Recibido:</span>
                           <span className="font-mono">${((resultado.precio - resultado.descuentoAplicado) - resultado.totalCostosPlataforma).toFixed(2)}</span>
                         </div>
-                        <div className="flex justify-between text-cyan-600 mt-1">
-                          <span>Dinero Neto sin Envío:</span>
-                          <span className="font-mono">${((resultado.precio - resultado.descuentoAplicado) - resultado.totalCostosPlataforma + resultado.envio).toFixed(2)}</span>
-                        </div>
-                        <div className="text-xs text-cyan-600 mt-2 italic">
-                          Este es el dinero que efectivamente recibes en tu cuenta después de que la plataforma descuente todas sus comisiones e impuestos.
+                        <div className="text-xs text-cyan-700 mt-2 italic">
+                          Es el dinero que efectivamente recibes luego de descuentos y costos de plataforma.
                         </div>
                       </div>
+                    </div>
+
+                    {/* Comparación de ROAS */}
+                    <div className="p-4 rounded-lg border bg-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="text-lg font-semibold">Comparación de ROAS</div>
+                          <div className="text-xs text-muted-foreground">
+                            Zona de pérdida: ROAS menor al BE. Zona de ganancia: ROAS mayor al BE.
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant={!vistaGrafico ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setVistaGrafico(false)}
+                          >
+                            <List className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant={vistaGrafico ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setVistaGrafico(true)}
+                          >
+                            <BarChart3 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-sm">
+                        <div className="rounded border p-2 bg-blue-50">
+                          <div className="text-xs text-muted-foreground">ROAS actual</div>
+                          <div className="font-semibold text-blue-700">{parametros.roas.toFixed(2)}x</div>
+                        </div>
+                        <div className="rounded border p-2 bg-amber-50">
+                          <div className="text-xs text-muted-foreground">ROAS BE</div>
+                          <div className="font-semibold text-amber-700">{resultado.roasBE > 0 ? `${resultado.roasBE.toFixed(2)}x` : "-"}</div>
+                        </div>
+                        <div className={`rounded border p-2 ${parametros.roas >= resultado.roasBE ? "bg-emerald-50" : "bg-red-50"}`}>
+                          <div className="text-xs text-muted-foreground">Zona actual</div>
+                          <div className={`font-semibold ${parametros.roas >= resultado.roasBE ? "text-emerald-700" : "text-red-700"}`}>
+                            {parametros.roas >= resultado.roasBE ? "Ganancia" : "Pérdida"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {!vistaGrafico ? (
+                        <div className="space-y-2">
+                          {(() => {
+                            const valoresBase = [2, 3, 4, 5, 6]
+                            const valoresExtra = [Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
+                            const roasValues = Array.from(new Set([...valoresBase, ...valoresExtra])).filter(v => v > 0).sort((a, b) => a - b)
+                            return roasValues.map(roas => {
+                              const costoPublicidadEscenario = parametros.precioVenta / roas
+                              const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
+                              const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
+                              const margenSobrePrecioEscenario = (margenNetoEscenario / parametros.precioVenta) * 100
+                              const isActual = Math.abs(roas - parametros.roas) < 0.01
+                              const isBE = Math.abs(roas - resultado.roasBE) < 0.01
+                              return (
+                                <div
+                                  key={roas}
+                                  className={`flex justify-between items-center p-2 rounded border ${
+                                    isActual ? "bg-blue-50 border-blue-300" : isBE ? "bg-amber-50 border-amber-300" : "bg-gray-50"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-mono">
+                                      ROAS {roas.toFixed(2)}x {isActual ? "(actual)" : ""} {isBE ? "(BE)" : ""}
+                                    </div>
+                                    <div className={`text-xs ${roas >= resultado.roasBE ? "text-green-700" : "text-red-700"}`}>
+                                      {roas >= resultado.roasBE ? "Zona de ganancia" : "Zona de pérdida"}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className={`font-mono ${margenNetoEscenario >= 0 ? "text-green-700" : "text-red-700"}`}>
+                                      ${margenNetoEscenario.toFixed(2)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">{margenSobrePrecioEscenario.toFixed(1)}% s/PV</div>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart
+                              data={(() => {
+                                const roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
+                                const valoresUnicos = Array.from(new Set(roasValues)).filter(v => v > 0).sort((a, b) => a - b)
+                                return valoresUnicos.map(roas => {
+                                  const costoPublicidadEscenario = parametros.precioVenta / roas
+                                  const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
+                                  const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
+                                  return {
+                                    roas,
+                                    margenNeto: Number(margenNetoEscenario.toFixed(2)),
+                                  }
+                                })
+                              })()}
+                            >
+                              <XAxis dataKey="roas" type="number" tickFormatter={(value) => `${value}x`} />
+                              <YAxis tickFormatter={(value) => `$${value}`} />
+                              <Tooltip
+                                formatter={(value, name) => {
+                                  if (name === "margenNeto") return [`$${value}`, "Margen neto"]
+                                  return [value, name]
+                                }}
+                                labelFormatter={(value) => `ROAS: ${value}x`}
+                              />
+                              <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
+                              {resultado.roasBE > 0 && (
+                                <ReferenceLine
+                                  x={resultado.roasBE}
+                                  stroke="#f59e0b"
+                                  strokeDasharray="4 4"
+                                  label={{ value: `ROAS BE ${resultado.roasBE.toFixed(2)}x`, position: "top" }}
+                                />
+                              )}
+                              <ReferenceLine
+                                x={parametros.roas}
+                                stroke="#2563eb"
+                                strokeDasharray="4 4"
+                                label={{ value: "ROAS actual", position: "top" }}
+                              />
+                              <Line type="monotone" dataKey="margenNeto" stroke="#16a34a" strokeWidth={3} dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (

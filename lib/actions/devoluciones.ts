@@ -235,8 +235,8 @@ export async function getDevoluciones() {
           // Si es sin reembolso, excluir si estÃ¡:
           // 1. Finalizada o Entregada
           const finalizada = d.estado === 'Entregada' || d.estado === 'Finalizada';
-          // 2. En camino (Pendiente/En devoluciÃ³n/Aceptada en camino sin fecha de recepciÃ³n)
-          const enCamino = (d.estado === 'Pendiente' || d.estado === 'En devoluciÃ³n' || d.estado === 'Aceptada en camino') && !d.fecha_recepcion && !d.fechaRecepcion;
+          // 2. En camino (Pendiente/En devolución/Aceptada en camino sin fecha de recepción)
+          const enCamino = (d.estado === 'Pendiente' || d.estado === 'En devolución' || d.estado === 'Aceptada en camino') && !d.fecha_recepcion && !d.fechaRecepcion;
           
           return !(finalizada || enCamino);
         })
@@ -360,8 +360,8 @@ export async function createDevolucion(data: DevolucionFormData) {
     // If this is a provisional informe (no resoluciÃ³n/estado final),
     // don't persist product costs or monto_reembolsado yet. This avoids
     // que la columna generada `perdida_total` muestre la pÃ©rdida de producto
-    // antes de que la devoluciÃ³n sea finalizada.
-    const isProvisional = (devolucionCompleta.estado === 'En devoluciÃ³n' || !devolucionCompleta.tipoResolucion)
+    // antes de que la devolución sea finalizada.
+    const isProvisional = (devolucionCompleta.estado === 'En devolución' || !devolucionCompleta.tipoResolucion)
     const plataformaCreacion = (validatedData as any).plataforma ?? datosVenta?.plataforma ?? 'TN'
     const esSinReembolsoCreacion =
       devolucionCompleta.tipoResolucion === 'Sin reembolso' ||
@@ -394,7 +394,7 @@ export async function createDevolucion(data: DevolucionFormData) {
   // plataforma is NOT NULL in the DB; if we couldn't fetch it from the venta or the form,
   // default to 'TN' (Tienda Nube) to avoid DB constraint violation. Adjust as needed.
   plataforma: plataformaCreacion,
-      estado: devolucionCompleta.estado ?? 'En devoluciÃ³n',
+      estado: devolucionCompleta.estado ?? 'En devolución',
       tipo_resolucion: devolucionCompleta.tipoResolucion ?? null,
   // Persistir costo de producto ORIGINAL siempre (para trazabilidad),
   // pero no persistir como pÃ©rdida hasta la finalizaciÃ³n.
@@ -2555,9 +2555,9 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
       
       // Excluir la venta si:
       // 1. tipo_resolucion es 'Reembolso'
-      // 2. estado es 'En devoluciÃ³n' (aÃºn no finalizada)
+      // 2. estado es 'En devolución' (aún no finalizada)
       const isReembolso = tipo.toLowerCase().includes('reembolso')
-      const isEnDevolucion = estado === 'En devoluciÃ³n'
+      const isEnDevolucion = estado === 'En devolución'
       
       if ((isReembolso || isEnDevolucion) && d.venta_id) {
         ventaIdsExclSet.add(String(d.venta_id))
