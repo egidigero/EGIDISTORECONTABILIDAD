@@ -7,10 +7,12 @@ import { EstadoEnvioBadge } from "@/components/estado-envio-badge"
 import type { EstadoEnvio } from "@/lib/types"
 
 interface Venta {
+  id?: string
   fecha: string
   saleCode: string
   comprador: string
   productos?: { modelo: string }
+  producto?: { modelo: string }
   pvBruto: number
   precioNeto: number
   ingresoMargen: number
@@ -61,7 +63,7 @@ export function EERRVentasTable({ data }: EERRVentasTableProps) {
                   <code className="text-xs bg-muted px-2 py-1 rounded">{venta.saleCode}</code>
                 </TableCell>
                 <TableCell>{venta.comprador}</TableCell>
-                <TableCell>{venta.productos?.modelo || "N/A"}</TableCell>
+                <TableCell>{venta.producto?.modelo || venta.productos?.modelo || "N/A"}</TableCell>
                 <TableCell>${Number(venta.pvBruto || 0).toLocaleString()}</TableCell>
                 <TableCell>${Number(venta.precioNeto || 0).toLocaleString()}</TableCell>
                 <TableCell>

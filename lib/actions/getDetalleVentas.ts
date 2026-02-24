@@ -7,7 +7,7 @@ import type { Plataforma } from "@/lib/types"
 export async function getDetalleVentas(fechaDesde: Date, fechaHasta: Date, canal?: Plataforma | "General") {
   let query = supabase
     .from("ventas")
-    .select("*", { count: "exact" })
+    .select("*, producto:productos(id,modelo,sku), productos(id,modelo,sku)", { count: "exact" })
     .gte("fecha", fechaDesde.toISOString())
     .lte("fecha", fechaHasta.toISOString());
   if (canal && canal !== "General") {
