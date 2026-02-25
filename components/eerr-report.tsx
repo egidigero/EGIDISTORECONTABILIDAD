@@ -695,7 +695,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   )
 
   const objetivosEnRiesgo: string[] = []
-  if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen operativo")
+  if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen neto")
   if (metricsActual.devolucionesTasaPct > 10) objetivosEnRiesgo.push("Devoluciones")
   if (metricsActual.colchonCpa < 0) objetivosEnRiesgo.push("CPA marketing")
 
@@ -705,13 +705,13 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const comparisonMetrics: MetricComparison[] = [
     {
       key: "margen_operativo_pct",
-      label: "Margen operativo %",
+      label: "Margen neto %",
       current: metricsActual.margenOperativoPct,
       previous: metricsAnterior.margenOperativoPct,
       higherIsBetter: true,
       formatter: formatPercent,
       tooltip: {
-        queMide: "Resultado operativo neto sobre ventas netas.",
+        queMide: "Resultado neto (sin intereses MP) sobre ventas netas.",
         paraQueSirve: "Mide la salud principal del negocio.",
         comoDecidir: "Si cae debajo del 10%, se pausa el escalamiento.",
       },
@@ -719,13 +719,13 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     },
     {
       key: "margen_operativo_ars",
-      label: "Margen operativo $",
+      label: "Margen neto $",
       current: metricsActual.margenOperativoMonto,
       previous: metricsAnterior.margenOperativoMonto,
       higherIsBetter: true,
       formatter: formatCurrency,
       tooltip: {
-        queMide: "Resultado operativo neto en pesos.",
+        queMide: "Resultado neto (sin intereses MP) en pesos.",
         paraQueSirve: "Mide capacidad real de caja para crecer.",
         comoDecidir: "Si cae vs periodo anterior, escalar con control.",
       },
@@ -845,9 +845,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <div className="rounded-lg border p-4 bg-blue-50/40 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1 text-sm font-medium">
-                  Margen operativo %
+                  Margen neto %
                   <MetricInfoTooltip
-                    queMide="Resultado operativo neto (sin intereses MP) sobre ventas netas."
+                    queMide="Resultado neto (sin intereses MP) sobre ventas netas."
                     paraQueSirve="Es el KPI principal para habilitar o frenar escalamiento."
                     comoDecidir="Debajo de 10% se pausa escala; arriba de 15% se habilita escala fuerte."
                   />
@@ -865,9 +865,9 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <div className="rounded-lg border p-4 bg-slate-50/70 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1 text-sm font-medium">
-                  Margen operativo $
+                  Margen neto $
                   <MetricInfoTooltip
-                    queMide="Resultado operativo neto en pesos."
+                    queMide="Resultado neto (sin intereses MP) en pesos."
                     paraQueSirve="Muestra capacidad de caja para sostener crecimiento."
                     comoDecidir="Si baja vs periodo anterior, escalar con control o pausar."
                   />
@@ -1055,7 +1055,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
               <div className="rounded-md bg-slate-50 p-2">
-                <div className="text-xs text-muted-foreground">Margen operativo</div>
+                <div className="text-xs text-muted-foreground">Margen neto</div>
                 <div className={`font-semibold ${metricsActual.margenOperativoPct >= 10 ? "text-emerald-700" : "text-red-700"}`}>
                   {formatPercent(metricsActual.margenOperativoPct)}
                 </div>
