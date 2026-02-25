@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
-import { getTarifaEspecifica, getTarifasPorPlataforma } from "@/lib/actions/tarifas"
+import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, LineChart, Line, ReferenceLine } from "recharts"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 import { getRecargoCuotasMP } from "@/lib/calculos"
@@ -75,24 +75,6 @@ interface ResultadoCalculo {
   margenSobreCosto: number
 }
 
-interface TarifaEscenario extends TarifaData {
-  id: string
-  plataforma: "TN" | "ML"
-  metodoPago: ParametrosCalculo["metodoPago"]
-  condicion: ParametrosCalculo["condicion"]
-}
-
-interface ResumenEscenarioMargen {
-  margenNeto: number
-  margenSobrePrecio: number
-  impactoVsActual: number
-}
-
-interface ComparativaEscenariosMargen {
-  actual: ResumenEscenarioMargen
-  optimista: ResumenEscenarioMargen
-}
-
 interface DatosReales30Dias {
   precioVentaPromedio: number
   costoPromedio: number
@@ -102,14 +84,6 @@ interface DatosReales30Dias {
   totalVentas: number
   cantidadDevoluciones: number
   roas: number
-}
-
-function esMetodoPagoValido(metodoPago: string): metodoPago is ParametrosCalculo["metodoPago"] {
-  return metodoPago === "PagoNube" || metodoPago === "MercadoPago"
-}
-
-function esCondicionValida(condicion: string): condicion is ParametrosCalculo["condicion"] {
-  return condicion === "Transferencia" || condicion === "Cuotas sin interés" || condicion === "Normal"
 }
 
 function calcularResultadoConTarifa(
@@ -287,7 +261,6 @@ export function CalculadoraPrecios({
   }, [costosEstimados]);
   
   const [tarifa, setTarifa] = useState<TarifaData | null>(null)
-  const [tarifasEscenario, setTarifasEscenario] = useState<TarifaEscenario[]>([])
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
   const [loadingTarifa, setLoadingTarifa] = useState(false)
   const [vistaGrafico, setVistaGrafico] = useState(false)
@@ -357,54 +330,6 @@ export function CalculadoraPrecios({
 
     cargarTarifa()
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion])
-
-  useEffect(() => {
-    let activo = true
-
-    async function cargarTarifasEscenario() {
-      try {
-        const tarifasData = await getTarifasPorPlataforma(parametros.plataforma)
-        if (!activo) return
-
-        const tarifasNormalizadas: TarifaEscenario[] = (tarifasData || []).flatMap((tarifaItem: any) => {
-          const metodoPago = String(tarifaItem.metodoPago || "")
-          const condicion = String(tarifaItem.condicion || "")
-
-          if (!esMetodoPagoValido(metodoPago) || !esCondicionValida(condicion)) {
-            return []
-          }
-
-          if (tarifaItem.plataforma !== "TN" && tarifaItem.plataforma !== "ML") {
-            return []
-          }
-
-          return [{
-            id: String(tarifaItem.id || `${tarifaItem.plataforma}-${metodoPago}-${condicion}`),
-            plataforma: tarifaItem.plataforma,
-            metodoPago,
-            condicion,
-            comisionPct: Number(tarifaItem.comisionPct || 0),
-            comisionExtraPct: Number(tarifaItem.comisionExtraPct || 0),
-            iibbPct: Number(tarifaItem.iibbPct || 0),
-            fijoPorOperacion: Number(tarifaItem.fijoPorOperacion || 0),
-            descuentoPct: Number(tarifaItem.descuentoPct || 0)
-          }]
-        })
-
-        setTarifasEscenario(tarifasNormalizadas)
-      } catch (error) {
-        console.error("Error cargando tarifas para simulación:", error)
-        if (activo) {
-          setTarifasEscenario([])
-        }
-      }
-    }
-
-    cargarTarifasEscenario()
-    return () => {
-      activo = false
-    }
-  }, [parametros.plataforma])
 
   // Cargar datos reales de últimos 30 días cuando se active el modo
   useEffect(() => {
@@ -484,82 +409,6 @@ export function CalculadoraPrecios({
   }
 
   const saludProducto = resultado ? getSaludProducto(resultado.margenNeto, resultado.margenSobrePrecio) : null
-
-  const comparativaEscenario = useMemo<ComparativaEscenariosMargen | null>(() => {
-    if (!resultado || parametros.precioVenta <= 0) {
-      return null
-    }
-
-    const tarifaFallback: TarifaEscenario | null = tarifa
-      ? {
-          id: "tarifa-actual",
-          plataforma: parametros.plataforma,
-          metodoPago: parametros.metodoPago,
-          condicion: parametros.condicion,
-          ...tarifa
-        }
-      : null
-
-    const candidatos = tarifasEscenario.length > 0
-      ? tarifasEscenario
-      : tarifaFallback
-        ? [tarifaFallback]
-        : []
-
-    if (!candidatos.length) {
-      return null
-    }
-
-    const simulaciones = candidatos.map((tarifaCandidata) => {
-      const parametrosEscenario: ParametrosCalculo = {
-        ...parametros,
-        metodoPago: tarifaCandidata.metodoPago,
-        condicion: tarifaCandidata.condicion,
-        usarComisionManual: false,
-        comisionManual: undefined
-      }
-
-      const resultadoEscenario = calcularResultadoConTarifa(parametrosEscenario, tarifaCandidata, costoProducto)
-      return {
-        totalCostosPlataforma: resultadoEscenario.totalCostosPlataforma,
-        margenNeto: resultadoEscenario.margenNeto,
-        margenSobrePrecio: resultadoEscenario.margenSobrePrecio,
-        impactoVsActual: resultadoEscenario.margenNeto - resultado.margenNeto
-      }
-    })
-
-    if (!simulaciones.length) {
-      return null
-    }
-
-    const optimista = simulaciones.reduce((mejorCaso, simulacion) =>
-      simulacion.totalCostosPlataforma < mejorCaso.totalCostosPlataforma ? simulacion : mejorCaso
-    )
-
-    return {
-      actual: {
-        margenNeto: resultado.margenNeto,
-        margenSobrePrecio: resultado.margenSobrePrecio,
-        impactoVsActual: 0
-      },
-      optimista: {
-        margenNeto: optimista.margenNeto,
-        margenSobrePrecio: optimista.margenSobrePrecio,
-        impactoVsActual: optimista.impactoVsActual
-      }
-    }
-  }, [costoProducto, parametros, resultado, tarifa, tarifasEscenario])
-
-  const obtenerClaseImpacto = (impacto: number) => {
-    if (impacto > 0) return "text-green-600"
-    if (impacto < 0) return "text-red-600"
-    return "text-muted-foreground"
-  }
-
-  const formatearImpacto = (impacto: number) => {
-    if (impacto < 0) return `- $${Math.abs(impacto).toFixed(2)}`
-    return `$${impacto.toFixed(2)}`
-  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -889,47 +738,6 @@ export function CalculadoraPrecios({
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Simulación de escenarios de cobro</CardTitle>
-                <CardDescription>
-                  Este bloque no modifica los cálculos base. Solo simula cómo impacta en tu margen un cambio en comisiones y método de pago.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {resultado && comparativaEscenario ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-md border p-3 space-y-2 bg-slate-50/40">
-                      <div className="text-sm font-semibold">Margen neto actual</div>
-                      <div className={`text-xl font-semibold ${comparativaEscenario.actual.margenNeto >= 0 ? "text-green-700" : "text-red-700"}`}>
-                        ${comparativaEscenario.actual.margenNeto.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        % sobre precio: {comparativaEscenario.actual.margenSobrePrecio.toFixed(1)}%
-                      </div>
-                      <div className="text-xs text-muted-foreground">Impacto vs actual:</div>
-                      <div className="text-sm font-medium text-muted-foreground">$0.00</div>
-                    </div>
-
-                    <div className="rounded-md border border-green-500 bg-green-50/60 p-3 space-y-2">
-                      <div className="text-sm font-semibold">Margen neto escenario optimista</div>
-                      <div className={`text-xl font-semibold ${comparativaEscenario.optimista.margenNeto >= 0 ? "text-green-700" : "text-red-700"}`}>
-                        ${comparativaEscenario.optimista.margenNeto.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        % sobre precio: {comparativaEscenario.optimista.margenSobrePrecio.toFixed(1)}%
-                      </div>
-                      <div className="text-xs text-muted-foreground">Impacto vs actual:</div>
-                      <div className={`text-sm font-medium ${obtenerClaseImpacto(comparativaEscenario.optimista.impactoVsActual)}`}>
-                        {formatearImpacto(comparativaEscenario.optimista.impactoVsActual)}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">Ingresa un precio para ver la comparación.</div>
-                )}
-              </CardContent>
-            </Card>
           </div>
 
           {/* Panel de resultados */}
@@ -1257,137 +1065,6 @@ export function CalculadoraPrecios({
                       </div>
                     </div>
 
-                    {/* Comparación de ROAS */}
-                    <div className="p-4 rounded-lg border bg-white">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <div className="text-lg font-semibold">Comparación de ROAS</div>
-                          <div className="text-xs text-muted-foreground">
-                            Zona de pérdida: ROAS menor al BE. Zona de ganancia: ROAS mayor al BE.
-                          </div>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            variant={!vistaGrafico ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setVistaGrafico(false)}
-                          >
-                            <List className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant={vistaGrafico ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setVistaGrafico(true)}
-                          >
-                            <BarChart3 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-sm">
-                        <div className="rounded border p-2 bg-blue-50">
-                          <div className="text-xs text-muted-foreground">ROAS actual</div>
-                          <div className="font-semibold text-blue-700">{parametros.roas.toFixed(2)}x</div>
-                        </div>
-                        <div className="rounded border p-2 bg-amber-50">
-                          <div className="text-xs text-muted-foreground">ROAS BE</div>
-                          <div className="font-semibold text-amber-700">{resultado.roasBE > 0 ? `${resultado.roasBE.toFixed(2)}x` : "-"}</div>
-                        </div>
-                        <div className={`rounded border p-2 ${parametros.roas >= resultado.roasBE ? "bg-emerald-50" : "bg-red-50"}`}>
-                          <div className="text-xs text-muted-foreground">Zona actual</div>
-                          <div className={`font-semibold ${parametros.roas >= resultado.roasBE ? "text-emerald-700" : "text-red-700"}`}>
-                            {parametros.roas >= resultado.roasBE ? "Ganancia" : "Pérdida"}
-                          </div>
-                        </div>
-                      </div>
-
-                      {!vistaGrafico ? (
-                        <div className="space-y-2">
-                          {(() => {
-                            const valoresBase = [2, 3, 4, 5, 6]
-                            const valoresExtra = [Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
-                            const roasValues = Array.from(new Set([...valoresBase, ...valoresExtra])).filter(v => v > 0).sort((a, b) => a - b)
-                            return roasValues.map(roas => {
-                              const costoPublicidadEscenario = parametros.precioVenta / roas
-                              const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
-                              const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
-                              const margenSobrePrecioEscenario = (margenNetoEscenario / parametros.precioVenta) * 100
-                              const isActual = Math.abs(roas - parametros.roas) < 0.01
-                              const isBE = Math.abs(roas - resultado.roasBE) < 0.01
-                              return (
-                                <div
-                                  key={roas}
-                                  className={`flex justify-between items-center p-2 rounded border ${
-                                    isActual ? "bg-blue-50 border-blue-300" : isBE ? "bg-amber-50 border-amber-300" : "bg-gray-50"
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="font-mono">
-                                      ROAS {roas.toFixed(2)}x {isActual ? "(actual)" : ""} {isBE ? "(BE)" : ""}
-                                    </div>
-                                    <div className={`text-xs ${roas >= resultado.roasBE ? "text-green-700" : "text-red-700"}`}>
-                                      {roas >= resultado.roasBE ? "Zona de ganancia" : "Zona de pérdida"}
-                                    </div>
-                                  </div>
-                                  <div className="text-right">
-                                    <div className={`font-mono ${margenNetoEscenario >= 0 ? "text-green-700" : "text-red-700"}`}>
-                                      ${margenNetoEscenario.toFixed(2)}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">{margenSobrePrecioEscenario.toFixed(1)}% s/PV</div>
-                                  </div>
-                                </div>
-                              )
-                            })
-                          })()}
-                        </div>
-                      ) : (
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart
-                              data={(() => {
-                                const roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
-                                const valoresUnicos = Array.from(new Set(roasValues)).filter(v => v > 0).sort((a, b) => a - b)
-                                return valoresUnicos.map(roas => {
-                                  const costoPublicidadEscenario = parametros.precioVenta / roas
-                                  const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
-                                  const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
-                                  return {
-                                    roas,
-                                    margenNeto: Number(margenNetoEscenario.toFixed(2)),
-                                  }
-                                })
-                              })()}
-                            >
-                              <XAxis dataKey="roas" type="number" tickFormatter={(value) => `${value}x`} />
-                              <YAxis tickFormatter={(value) => `$${value}`} />
-                              <Tooltip
-                                formatter={(value, name) => {
-                                  if (name === "margenNeto") return [`$${value}`, "Margen neto"]
-                                  return [value, name]
-                                }}
-                                labelFormatter={(value) => `ROAS: ${value}x`}
-                              />
-                              <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
-                              {resultado.roasBE > 0 && (
-                                <ReferenceLine
-                                  x={resultado.roasBE}
-                                  stroke="#f59e0b"
-                                  strokeDasharray="4 4"
-                                  label={{ value: `ROAS BE ${resultado.roasBE.toFixed(2)}x`, position: "top" }}
-                                />
-                              )}
-                              <ReferenceLine
-                                x={parametros.roas}
-                                stroke="#2563eb"
-                                strokeDasharray="4 4"
-                                label={{ value: "ROAS actual", position: "top" }}
-                              />
-                              <Line type="monotone" dataKey="margenNeto" stroke="#16a34a" strokeWidth={3} dot={false} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
@@ -1415,6 +1092,141 @@ export function CalculadoraPrecios({
             </div>
           </div>
         </div>
+
+        {resultado && (
+          <Card className="mt-6">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-lg font-semibold">Comparación de ROAS</div>
+                  <div className="text-xs text-muted-foreground">
+                    Zona de pérdida: ROAS menor al BE. Zona de ganancia: ROAS mayor al BE.
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    variant={!vistaGrafico ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setVistaGrafico(false)}
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={vistaGrafico ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setVistaGrafico(true)}
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-sm">
+                <div className="rounded border p-2 bg-blue-50">
+                  <div className="text-xs text-muted-foreground">ROAS actual</div>
+                  <div className="font-semibold text-blue-700">{parametros.roas.toFixed(2)}x</div>
+                </div>
+                <div className="rounded border p-2 bg-amber-50">
+                  <div className="text-xs text-muted-foreground">ROAS BE</div>
+                  <div className="font-semibold text-amber-700">{resultado.roasBE > 0 ? `${resultado.roasBE.toFixed(2)}x` : "-"}</div>
+                </div>
+                <div className={`rounded border p-2 ${parametros.roas >= resultado.roasBE ? "bg-emerald-50" : "bg-red-50"}`}>
+                  <div className="text-xs text-muted-foreground">Zona actual</div>
+                  <div className={`font-semibold ${parametros.roas >= resultado.roasBE ? "text-emerald-700" : "text-red-700"}`}>
+                    {parametros.roas >= resultado.roasBE ? "Ganancia" : "Pérdida"}
+                  </div>
+                </div>
+              </div>
+
+              {!vistaGrafico ? (
+                <div className="space-y-2">
+                  {(() => {
+                    const valoresBase = [2, 3, 4, 5, 6]
+                    const valoresExtra = [Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
+                    const roasValues = Array.from(new Set([...valoresBase, ...valoresExtra])).filter(v => v > 0).sort((a, b) => a - b)
+                    return roasValues.map(roas => {
+                      const costoPublicidadEscenario = parametros.precioVenta / roas
+                      const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
+                      const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
+                      const margenSobrePrecioEscenario = (margenNetoEscenario / parametros.precioVenta) * 100
+                      const isActual = Math.abs(roas - parametros.roas) < 0.01
+                      const isBE = Math.abs(roas - resultado.roasBE) < 0.01
+                      return (
+                        <div
+                          key={roas}
+                          className={`flex justify-between items-center p-2 rounded border ${
+                            isActual ? "bg-blue-50 border-blue-300" : isBE ? "bg-amber-50 border-amber-300" : "bg-gray-50"
+                          }`}
+                        >
+                          <div>
+                            <div className="font-mono">
+                              ROAS {roas.toFixed(2)}x {isActual ? "(actual)" : ""} {isBE ? "(BE)" : ""}
+                            </div>
+                            <div className={`text-xs ${roas >= resultado.roasBE ? "text-green-700" : "text-red-700"}`}>
+                              {roas >= resultado.roasBE ? "Zona de ganancia" : "Zona de pérdida"}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-mono ${margenNetoEscenario >= 0 ? "text-green-700" : "text-red-700"}`}>
+                              ${margenNetoEscenario.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{margenSobrePrecioEscenario.toFixed(1)}% s/PV</div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={(() => {
+                        const roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
+                        const valoresUnicos = Array.from(new Set(roasValues)).filter(v => v > 0).sort((a, b) => a - b)
+                        return valoresUnicos.map(roas => {
+                          const costoPublicidadEscenario = parametros.precioVenta / roas
+                          const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
+                          const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
+                          return {
+                            roas,
+                            margenNeto: Number(margenNetoEscenario.toFixed(2)),
+                          }
+                        })
+                      })()}
+                    >
+                      <XAxis dataKey="roas" type="number" tickFormatter={(value) => `${value}x`} />
+                      <YAxis tickFormatter={(value) => `$${value}`} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === "margenNeto") return [`$${value}`, "Margen neto"]
+                          return [value, name]
+                        }}
+                        labelFormatter={(value) => `ROAS: ${value}x`}
+                      />
+                      <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
+                      {resultado.roasBE > 0 && (
+                        <ReferenceLine
+                          x={resultado.roasBE}
+                          stroke="#f59e0b"
+                          strokeDasharray="4 4"
+                          label={{ value: `ROAS BE ${resultado.roasBE.toFixed(2)}x`, position: "top" }}
+                        />
+                      )}
+                      <ReferenceLine
+                        x={parametros.roas}
+                        stroke="#2563eb"
+                        strokeDasharray="4 4"
+                        label={{ value: "ROAS actual", position: "top" }}
+                      />
+                      <Line type="monotone" dataKey="margenNeto" stroke="#16a34a" strokeWidth={3} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </DialogContent>
     </Dialog>
   )
