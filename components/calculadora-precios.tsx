@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
-import { getTarifaEspecifica } from "@/lib/actions/tarifas"
+import { getTarifaEspecifica, getTarifasPorPlataforma } from "@/lib/actions/tarifas"
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, LineChart, Line, ReferenceLine } from "recharts"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 import { getRecargoCuotasMP } from "@/lib/calculos"
@@ -75,7 +75,23 @@ interface ResultadoCalculo {
   margenSobreCosto: number
 }
 
-type ModoEscenario = "conservador" | "optimista"
+interface TarifaEscenario extends TarifaData {
+  id: string
+  plataforma: "TN" | "ML"
+  metodoPago: ParametrosCalculo["metodoPago"]
+  condicion: ParametrosCalculo["condicion"]
+}
+
+interface ResumenEscenarioMargen {
+  margenNeto: number
+  margenSobrePrecio: number
+  impactoVsActual: number
+}
+
+interface ComparativaEscenariosMargen {
+  actual: ResumenEscenarioMargen
+  optimista: ResumenEscenarioMargen
+}
 
 interface DatosReales30Dias {
   precioVentaPromedio: number
@@ -86,6 +102,112 @@ interface DatosReales30Dias {
   totalVentas: number
   cantidadDevoluciones: number
   roas: number
+}
+
+function esMetodoPagoValido(metodoPago: string): metodoPago is ParametrosCalculo["metodoPago"] {
+  return metodoPago === "PagoNube" || metodoPago === "MercadoPago"
+}
+
+function esCondicionValida(condicion: string): condicion is ParametrosCalculo["condicion"] {
+  return condicion === "Transferencia" || condicion === "Cuotas sin interés" || condicion === "Normal"
+}
+
+function calcularResultadoConTarifa(
+  parametrosCalculo: ParametrosCalculo,
+  tarifa: TarifaData,
+  costoProducto: number
+): ResultadoCalculo {
+  const precio = parametrosCalculo.precioVenta
+  const costo = costoProducto
+  const metodoPago = parametrosCalculo.metodoPago
+  const condicion = parametrosCalculo.condicion
+  
+  const precioConDescuento = precio * (1 - (tarifa.descuentoPct || 0))
+  const descuentoAplicado = precio - precioConDescuento
+  const resultadoOperativo = precioConDescuento - costo
+
+  let iva = 0
+  let iibb = 0
+  let comisionSinIva = 0
+  let comisionExtraSinIva = 0
+
+  let comision = parametrosCalculo.usarComisionManual && parametrosCalculo.comisionManual !== undefined
+    ? parametrosCalculo.comisionManual
+    : precioConDescuento * tarifa.comisionPct
+  
+  if (parametrosCalculo.plataforma === "TN" && metodoPago === "MercadoPago" && condicion === "Cuotas sin interés") {
+    const cuotasValue = parametrosCalculo.cuotas || 1
+    const recargoMP = getRecargoCuotasMP(cuotasValue)
+    const comisionMPAdicional = precioConDescuento * recargoMP
+    comision = comision + comisionMPAdicional
+  }
+  
+  const comisionExtra = precioConDescuento * (tarifa.comisionExtraPct || 0)
+  const envio = parametrosCalculo.costoEnvio
+  
+  if (parametrosCalculo.plataforma === "TN" && metodoPago === "MercadoPago") {
+    comisionSinIva = comision
+    const ivaMP = comision * 0.21
+    
+    comisionExtraSinIva = comisionExtra / 1.21
+    const ivaTN = comisionExtra - comisionExtraSinIva
+    iva = ivaMP + ivaTN
+    
+    iibb = (comision + comisionExtra) * 0.03
+  } else if (parametrosCalculo.plataforma === "TN") {
+    iva = (comision + comisionExtra) * 0.21
+    iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03)
+  } else if (parametrosCalculo.plataforma === "ML") {
+    comisionSinIva = comision / 1.21
+    comisionExtraSinIva = comisionExtra / 1.21
+    iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva
+  }
+  
+  const subtotalComision = parametrosCalculo.plataforma === "TN" 
+    ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03))
+    : comision
+  const subtotalComisionExtra = parametrosCalculo.plataforma === "TN" 
+    ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03))
+    : comisionExtra
+  
+  const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + tarifa.fijoPorOperacion
+  const margenContribucion = resultadoOperativo - totalCostosPlataforma - parametrosCalculo.costoDevoluciones
+  const costoPublicidad = parametrosCalculo.roas > 0 ? precio / parametrosCalculo.roas : 0
+  const margenOperativo = margenContribucion - costoPublicidad
+  const margenNeto = margenOperativo - parametrosCalculo.costoGastosNegocio
+
+  const roasBE = margenContribucion > 0 ? precio / margenContribucion : 0
+  const porcentajeAdsSobreContribucion = margenContribucion > 0
+    ? (costoPublicidad / margenContribucion) * 100
+    : 0
+
+  const margenSobrePrecio = (margenNeto / precio) * 100
+  const margenSobreCosto = (margenNeto / costo) * 100
+
+  return {
+    precio,
+    costo,
+    descuentoAplicado,
+    resultadoOperativo,
+    margenContribucion,
+    comision,
+    comisionExtra,
+    ...(parametrosCalculo.plataforma === "TN" && {
+      comisionSinIva,
+      comisionExtraSinIva
+    }),
+    envio,
+    iva,
+    iibb,
+    totalCostosPlataforma,
+    margenOperativo,
+    costoPublicidad,
+    roasBE,
+    porcentajeAdsSobreContribucion,
+    margenNeto,
+    margenSobrePrecio,
+    margenSobreCosto
+  }
 }
 
 export function CalculadoraPrecios({ 
@@ -165,6 +287,7 @@ export function CalculadoraPrecios({
   }, [costosEstimados]);
   
   const [tarifa, setTarifa] = useState<TarifaData | null>(null)
+  const [tarifasEscenario, setTarifasEscenario] = useState<TarifaEscenario[]>([])
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
   const [loadingTarifa, setLoadingTarifa] = useState(false)
   const [vistaGrafico, setVistaGrafico] = useState(false)
@@ -173,7 +296,6 @@ export function CalculadoraPrecios({
   const [modoAnalisis30Dias, setModoAnalisis30Dias] = useState(false)
   const [datosReales30Dias, setDatosReales30Dias] = useState<DatosReales30Dias | null>(null)
   const [loadingDatosReales, setLoadingDatosReales] = useState(false)
-  const [modoEscenario, setModoEscenario] = useState<ModoEscenario>("conservador")
 
   // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
   useEffect(() => {
@@ -236,6 +358,54 @@ export function CalculadoraPrecios({
     cargarTarifa()
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion])
 
+  useEffect(() => {
+    let activo = true
+
+    async function cargarTarifasEscenario() {
+      try {
+        const tarifasData = await getTarifasPorPlataforma(parametros.plataforma)
+        if (!activo) return
+
+        const tarifasNormalizadas: TarifaEscenario[] = (tarifasData || []).flatMap((tarifaItem: any) => {
+          const metodoPago = String(tarifaItem.metodoPago || "")
+          const condicion = String(tarifaItem.condicion || "")
+
+          if (!esMetodoPagoValido(metodoPago) || !esCondicionValida(condicion)) {
+            return []
+          }
+
+          if (tarifaItem.plataforma !== "TN" && tarifaItem.plataforma !== "ML") {
+            return []
+          }
+
+          return [{
+            id: String(tarifaItem.id || `${tarifaItem.plataforma}-${metodoPago}-${condicion}`),
+            plataforma: tarifaItem.plataforma,
+            metodoPago,
+            condicion,
+            comisionPct: Number(tarifaItem.comisionPct || 0),
+            comisionExtraPct: Number(tarifaItem.comisionExtraPct || 0),
+            iibbPct: Number(tarifaItem.iibbPct || 0),
+            fijoPorOperacion: Number(tarifaItem.fijoPorOperacion || 0),
+            descuentoPct: Number(tarifaItem.descuentoPct || 0)
+          }]
+        })
+
+        setTarifasEscenario(tarifasNormalizadas)
+      } catch (error) {
+        console.error("Error cargando tarifas para simulación:", error)
+        if (activo) {
+          setTarifasEscenario([])
+        }
+      }
+    }
+
+    cargarTarifasEscenario()
+    return () => {
+      activo = false
+    }
+  }, [parametros.plataforma])
+
   // Cargar datos reales de últimos 30 días cuando se active el modo
   useEffect(() => {
     async function cargarDatosReales() {
@@ -290,120 +460,7 @@ export function CalculadoraPrecios({
   const calcularResultado = () => {
     if (!tarifa || parametros.precioVenta <= 0) return
 
-    const precio = parametros.precioVenta
-    const costo = costoProducto
-    
-    // 2. Aplicar descuento pre-comisión si existe (ej: 15% para TN + Transferencia)
-    const precioConDescuento = precio * (1 - (tarifa.descuentoPct || 0))
-    const descuentoAplicado = precio - precioConDescuento
-
-    // 1. Precio (con descuento) - Costo = Resultado Operativo
-    const resultadoOperativo = precioConDescuento - costo
-
-    // Declarar variables que se usarán más adelante
-    let iva = 0
-    let iibb = 0
-    let comisionSinIva = 0
-    let comisionExtraSinIva = 0
-
-    // 3. Costos de Plataforma usando tarifas reales sobre precio con descuento
-    // Si usarComisionManual, usar el valor manual para la comisión base
-    let comision = parametros.usarComisionManual && parametros.comisionManual !== undefined
-      ? parametros.comisionManual
-      : precioConDescuento * tarifa.comisionPct
-    
-    // Para TN + MercadoPago + Cuotas sin interés: agregar recargo por cuotas
-    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago" && parametros.condicion === "Cuotas sin interés") {
-      const cuotasValue = parametros.cuotas || 1
-      const recargoMP = getRecargoCuotasMP(cuotasValue)
-      const comisionMPAdicional = precioConDescuento * recargoMP
-      comision = comision + comisionMPAdicional // Comisión total MP (base + recargo cuotas)
-    }
-    
-    const comisionExtra = precioConDescuento * (tarifa.comisionExtraPct || 0)
-    const envio = parametros.costoEnvio
-    
-    if (parametros.plataforma === "TN" && parametros.metodoPago === "MercadoPago") {
-      // La comisión MP completa (base + recargo cuotas) NO incluye IVA
-      comisionSinIva = comision
-      const ivaMP = comision * 0.21 // IVA 21% sobre comisión MP total
-      
-      // comisionExtra = Comisión TN (SÍ incluye IVA)
-      comisionExtraSinIva = comisionExtra / 1.21
-      const ivaTN = comisionExtra - comisionExtraSinIva
-      iva = ivaMP + ivaTN // IVA total
-      
-      // IIBB: 3% sobre comisiones (manual en venta-form, aquí calculado)
-      iibb = (comision + comisionExtra) * 0.03
-    } else if (parametros.plataforma === "TN") {
-      iva = (comision + comisionExtra) * 0.21
-      // IIBB: 3% sobre comisiones totales
-      iibb = (comision + comisionExtra) * (tarifa.iibbPct || 0.03)
-    } else if (parametros.plataforma === "ML") {
-      comisionSinIva = comision / 1.21
-      comisionExtraSinIva = comisionExtra / 1.21
-      iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva
-      // ML no tiene IIBB adicional
-    }
-    
-    // Calcular subtotales por separado para mayor claridad
-    const subtotalComision = parametros.plataforma === "TN" 
-      ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03))
-      : comision // Para ML, la comisión ya incluye todo
-    const subtotalComisionExtra = parametros.plataforma === "TN" 
-      ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03))
-      : comisionExtra // Para ML, la comisión extra ya incluye todo
-    
-    const totalCostosPlataforma = subtotalComision + subtotalComisionExtra + envio + tarifa.fijoPorOperacion
-
-    // 4. Margen de contribución = Resultado bruto - Costos plataforma - Devoluciones
-    const margenContribucion = resultadoOperativo - totalCostosPlataforma - parametros.costoDevoluciones
-
-    // 5. Costo de Publicidad (calculado por ROAS)
-    const costoPublicidad = parametros.roas > 0 ? precio / parametros.roas : 0
-
-    // 6. Margen Operativo = Margen de contribución - Publicidad
-    const margenOperativo = margenContribucion - costoPublicidad
-
-    // 7. Margen Neto = Margen operativo - Estructura prorrateada
-    const margenNeto = margenOperativo - parametros.costoGastosNegocio
-
-    // 8. KPIs ROAS
-    const roasBE = margenContribucion > 0 ? precio / margenContribucion : 0
-    const porcentajeAdsSobreContribucion = margenContribucion > 0
-      ? (costoPublicidad / margenContribucion) * 100
-      : 0
-
-    // 9. Porcentajes
-    const margenSobrePrecio = (margenNeto / precio) * 100
-    const margenSobreCosto = (margenNeto / costo) * 100
-
-    const resultado: ResultadoCalculo = {
-      precio,
-      costo,
-      descuentoAplicado,
-      resultadoOperativo,
-      margenContribucion,
-      comision,
-      comisionExtra,
-      ...(parametros.plataforma === 'TN' && {
-        comisionSinIva: comisionSinIva,
-        comisionExtraSinIva: comisionExtraSinIva
-      }),
-      envio,
-      iva,
-      iibb,
-      totalCostosPlataforma,
-      margenOperativo,
-      costoPublicidad,
-      roasBE,
-      porcentajeAdsSobreContribucion,
-      margenNeto,
-      margenSobrePrecio,
-      margenSobreCosto
-    }
-
-    setResultado(resultado)
+    setResultado(calcularResultadoConTarifa(parametros, tarifa, costoProducto))
   }
 
   const handleUsarPrecio = () => {
@@ -428,24 +485,81 @@ export function CalculadoraPrecios({
 
   const saludProducto = resultado ? getSaludProducto(resultado.margenNeto, resultado.margenSobrePrecio) : null
 
-  const factorEscenario = modoEscenario === "conservador" ? 1.15 : 0.85
-  const tituloEscenario = modoEscenario === "conservador" ? "Modo conservador" : "Modo optimista"
-  const descripcionEscenario = modoEscenario === "conservador"
-    ? "Visualiza una comisión más exigente y método más costoso."
-    : "Visualiza una comisión más baja tipo transferencia."
+  const comparativaEscenario = useMemo<ComparativaEscenariosMargen | null>(() => {
+    if (!resultado || parametros.precioVenta <= 0) {
+      return null
+    }
 
-  const comparativaEscenario = resultado
-    ? (() => {
-        const costosPlataformaEscenario = resultado.totalCostosPlataforma * factorEscenario
-        const margenContribucionEscenario = resultado.resultadoOperativo - costosPlataformaEscenario - parametros.costoDevoluciones
-        const margenOperativoEscenario = margenContribucionEscenario - resultado.costoPublicidad
-        const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
-        return {
-          costosPlataformaEscenario,
-          margenNetoEscenario,
+    const tarifaFallback: TarifaEscenario | null = tarifa
+      ? {
+          id: "tarifa-actual",
+          plataforma: parametros.plataforma,
+          metodoPago: parametros.metodoPago,
+          condicion: parametros.condicion,
+          ...tarifa
         }
-      })()
-    : null
+      : null
+
+    const candidatos = tarifasEscenario.length > 0
+      ? tarifasEscenario
+      : tarifaFallback
+        ? [tarifaFallback]
+        : []
+
+    if (!candidatos.length) {
+      return null
+    }
+
+    const simulaciones = candidatos.map((tarifaCandidata) => {
+      const parametrosEscenario: ParametrosCalculo = {
+        ...parametros,
+        metodoPago: tarifaCandidata.metodoPago,
+        condicion: tarifaCandidata.condicion,
+        usarComisionManual: false,
+        comisionManual: undefined
+      }
+
+      const resultadoEscenario = calcularResultadoConTarifa(parametrosEscenario, tarifaCandidata, costoProducto)
+      return {
+        totalCostosPlataforma: resultadoEscenario.totalCostosPlataforma,
+        margenNeto: resultadoEscenario.margenNeto,
+        margenSobrePrecio: resultadoEscenario.margenSobrePrecio,
+        impactoVsActual: resultadoEscenario.margenNeto - resultado.margenNeto
+      }
+    })
+
+    if (!simulaciones.length) {
+      return null
+    }
+
+    const optimista = simulaciones.reduce((mejorCaso, simulacion) =>
+      simulacion.totalCostosPlataforma < mejorCaso.totalCostosPlataforma ? simulacion : mejorCaso
+    )
+
+    return {
+      actual: {
+        margenNeto: resultado.margenNeto,
+        margenSobrePrecio: resultado.margenSobrePrecio,
+        impactoVsActual: 0
+      },
+      optimista: {
+        margenNeto: optimista.margenNeto,
+        margenSobrePrecio: optimista.margenSobrePrecio,
+        impactoVsActual: optimista.impactoVsActual
+      }
+    }
+  }, [costoProducto, parametros, resultado, tarifa, tarifasEscenario])
+
+  const obtenerClaseImpacto = (impacto: number) => {
+    if (impacto > 0) return "text-green-600"
+    if (impacto < 0) return "text-red-600"
+    return "text-muted-foreground"
+  }
+
+  const formatearImpacto = (impacto: number) => {
+    if (impacto < 0) return `- $${Math.abs(impacto).toFixed(2)}`
+    return `$${impacto.toFixed(2)}`
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -777,50 +891,38 @@ export function CalculadoraPrecios({
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Vista de Escenario</CardTitle>
-                <CardDescription>Comparación visual de peor y mejor caso (no modifica los cálculos base).</CardDescription>
+                <CardTitle className="text-lg">Simulación de escenarios de cobro</CardTitle>
+                <CardDescription>
+                  Este bloque no modifica los cálculos base. Solo simula cómo impacta en tu margen un cambio en comisiones y método de pago.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={modoEscenario === "conservador" ? "default" : "outline"}
-                    onClick={() => setModoEscenario("conservador")}
-                  >
-                    Modo conservador
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={modoEscenario === "optimista" ? "default" : "outline"}
-                    onClick={() => setModoEscenario("optimista")}
-                  >
-                    Modo optimista
-                  </Button>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {tituloEscenario}: {descripcionEscenario}
-                </div>
+              <CardContent>
                 {resultado && comparativaEscenario ? (
-                  <div className="rounded-md border p-3 text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span>Costos plataforma (actual):</span>
-                      <span className="font-mono">${resultado.totalCostosPlataforma.toFixed(2)}</span>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-md border p-3 space-y-2 bg-slate-50/40">
+                      <div className="text-sm font-semibold">Margen neto actual</div>
+                      <div className={`text-xl font-semibold ${comparativaEscenario.actual.margenNeto >= 0 ? "text-green-700" : "text-red-700"}`}>
+                        ${comparativaEscenario.actual.margenNeto.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        % sobre precio: {comparativaEscenario.actual.margenSobrePrecio.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-muted-foreground">Impacto vs actual:</div>
+                      <div className="text-sm font-medium text-muted-foreground">$0.00</div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Costos plataforma ({modoEscenario}):</span>
-                      <span className="font-mono">${comparativaEscenario.costosPlataformaEscenario.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Margen neto (actual):</span>
-                      <span className="font-mono">${resultado.margenNeto.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Margen neto ({modoEscenario}):</span>
-                      <span className={`font-mono ${comparativaEscenario.margenNetoEscenario >= 0 ? "text-green-600" : "text-red-600"}`}>
-                        ${comparativaEscenario.margenNetoEscenario.toFixed(2)}
-                      </span>
+
+                    <div className="rounded-md border border-green-500 bg-green-50/60 p-3 space-y-2">
+                      <div className="text-sm font-semibold">Margen neto escenario optimista</div>
+                      <div className={`text-xl font-semibold ${comparativaEscenario.optimista.margenNeto >= 0 ? "text-green-700" : "text-red-700"}`}>
+                        ${comparativaEscenario.optimista.margenNeto.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        % sobre precio: {comparativaEscenario.optimista.margenSobrePrecio.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-muted-foreground">Impacto vs actual:</div>
+                      <div className={`text-sm font-medium ${obtenerClaseImpacto(comparativaEscenario.optimista.impactoVsActual)}`}>
+                        {formatearImpacto(comparativaEscenario.optimista.impactoVsActual)}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1125,32 +1227,6 @@ export function CalculadoraPrecios({
                         <div className="flex justify-between text-xs text-muted-foreground">
                           <span>% sobre Costo:</span>
                           <span className="font-mono">{resultado.margenSobreCosto.toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Costos Variables vs Fijos */}
-                    <div className="p-4 bg-slate-50 rounded-lg border">
-                      <div className="text-lg font-semibold mb-2">Costos Variables vs Costos Fijos</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div className="rounded-md bg-blue-50 p-3">
-                          <div className="font-medium text-blue-700 mb-2">Costos Variables por venta</div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between"><span>Costo producto</span><span className="font-mono">${resultado.costo.toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span>Comisiones + impuestos</span><span className="font-mono">${Math.max(resultado.totalCostosPlataforma - resultado.envio - (tarifa?.fijoPorOperacion || 0), 0).toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span>Envío</span><span className="font-mono">${resultado.envio.toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span>Devoluciones</span><span className="font-mono">${parametros.costoDevoluciones.toFixed(2)}</span></div>
-                            <div className="flex justify-between"><span>Publicidad</span><span className="font-mono">${resultado.costoPublicidad.toFixed(2)}</span></div>
-                          </div>
-                        </div>
-                        <div className="rounded-md bg-violet-50 p-3">
-                          <div className="font-medium text-violet-700 mb-2">Costos Fijos prorrateados</div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between">
-                              <span>Estructura por unidad</span>
-                              <span className="font-mono">${parametros.costoGastosNegocio.toFixed(2)}</span>
-                            </div>
-                          </div>
                         </div>
                       </div>
                     </div>

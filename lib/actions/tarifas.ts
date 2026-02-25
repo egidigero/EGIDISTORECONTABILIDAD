@@ -51,6 +51,25 @@ export async function getTarifaEspecifica(plataforma: string, metodoPago: string
   }
 }
 
+export async function getTarifasPorPlataforma(plataforma: string) {
+  try {
+    const { data: tarifas, error } = await supabase
+      .from("tarifas")
+      .select("id, plataforma, metodoPago, condicion, comisionPct, comisionExtraPct, iibbPct, fijoPorOperacion, descuentoPct")
+      .eq("plataforma", plataforma)
+
+    if (error) {
+      console.error("Error al obtener tarifas por plataforma:", error)
+      return []
+    }
+
+    return tarifas || []
+  } catch (error) {
+    console.error("Error al obtener tarifas por plataforma:", error)
+    return []
+  }
+}
+
 export async function getTarifaPorParametros(plataforma: string, metodoPago: string, condicion: string) {
   try {
     const { data: tarifa, error } = await supabase
