@@ -12,11 +12,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { createVenta, updateVenta, calcularPreviewVenta } from "@/lib/actions/ventas"
+import { createVenta, updateVenta } from "@/lib/actions/ventas"
 import { getProductos } from "@/lib/actions/productos"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { ventaSchema, VentaFormData } from "@/lib/validations"
 import { getRecargoCuotasMP } from "@/lib/calculos"
+import { calcularMargenVenta } from "@/lib/margen-venta"
 import { Calculator } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
@@ -42,7 +43,7 @@ const metodoPagoOptions = [
 
 const condicionOptions = [
   { value: "Transferencia", label: "Transferencia" },
-  { value: "Cuotas sin interés", label: "Cuotas sin interés" },
+  { value: "Cuotas sin inter\u00E9s", label: "Cuotas sin inter\u00E9s" },
   { value: "Normal", label: "Normal" },
 ]
 
@@ -102,7 +103,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           productoId: venta.productoId,
           pvBruto: Number(venta.pvBruto),
           cargoEnvioCosto: Number(venta.cargoEnvioCosto),
-          usarComisionManual: false, // Por defecto automático
+          usarComisionManual: false, // Por defecto automÃƒÂ¡tico
           comisionManual: venta.comision ? Number(venta.comision) : undefined,
           trackingUrl: venta.trackingUrl || "",
           estadoEnvio: venta.estadoEnvio as any,
@@ -113,7 +114,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           fecha: (() => {
             const today = new Date()
             return today.toISOString().split('T')[0]
-          })(), // Función que calcula la fecha de hoy
+          })(), // FunciÃƒÂ³n que calcula la fecha de hoy
           estadoEnvio: "Pendiente",
           cargoEnvioCosto: 0,
           usarComisionManual: false,
@@ -162,23 +163,23 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     }
   }, [venta, setValue])
 
-  // Forzar MercadoPago y condición válida cuando se selecciona Mercado Libre
+  // Forzar MercadoPago y condiciÃƒÂ³n vÃƒÂ¡lida cuando se selecciona Mercado Libre
   useEffect(() => {
     if (watchPlataforma === "ML") {
       // Forzar MercadoPago
       if (watchMetodoPago !== "MercadoPago") {
         setValue("metodoPago", "MercadoPago")
       }
-      // Si la condición es Transferencia, cambiarla a Normal
+      // Si la condiciÃƒÂ³n es Transferencia, cambiarla a Normal
       if (watchCondicion === "Transferencia") {
         setValue("condicion", "Normal")
       }
     }
   }, [watchPlataforma, watchMetodoPago, watchCondicion, setValue])
 
-  // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interés
+  // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interÃƒÂ©s
   useEffect(() => {
-    if (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin interés") {
+    if (watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin inter\u00E9s") {
       if (!watchCuotas) {
         setValue("cuotas", 1) // Default: 1 cuota (contado)
       }
@@ -210,7 +211,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         const plataformaParaCostos = plataforma === 'Directo' ? 'TN' : plataforma
         getCostosEstimados30Dias(productoId, plataformaParaCostos, producto.sku)
           .then(datos => {
-            console.log('📊 Costos estimados recibidos:', datos)
+            console.log('Ã°Å¸â€œÅ  Costos estimados recibidos:', datos)
             setCostosEstimados(datos)
           })
           .catch(err => {
@@ -228,7 +229,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     if (productoId && plataforma && metodoPago && condicion && pvBruto > 0) {
       setIsCalculating(true)
       
-      // Usar la misma lógica exacta que la calculadora de productos
+      // Usar la misma lÃƒÂ³gica exacta que la calculadora de productos
       const comisionParaUsar = usarComisionManual && comisionManual ? comisionManual : undefined
       const comisionExtraParaUsar = usarComisionManual && comisionExtraManual ? comisionExtraManual : undefined
       calcularPreviewConTarifaCompleta(productoId, plataforma, metodoPago, condicion, pvBruto, cargoEnvioCosto || 0, comisionParaUsar, comisionExtraParaUsar, iibbManual)
@@ -255,7 +256,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
     }
   }, [...watchedFields, costosEstimados])
 
-  // Función que replica exactamente la lógica de la calculadora de productos
+  // FunciÃƒÂ³n que replica exactamente la lÃƒÂ³gica de la calculadora de productos
   const calcularPreviewConTarifaCompleta = async (
     productoId: string,
     plataforma: string,
@@ -283,14 +284,14 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       // Obtener la tarifa completa
       const tarifa = await getTarifaEspecifica(plataforma, metodoPago, condicion)
       if (!tarifa) {
-        return { success: false, error: "Tarifa no configurada para esta combinación" }
+        return { success: false, error: "Tarifa no configurada para esta combinaciÃƒÂ³n" }
       }
 
-      // USAR EXACTAMENTE LA MISMA LÓGICA QUE LA CALCULADORA DE PRODUCTOS
+      // USAR EXACTAMENTE LA MISMA LÃƒâ€œGICA QUE LA CALCULADORA DE PRODUCTOS
       const precio = pvBruto
       const costo = Number(producto.costoUnitarioARS)
       
-      // 2. Aplicar descuento pre-comisión si existe (ej: 15% para TN + Transferencia)
+      // 2. Aplicar descuento pre-comisiÃƒÂ³n si existe (ej: 15% para TN + Transferencia)
       const precioConDescuento = precio * (1 - (tarifa.descuentoPct || 0))
       const descuentoAplicado = precio - precioConDescuento
 
@@ -322,33 +323,33 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       }
       // Caso especial: TN + MercadoPago
       else if (plataforma === "TN" && metodoPago === "MercadoPago") {
-        // comision = Comisión MP base desde tarifa (ej: 3.99%, puede variar)
-        // Si hay cuotas sin interés, se suma el recargo adicional al monto de comisión
+        // comision = ComisiÃƒÂ³n MP base desde tarifa (ej: 3.99%, puede variar)
+        // Si hay cuotas sin interÃƒÂ©s, se suma el recargo adicional al monto de comisiÃƒÂ³n
         const cuotasValue = watch("cuotas") || 1
         const recargoMP = getRecargoCuotasMP(cuotasValue)
         const comisionMPAdicional = precioConDescuento * recargoMP // Monto adicional por cuotas
-        const comisionMPTotal = comision + comisionMPAdicional // Comisión total MP
+        const comisionMPTotal = comision + comisionMPAdicional // ComisiÃƒÂ³n total MP
         
-        // Tratamiento de IVA: La comisión MP completa (base + recargo) NO incluye IVA
-        comisionSinIva = comisionMPTotal // MP sin IVA (se agrega después)
-        const ivaMP = comisionMPTotal * 0.21 // IVA 21% sobre comisión MP total
+        // Tratamiento de IVA: La comisiÃƒÂ³n MP completa (base + recargo) NO incluye IVA
+        comisionSinIva = comisionMPTotal // MP sin IVA (se agrega despuÃƒÂ©s)
+        const ivaMP = comisionMPTotal * 0.21 // IVA 21% sobre comisiÃƒÂ³n MP total
         
-        // comisionExtra = Comisión TN (SÍ incluye IVA, necesita desglose)
+        // comisionExtra = ComisiÃƒÂ³n TN (SÃƒÂ incluye IVA, necesita desglose)
         comisionExtraSinIva = comisionExtra / 1.21 // TN sin IVA
         const ivaTN = comisionExtra - comisionExtraSinIva // IVA de TN
         iva = ivaMP + ivaTN // IVA total
         
-        // IIBB es MANUAL para TN+MercadoPago (no se calcula automáticamente)
+        // IIBB es MANUAL para TN+MercadoPago (no se calcula automÃƒÂ¡ticamente)
         iibb = iibbManual || 0
       } else if (plataforma === "TN") {
         // TN + PagoNube: IVA e IIBB se agregan sobre las comisiones
         iva = (comision + comisionExtra) * 0.21 // 21% IVA sobre comisiones
-        const iibbCalculado = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinámico desde tarifa
+        const iibbCalculado = (comision + comisionExtra) * (tarifa.iibbPct || 0.03) // IIBB dinÃƒÂ¡mico desde tarifa
         iibb = iibbCalculado + (iibbManual || 0) // IIBB total = calculado + manual
       } else if (plataforma === "ML") {
-        // ML: La comisión ya incluye IVA, necesitamos desglosarlo
-        comisionSinIva = comision / 1.21 // Comisión sin IVA
-        comisionExtraSinIva = comisionExtra / 1.21 // Comisión extra sin IVA
+        // ML: La comisiÃƒÂ³n ya incluye IVA, necesitamos desglosarlo
+        comisionSinIva = comision / 1.21 // ComisiÃƒÂ³n sin IVA
+        comisionExtraSinIva = comisionExtra / 1.21 // ComisiÃƒÂ³n extra sin IVA
         iva = comision - comisionSinIva + comisionExtra - comisionExtraSinIva // IVA incluido
         // ML: IIBB es manual, se pasa desde el formulario
         iibb = iibbManual || 0
@@ -358,37 +359,35 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       const subtotalComision = metodoPago === "Transferencia"
         ? 0 // Transferencia: sin comisiones
         : plataforma === "TN" && metodoPago !== "MercadoPago"
-          ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
+          ? comision + (comision * 0.21) + (comision * (tarifa.iibbPct || 0.03)) // TN tradicional: comisiÃƒÂ³n + IVA + IIBB
           : plataforma === "TN" && metodoPago === "MercadoPago"
-            ? comisionSinIva + (comisionSinIva * 0.21) // TN+MP: comisión total (base + recargo) + IVA
-            : comision // Para ML, la comisión ya incluye IVA
+            ? comisionSinIva + (comisionSinIva * 0.21) // TN+MP: comisiÃƒÂ³n total (base + recargo) + IVA
+            : comision // Para ML, la comisiÃƒÂ³n ya incluye IVA
       const subtotalComisionExtra = metodoPago === "Transferencia"
         ? 0 // Transferencia: sin comisiones extra
         : plataforma === "TN" && metodoPago !== "MercadoPago"
-          ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03)) // TN tradicional: comisión + IVA + IIBB
-          : comisionExtra // Para ML y TN+MP, la comisión extra ya incluye IVA
+          ? comisionExtra + (comisionExtra * 0.21) + (comisionExtra * (tarifa.iibbPct || 0.03)) // TN tradicional: comisiÃƒÂ³n + IVA + IIBB
+          : comisionExtra // Para ML y TN+MP, la comisiÃƒÂ³n extra ya incluye IVA
       
-      // Calcular total de costos según plataforma
-      // Para Transferencia: IIBB manual + envío (para calcular margen operativo correcto)
-      // Para TN tradicional: subtotales ya incluyen IVA e IIBB calculado, sumar envío, fijo y IIBB manual adicional
-      // Para TN+MP y ML: subtotales + envío + fijo + IIBB manual
+      // Calcular total de costos segÃƒÂºn plataforma
+      // Para Transferencia: IIBB manual + envÃƒÂ­o (para calcular margen operativo correcto)
+      // Para TN tradicional: subtotales ya incluyen IVA e IIBB calculado, sumar envÃƒÂ­o, fijo y IIBB manual adicional
+      // Para TN+MP y ML: subtotales + envÃƒÂ­o + fijo + IIBB manual
       const totalCostosPlataforma = metodoPago === "Transferencia"
-        ? iibb + envio // IIBB manual + envío (para margen operativo)
+        ? iibb + envio // IIBB manual + envÃƒÂ­o (para margen operativo)
         : plataforma === "TN" && metodoPago !== "MercadoPago"
-          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envío + fijo + IIBB manual adicional
+          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envÃƒÂ­o + fijo + IIBB manual adicional
           : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Estructura prorrateada
-      const costoDevoluciones = costosEstimados?.costoDevolucionesPorVenta || 0
-      const costoGastosNegocio = costosEstimados?.costoGastosNegocioPorVenta || 0
-      const margenOperativo = resultadoOperativo - totalCostosPlataforma - costoDevoluciones - costoGastosNegocio
-
-      // 5. Costo de Publicidad (ROAS de últimos 30 días)
-      const roas = costosEstimados?.roas > 0 ? costosEstimados.roas : 5
-      const costoPublicidad = roas > 0 ? precio / roas : 0
-
-      // 6. Margen Neto = Margen Operativo - Publicidad
-      const margenNeto = margenOperativo - costoPublicidad
+      const margenCalculado = calcularMargenVenta({
+        precioReferenciaAds: precio,
+        resultadoOperativo,
+        totalCostosPlataforma,
+        costoProducto: costo,
+        costoEnvio: envio,
+        costosEstimados,
+      })
 
       const data = {
         precio,
@@ -405,17 +404,18 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         subtotalComision,
         subtotalComisionExtra,
         totalCostosPlataforma,
-        costoDevoluciones,
-        costoGastosNegocio,
-        margenOperativo,
-        costoPublicidad,
-        roas,
-        margenNeto,
+        costoDevoluciones: margenCalculado.costoDevoluciones,
+        costoGastosNegocio: margenCalculado.costoGastosNegocio,
+        margenContribucion: margenCalculado.margenContribucion,
+        costoPublicidad: margenCalculado.costoPublicidad,
+        roas: margenCalculado.roas,
+        margenOperativo: margenCalculado.margenOperativo,
+        margenNeto: margenCalculado.margenNeto,
         // Para compatibilidad con el componente actual
         costoProducto: costo,
-        ingresoMargen: margenNeto, // IMPORTANTE: Ahora guardamos el margen NETO (con publicidad)
-        rentabilidadSobrePV: margenNeto / precio,
-        rentabilidadSobreCosto: (costo + envio) > 0 ? margenNeto / (costo + envio) : 0
+        ingresoMargen: margenCalculado.margenNeto,
+        rentabilidadSobrePV: margenCalculado.rentabilidadSobrePV,
+        rentabilidadSobreCosto: margenCalculado.rentabilidadSobreCosto
       }
 
       return { success: true, data, tarifa }
@@ -426,7 +426,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
   }
 
   const onSubmit = async (data: VentaFormSchema) => {
-    console.log("🔄 onSubmit iniciado con datos:", data)
+    console.log("Ã°Å¸â€â€ž onSubmit iniciado con datos:", data)
     setIsSubmitting(true)
     try {
       // Convertir la fecha string a Date antes de enviar
@@ -435,16 +435,16 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         fecha: new Date(data.fecha)
       }
       
-      console.log("📤 Enviando datos procesados:", processedData)
-      console.log("🔍 Tipo de processedData:", typeof processedData)
-      console.log("🔍 Claves de processedData:", Object.keys(processedData))
-      console.log("🔍 isEditing:", isEditing)
+      console.log("Ã°Å¸â€œÂ¤ Enviando datos procesados:", processedData)
+      console.log("Ã°Å¸â€Â Tipo de processedData:", typeof processedData)
+      console.log("Ã°Å¸â€Â Claves de processedData:", Object.keys(processedData))
+      console.log("Ã°Å¸â€Â isEditing:", isEditing)
       
       const result = isEditing ? await updateVenta(venta.id, processedData) : await createVenta(processedData)
-      console.log("📥 Resultado recibido:", result)
+      console.log("Ã°Å¸â€œÂ¥ Resultado recibido:", result)
 
       if (result.success) {
-        console.log("✅ Venta creada exitosamente")
+        console.log("Ã¢Å“â€¦ Venta creada exitosamente")
         toast({
           title: isEditing ? "Venta actualizada" : "Venta creada",
           description: `La venta ha sido ${isEditing ? "actualizada" : "creada"} correctamente.`,
@@ -454,25 +454,25 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         router.refresh()
         
         if (onSuccess) {
-          console.log("🔄 Ejecutando onSuccess callback")
+          console.log("Ã°Å¸â€â€ž Ejecutando onSuccess callback")
           onSuccess()
         } else {
-          console.log("🔄 Redirigiendo a /ventas")
+          console.log("Ã°Å¸â€â€ž Redirigiendo a /ventas")
           router.push("/ventas")
         }
       } else {
-        console.error("❌ Error en el resultado:", result.error)
+        console.error("Ã¢ÂÅ’ Error en el resultado:", result.error)
         toast({
           title: "Error",
-          description: result.error || "Ocurrió un error inesperado.",
+          description: result.error || "OcurriÃƒÂ³ un error inesperado.",
           variant: "destructive",
         })
       }
     } catch (error) {
-      console.error("❌ Error en catch:", error)
+      console.error("Ã¢ÂÅ’ Error en catch:", error)
       toast({
         title: "Error",
-        description: "Ocurrió un error inesperado.",
+        description: "OcurriÃƒÂ³ un error inesperado.",
         variant: "destructive",
       })
     } finally {
@@ -492,8 +492,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit((data) => {
-              console.log("🔥 Formulario submiteado! Datos:", data)
-              console.log("🔍 Errores de validación:", errors)
+              console.log("Ã°Å¸â€Â¥ Formulario submiteado! Datos:", data)
+              console.log("Ã°Å¸â€Â Errores de validaciÃƒÂ³n:", errors)
               onSubmit(data)
             })} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -533,14 +533,14 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Método de Pago</Label>
+                  <Label>MÃƒÂ©todo de Pago</Label>
                   <Select 
                     value={watch("metodoPago")} 
                     onValueChange={(value) => setValue("metodoPago", value as any)}
                     disabled={watchPlataforma === "ML"}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un método" />
+                      <SelectValue placeholder="Selecciona un mÃƒÂ©todo" />
                     </SelectTrigger>
                     <SelectContent>
                       {metodoPagoOptions.map((option) => (
@@ -557,10 +557,10 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Condición</Label>
+                  <Label>CondiciÃƒÂ³n</Label>
                   <Select value={watch("condicion")} onValueChange={(value) => setValue("condicion", value as any)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecciona una condición" />
+                      <SelectValue placeholder="Selecciona una condiciÃƒÂ³n" />
                     </SelectTrigger>
                     <SelectContent>
                       {condicionOptions
@@ -573,13 +573,13 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                     </SelectContent>
                   </Select>
                   {watchPlataforma === "ML" && (
-                    <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin interés y Normal</p>
+                    <p className="text-xs text-muted-foreground">Solo disponible: Cuotas sin inter\u00E9s y Normal</p>
                   )}
                   {errors.condicion && <p className="text-sm text-destructive">{errors.condicion.message}</p>}
                 </div>
 
-                {/* Campo Cuotas: solo para TN + MercadoPago + "Cuotas sin interés" */}
-                {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin interés" && (
+                {/* Campo Cuotas: solo para TN + MercadoPago + "Cuotas sin interÃƒÂ©s" */}
+                {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && watchCondicion === "Cuotas sin inter\u00E9s" && (
                   <div className="space-y-2">
                     <Label htmlFor="cuotas">Cantidad de Cuotas</Label>
                     <Select 
@@ -591,13 +591,13 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="1">1 cuota (contado) - 9%</SelectItem>
-                        <SelectItem value="3">3 cuotas sin interés - 12.05%</SelectItem>
-                        <SelectItem value="6">6 cuotas sin interés - 13.95%</SelectItem>
-                        <SelectItem value="12">12 cuotas sin interés - 18.68%</SelectItem>
+                        <SelectItem value="3">3 cuotas sin inter\u00E9s - 12.05%</SelectItem>
+                        <SelectItem value="6">6 cuotas sin inter\u00E9s - 13.95%</SelectItem>
+                        <SelectItem value="12">12 cuotas sin inter\u00E9s - 18.68%</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      MercadoPago cobra comisión adicional por cuotas sin interés
+                      MercadoPago cobra comisiÃƒÂ³n adicional por cuotas sin interÃƒÂ©s
                     </p>
                     {errors.cuotas && <p className="text-sm text-destructive">{errors.cuotas.message}</p>}
                   </div>
@@ -636,7 +636,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="cargoEnvioCosto">Costo de Envío (ARS)</Label>
+                  <Label htmlFor="cargoEnvioCosto">Costo de EnvÃƒÂ­o (ARS)</Label>
                   <Input
                     id="cargoEnvioCosto"
                     type="number"
@@ -649,7 +649,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   )}
                 </div>
 
-                {/* IIBB Manual para Mercado Libre, Tienda Nube (todos los métodos) y Transferencia Directa */}
+                {/* IIBB Manual para Mercado Libre, Tienda Nube (todos los mÃƒÂ©todos) y Transferencia Directa */}
                 {(watchPlataforma === "ML" || watchPlataforma === "TN" || watchMetodoPago === "Transferencia") && (
                   <div className="space-y-2">
                     <Label htmlFor="iibbManual">IIBB (ARS) *Manual*</Label>
@@ -662,11 +662,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                     />
                     <p className="text-xs text-gray-600">
                       {watchMetodoPago === "Transferencia"
-                        ? "Para Transferencia Directa, ingresá el IIBB que cobra Mercado Pago por la transferencia bancaria."
+                        ? "Para Transferencia Directa, ingresÃƒÂ¡ el IIBB que cobra Mercado Pago por la transferencia bancaria."
                         : watchPlataforma === "ML" 
                           ? "Para Mercado Libre, el IIBB debe ingresarse manualmente." 
                           : watchMetodoPago === "PagoNube"
-                            ? "Para TN + PagoNube, ingresá la retención adicional de IIBB si corresponde (se suma al IIBB calculado de comisiones)."
+                            ? "Para TN + PagoNube, ingresÃƒÂ¡ la retenciÃƒÂ³n adicional de IIBB si corresponde (se suma al IIBB calculado de comisiones)."
                             : "Para TN + MercadoPago, el IIBB debe ingresarse manualmente (si corresponde)."}
                     </p>
                     {errors.iibbManual && (
@@ -691,12 +691,12 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         }
                       }}
                     />
-                    <Label htmlFor="usarComisionManual">Usar Comisión Manual</Label>
+                    <Label htmlFor="usarComisionManual">Usar ComisiÃƒÂ³n Manual</Label>
                   </div>
                   {watchUsarComisionManual && (
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="comisionManual">Comisión Base Manual (ARS)</Label>
+                        <Label htmlFor="comisionManual">ComisiÃƒÂ³n Base Manual (ARS)</Label>
                         <Input
                           id="comisionManual"
                           type="number"
@@ -709,7 +709,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="comisionExtraManual">Comisión Extra Manual (ARS) - Opcional</Label>
+                        <Label htmlFor="comisionExtraManual">ComisiÃƒÂ³n Extra Manual (ARS) - Opcional</Label>
                         <Input
                           id="comisionExtraManual"
                           type="number"
@@ -722,7 +722,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         )}
                       </div>
                       <p className="text-xs text-gray-600">
-                        Estas comisiones reemplazarán el cálculo automático. IVA e IIBB se calcularán automáticamente para TN.
+                        Estas comisiones reemplazarÃƒÂ¡n el cÃƒÂ¡lculo automÃƒÂ¡tico. IVA e IIBB se calcularÃƒÂ¡n automÃƒÂ¡ticamente para TN.
                       </p>
                     </div>
                   )}
@@ -745,7 +745,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Estado de Envío</Label>
+                  <Label>Estado de EnvÃƒÂ­o</Label>
                   <Select value={watch("estadoEnvio")} onValueChange={(value) => setValue("estadoEnvio", value as any)}>
                     <SelectTrigger>
                       <SelectValue />
@@ -771,9 +771,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   type="submit" 
                   disabled={isSubmitting}
                   onClick={() => {
-                    console.log("🔴 Botón Crear clickeado!")
-                    console.log("🔍 Estado isSubmitting:", isSubmitting)
-                    console.log("🔍 Errores actuales:", errors)
+                    console.log("Ã°Å¸â€Â´ BotÃƒÂ³n Crear clickeado!")
+                    console.log("Ã°Å¸â€Â Estado isSubmitting:", isSubmitting)
+                    console.log("Ã°Å¸â€Â Errores actuales:", errors)
                   }}
                 >
                   {isSubmitting
@@ -798,9 +798,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5" />
-              Vista Previa de Cálculos
+              Vista Previa de CÃƒÂ¡lculos
             </CardTitle>
-            <CardDescription>Los cálculos se actualizan automáticamente</CardDescription>
+            <CardDescription>Los cÃƒÂ¡lculos se actualizan automÃƒÂ¡ticamente</CardDescription>
           </CardHeader>
           <CardContent>
             {isCalculating ? (
@@ -840,11 +840,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                 <div className="p-4 bg-orange-50 rounded-lg">
                   <div className="text-lg font-semibold mb-2">Costos de Plataforma</div>
                   <div className="space-y-2 text-sm">
-                    {/* Comisión Base */}
+                    {/* ComisiÃƒÂ³n Base */}
                     <div className="space-y-1">
                       <div className="flex justify-between font-medium">
                         <span>
-                          Comisión:
+                          ComisiÃƒÂ³n:
                           {watchUsarComisionManual && watchComisionManual && (
                             <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                               Manual
@@ -861,15 +861,15 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       {watchPlataforma === "TN" && watchMetodoPago !== "MercadoPago" && (
                         <>
                           <div className="flex justify-between text-red-600 ml-4">
-                            <span>• IVA (21%):</span>
+                            <span>Ã¢â‚¬Â¢ IVA (21%):</span>
                             <span className="font-mono">${(preview.data.comision * 0.21).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-red-600 ml-4">
-                            <span>• IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
+                            <span>Ã¢â‚¬Â¢ IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
                             <span className="font-mono">${(preview.data.comision * (tarifaCompleta?.iibbPct || 0.03)).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                            <span>Subtotal Comisión:</span>
+                            <span>Subtotal ComisiÃƒÂ³n:</span>
                             <span className="font-mono">${preview.data.subtotalComision.toFixed(2)}</span>
                           </div>
                         </>
@@ -877,11 +877,11 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && (
                         <>
                           <div className="flex justify-between text-red-600 ml-4">
-                            <span>• IVA (21%):</span>
+                            <span>Ã¢â‚¬Â¢ IVA (21%):</span>
                             <span className="font-mono">${(preview.data.comisionSinIva * 0.21).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                            <span>Subtotal Comisión:</span>
+                            <span>Subtotal ComisiÃƒÂ³n:</span>
                             <span className="font-mono">${(preview.data.comisionSinIva + (preview.data.comisionSinIva * 0.21)).toFixed(2)}</span>
                           </div>
                         </>
@@ -889,33 +889,33 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       {watchPlataforma === "ML" && (
                         <>
                           <div className="flex justify-between text-blue-600 ml-4">
-                            <span>• Sin IVA:</span>
+                            <span>Ã¢â‚¬Â¢ Sin IVA:</span>
                             <span className="font-mono">${preview.data.comisionSinIva.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-blue-600 ml-4">
-                            <span>• IVA incluido (21%):</span>
+                            <span>Ã¢â‚¬Â¢ IVA incluido (21%):</span>
                             <span className="font-mono">${(preview.data.comision - preview.data.comisionSinIva).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                            <span>Subtotal Comisión:</span>
+                            <span>Subtotal ComisiÃƒÂ³n:</span>
                             <span className="font-mono">${preview.data.subtotalComision.toFixed(2)}</span>
                           </div>
                         </>
                       )}
                       {watchPlataforma !== "TN" && watchPlataforma !== "ML" && (
                         <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                          <span>Subtotal Comisión:</span>
+                          <span>Subtotal ComisiÃƒÂ³n:</span>
                           <span className="font-mono">${preview.data.subtotalComision.toFixed(2)}</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Comisión Extra */}
+                    {/* ComisiÃƒÂ³n Extra */}
                     {preview.data.comisionExtra > 0 && (
                       <div className="space-y-1">
                         <div className="flex justify-between font-medium">
                           <span>
-                            Comisión Extra:
+                            ComisiÃƒÂ³n Extra:
                             {watchUsarComisionManual && watchComisionExtraManual && (
                               <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                                 Manual
@@ -927,15 +927,15 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         {watchPlataforma === "TN" && watchMetodoPago !== "MercadoPago" && (
                           <>
                             <div className="flex justify-between text-red-600 ml-4">
-                              <span>• IVA (21%):</span>
+                              <span>Ã¢â‚¬Â¢ IVA (21%):</span>
                               <span className="font-mono">${(preview.data.comisionExtra * 0.21).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-red-600 ml-4">
-                              <span>• IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
+                              <span>Ã¢â‚¬Â¢ IIBB ({((tarifaCompleta?.iibbPct || 0.03) * 100).toFixed(1)}%):</span>
                               <span className="font-mono">${(preview.data.comisionExtra * (tarifaCompleta?.iibbPct || 0.03)).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                              <span>Subtotal Comisión Extra:</span>
+                              <span>Subtotal ComisiÃƒÂ³n Extra:</span>
                               <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
                             </div>
                           </>
@@ -943,15 +943,15 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         {watchPlataforma === "TN" && watchMetodoPago === "MercadoPago" && (
                           <>
                             <div className="flex justify-between text-blue-600 ml-4">
-                              <span>• Sin IVA:</span>
+                              <span>Ã¢â‚¬Â¢ Sin IVA:</span>
                               <span className="font-mono">${preview.data.comisionExtraSinIva.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-blue-600 ml-4">
-                              <span>• IVA incluido (21%):</span>
+                              <span>Ã¢â‚¬Â¢ IVA incluido (21%):</span>
                               <span className="font-mono">${(preview.data.comisionExtra - preview.data.comisionExtraSinIva).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                              <span>Subtotal Comisión Extra:</span>
+                              <span>Subtotal ComisiÃƒÂ³n Extra:</span>
                               <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
                             </div>
                           </>
@@ -959,22 +959,22 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                         {watchPlataforma === "ML" && (
                           <>
                             <div className="flex justify-between text-blue-600 ml-4">
-                              <span>• Sin IVA:</span>
+                              <span>Ã¢â‚¬Â¢ Sin IVA:</span>
                               <span className="font-mono">${preview.data.comisionExtraSinIva.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between text-blue-600 ml-4">
-                              <span>• IVA incluido (21%):</span>
+                              <span>Ã¢â‚¬Â¢ IVA incluido (21%):</span>
                               <span className="font-mono">${(preview.data.comisionExtra - preview.data.comisionExtraSinIva).toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                              <span>Subtotal Comisión Extra:</span>
+                              <span>Subtotal ComisiÃƒÂ³n Extra:</span>
                               <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
                             </div>
                           </>
                         )}
                         {watchPlataforma !== "TN" && watchPlataforma !== "ML" && (
                           <div className="flex justify-between font-medium text-gray-700 ml-4 border-t pt-1">
-                            <span>Subtotal Comisión Extra:</span>
+                            <span>Subtotal ComisiÃƒÂ³n Extra:</span>
                             <span className="font-mono">${preview.data.subtotalComisionExtra.toFixed(2)}</span>
                           </div>
                         )}
@@ -989,9 +989,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       </div>
                     )}
 
-                    {/* Envío */}
+                    {/* EnvÃƒÂ­o */}
                     <div className="flex justify-between">
-                      <span>Envío:</span>
+                      <span>EnvÃƒÂ­o:</span>
                       <span className="font-mono">${preview.data.envio.toFixed(2)}</span>
                     </div>
                     
@@ -1004,9 +1004,9 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                   </div>
                 </div>
 
-                {/* Margen Operativo */}
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <div className="text-lg font-semibold mb-2">Margen Operativo</div>
+                {/* Margen de contribucion */}
+                <div className="p-4 bg-indigo-50 rounded-lg">
+                  <div className="text-lg font-semibold mb-2">Margen de contribución</div>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span>Resultado Bruto:</span>
@@ -1016,42 +1016,78 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       <span>Costos Plataforma:</span>
                       <span className="font-mono">-${preview.data.totalCostosPlataforma.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Devoluciones estimadas:</span>
+                    <div className="flex justify-between text-amber-700">
+                      <span>Costo Devoluciones (30d):</span>
                       <span className="font-mono">-${preview.data.costoDevoluciones.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Estructura prorrateada estimada:</span>
-                      <span className="font-mono">-${preview.data.costoGastosNegocio.toFixed(2)}</span>
+                    <div className="border-t pt-1 mt-2">
+                      <div className="flex justify-between font-semibold text-indigo-700">
+                        <span>Margen de contribución:</span>
+                        <span className="font-mono">${preview.data.margenContribucion.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Costo de Publicidad */}
+                <div className="p-4 bg-yellow-50 rounded-lg">
+                  <div className="text-lg font-semibold mb-2">Costo de Publicidad</div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>ROAS actual ({Number(preview.data.roas || 0).toFixed(2)}x):</span>
+                      <span className="font-mono">-${preview.data.costoPublicidad.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Margen Operativo */}
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <div className="text-lg font-semibold mb-2">Margen operativo</div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>Margen de contribución:</span>
+                      <span className="font-mono">${preview.data.margenContribucion.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Costo Publicidad:</span>
+                      <span className="font-mono">-${preview.data.costoPublicidad.toFixed(2)}</span>
                     </div>
                     <div className="border-t pt-1 mt-2">
                       <div className="flex justify-between font-semibold text-purple-700">
-                        <span>Margen Operativo:</span>
+                        <span>Margen operativo:</span>
                         <span className="font-mono">${preview.data.margenOperativo.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Publicidad y Margen Neto */}
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="text-lg font-semibold mb-2">Margen Final</div>
+                {/* Margen Neto */}
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <div className="text-lg font-semibold mb-2">Margen Neto Antes de Impuestos</div>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span>Margen Operativo:</span>
+                      <span>Margen operativo:</span>
                       <span className="font-mono">${preview.data.margenOperativo.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Publicidad (ROAS {preview.data.roas}):</span>
-                      <span className="font-mono">-${preview.data.costoPublicidad.toFixed(2)}</span>
+                      <span>Estructura prorrateada:</span>
+                      <span className="font-mono">-${preview.data.costoGastosNegocio.toFixed(2)}</span>
                     </div>
                     <div className="border-t pt-1 mt-2">
-                      <div className="flex justify-between font-semibold text-blue-700 text-base">
-                        <span>Margen Neto:</span>
+                      <div className="flex justify-between font-semibold text-green-700 text-base">
+                        <span>Margen neto:</span>
                         <span className={`font-mono ${preview.data.margenNeto >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ${preview.data.margenNeto.toFixed(2)}
                         </span>
                       </div>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                      <span>% sobre Precio:</span>
+                      <span className="font-mono">{(preview.data.rentabilidadSobrePV * 100).toFixed(1)}%</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>% sobre Costo:</span>
+                      <span className="font-mono">{(preview.data.rentabilidadSobreCosto * 100).toFixed(1)}%</span>
                     </div>
                   </div>
                 </div>
@@ -1077,17 +1113,17 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
               </div>
             ) : preview && !preview.success ? (
               <div className="text-center text-red-500 py-8">
-                <p className="font-medium">Error en el cálculo</p>
+                <p className="font-medium">Error en el cÃƒÂ¡lculo</p>
                 <p className="text-sm mt-1">{preview.error}</p>
                 {preview.error?.includes("Tarifa no configurada") && (
                   <p className="text-xs mt-2 text-gray-600">
-                    Necesitas configurar una tarifa para esta combinación en la sección de Tarifas.
+                    Necesitas configurar una tarifa para esta combinaciÃƒÂ³n en la secciÃƒÂ³n de Tarifas.
                   </p>
                 )}
               </div>
             ) : (
               <div className="text-center text-gray-500 py-8">
-                Completa los campos para ver el análisis
+                Completa los campos para ver el anÃƒÂ¡lisis
               </div>
             )}
           </CardContent>

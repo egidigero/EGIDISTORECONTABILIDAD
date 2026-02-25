@@ -171,8 +171,8 @@ export function VentasTableClient({ ventas: ventasProp, productoId }: VentasTabl
       // Comisión total = comisión base + IVA + IIBB
       const comisionTotal = comisionBase + iva + iibb
       
-      // Margen real = PV Bruto - Comisiones - Envío - Costo Producto
-      const margen = pvBruto - comisionTotal - cargoEnvio - costoProducto
+      // Margen total persistido en venta (nuevo motor de margen)
+      const margen = Number(venta.ingresoMargen || 0)
       
       return {
         pvBruto: acc.pvBruto + pvBruto,

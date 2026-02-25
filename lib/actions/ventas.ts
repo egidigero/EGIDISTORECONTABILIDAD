@@ -5,7 +5,8 @@ import { supabase } from "@/lib/supabase"
 import { ventaSchema, type VentaFormData } from "@/lib/validations"
 import { calcularVenta, getTarifa, generarSaleCode } from "@/lib/calculos"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
-import { actualizarLiquidacionPorVenta, eliminarVentaDeLiquidacion } from "@/lib/actions/actualizar-liquidacion"
+import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
+import { calcularMargenVenta } from "@/lib/margen-venta"
 import { recalcularLiquidacionesEnCascada } from "@/lib/actions/recalcular-liquidaciones"
 import type { VentaFilters, EstadoEnvio, Plataforma, MetodoPago } from "@/lib/types"
 
@@ -87,6 +88,35 @@ export async function createVenta(data: VentaFormData) {
     )
 
     // Generar código de venta único
+    // Margen nuevo: incluye devoluciones, estructura y publicidad (ROAS 30d).
+    // No modifica comisiÃ³n/IVA/IIBB/precioNeto para no afectar liquidaciones.
+    const plataformaParaCostos: "TN" | "ML" = validatedData.plataforma === "ML" ? "ML" : "TN"
+    const costosEstimadosMargen = await getCostosEstimados30Dias(
+      validatedData.productoId,
+      plataformaParaCostos,
+      (producto as any).sku || undefined
+    )
+    let totalCostosPlataformaMargen =
+      Number(calculos.comision || 0) +
+      Number(calculos.iva || 0) +
+      Number(calculos.iibb || 0) +
+      Number(validatedData.cargoEnvioCosto || 0)
+
+    // En ML, el fijo se guarda neto en "comision". Para margen se usa costo total.
+    if (validatedData.plataforma === "ML") {
+      const fijo = Number(tarifa.fijoPorOperacion || 0)
+      totalCostosPlataformaMargen += fijo - (fijo / 1.21)
+    }
+    const resultadoOperativoMargen = pvBrutoConDescuento - Number(producto.costoUnitarioARS)
+    const margenActualizado = calcularMargenVenta({
+      precioReferenciaAds: Number(validatedData.pvBruto || 0),
+      resultadoOperativo: resultadoOperativoMargen,
+      totalCostosPlataforma: totalCostosPlataformaMargen,
+      costoProducto: Number(producto.costoUnitarioARS),
+      costoEnvio: Number(validatedData.cargoEnvioCosto || 0),
+      costosEstimados: costosEstimadosMargen,
+    })
+
     const saleCode = generarSaleCode()
 
     // Filtrar campos que no existen en la base de datos o que no deben incluirse en INSERT
@@ -100,6 +130,9 @@ export async function createVenta(data: VentaFormData) {
       ...ventaDataParaInsertar,
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
+      ingresoMargen: Number(margenActualizado.margenNeto.toFixed(2)),
+      rentabilidadSobrePV: Number(margenActualizado.rentabilidadSobrePV.toFixed(4)),
+      rentabilidadSobreCosto: Number(margenActualizado.rentabilidadSobreCosto.toFixed(4)),
       saleCode,
       cuotas: cuotasParaUsar || null, // Agregar cuotas (NULL si no aplica)
       createdAt: new Date(),
@@ -243,10 +276,42 @@ export async function updateVenta(id: string, data: VentaFormData) {
     // Filtrar también descuentoAplicado de los cálculos
     const { descuentoAplicado, ...calculosSinDescuento } = calculos
 
+    // Margen nuevo: incluye devoluciones, estructura y publicidad (ROAS 30d).
+    // No modifica comisiÃ³n/IVA/IIBB/precioNeto para no afectar liquidaciones.
+    const plataformaParaCostos: "TN" | "ML" = validatedData.plataforma === "ML" ? "ML" : "TN"
+    const costosEstimadosMargen = await getCostosEstimados30Dias(
+      validatedData.productoId,
+      plataformaParaCostos,
+      (producto as any).sku || undefined
+    )
+    let totalCostosPlataformaMargen =
+      Number(calculos.comision || 0) +
+      Number(calculos.iva || 0) +
+      Number(calculos.iibb || 0) +
+      Number(validatedData.cargoEnvioCosto || 0)
+
+    // En ML, el fijo se guarda neto en "comision". Para margen se usa costo total.
+    if (validatedData.plataforma === "ML") {
+      const fijo = Number(tarifa.fijoPorOperacion || 0)
+      totalCostosPlataformaMargen += fijo - (fijo / 1.21)
+    }
+    const resultadoOperativoMargen = pvBrutoConDescuento - Number(producto.costoUnitarioARS)
+    const margenActualizado = calcularMargenVenta({
+      precioReferenciaAds: Number(validatedData.pvBruto || 0),
+      resultadoOperativo: resultadoOperativoMargen,
+      totalCostosPlataforma: totalCostosPlataformaMargen,
+      costoProducto: Number(producto.costoUnitarioARS),
+      costoEnvio: Number(validatedData.cargoEnvioCosto || 0),
+      costosEstimados: costosEstimadosMargen,
+    })
+
     const datosParaActualizar = {
       ...ventaDataParaActualizar,
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
+      ingresoMargen: Number(margenActualizado.margenNeto.toFixed(2)),
+      rentabilidadSobrePV: Number(margenActualizado.rentabilidadSobrePV.toFixed(4)),
+      rentabilidadSobreCosto: Number(margenActualizado.rentabilidadSobreCosto.toFixed(4)),
       cuotas: cuotasParaUsar || null, // Agregar cuotas (NULL si no aplica)
       updatedAt: new Date(),
     }
