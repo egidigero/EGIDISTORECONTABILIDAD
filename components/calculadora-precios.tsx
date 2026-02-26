@@ -86,6 +86,45 @@ interface DatosReales30Dias {
   roas: number
 }
 
+type RoasZona = "ganancia" | "perdida" | "equilibrio"
+
+const ROAS_ZONE_TOLERANCE = 0.01
+
+const ROAS_ZONE_CONFIG: Record<RoasZona, {
+  cardBgClass: string
+  textClass: string
+  title: string
+  detail: string
+}> = {
+  ganancia: {
+    cardBgClass: "bg-emerald-50",
+    textClass: "text-emerald-700",
+    title: "Ganancia",
+    detail: "Zona de ganancia"
+  },
+  perdida: {
+    cardBgClass: "bg-red-50",
+    textClass: "text-red-700",
+    title: "Pérdida",
+    detail: "Zona de pérdida"
+  },
+  equilibrio: {
+    cardBgClass: "bg-amber-50",
+    textClass: "text-amber-700",
+    title: "Equilibrio",
+    detail: "Zona de equilibrio"
+  }
+}
+
+function getRoasZona(roas: number, roasBE: number): RoasZona {
+  if (!Number.isFinite(roasBE) || roasBE <= 0) return "equilibrio"
+
+  const diferencia = roas - roasBE
+  if (diferencia > ROAS_ZONE_TOLERANCE) return "ganancia"
+  if (diferencia < -ROAS_ZONE_TOLERANCE) return "perdida"
+  return "equilibrio"
+}
+
 function calcularResultadoConTarifa(
   parametrosCalculo: ParametrosCalculo,
   tarifa: TarifaData,
@@ -409,6 +448,8 @@ export function CalculadoraPrecios({
   }
 
   const saludProducto = resultado ? getSaludProducto(resultado.margenNeto, resultado.margenSobrePrecio) : null
+  const zonaActual = resultado ? getRoasZona(parametros.roas, resultado.roasBE) : "equilibrio"
+  const zonaActualConfig = ROAS_ZONE_CONFIG[zonaActual]
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1100,7 +1141,7 @@ export function CalculadoraPrecios({
                 <div>
                   <div className="text-lg font-semibold">Comparación de ROAS</div>
                   <div className="text-xs text-muted-foreground">
-                    Zona de pérdida: ROAS menor al BE. Zona de ganancia: ROAS mayor al BE.
+                    Zona de pérdida: ROAS menor al BE. Zona de equilibrio: ROAS igual al BE. Zona de ganancia: ROAS mayor al BE.
                   </div>
                 </div>
                 <div className="flex gap-1">
@@ -1130,10 +1171,10 @@ export function CalculadoraPrecios({
                   <div className="text-xs text-muted-foreground">ROAS BE</div>
                   <div className="font-semibold text-amber-700">{resultado.roasBE > 0 ? `${resultado.roasBE.toFixed(2)}x` : "-"}</div>
                 </div>
-                <div className={`rounded border p-2 ${parametros.roas >= resultado.roasBE ? "bg-emerald-50" : "bg-red-50"}`}>
+                <div className={`rounded border p-2 ${zonaActualConfig.cardBgClass}`}>
                   <div className="text-xs text-muted-foreground">Zona actual</div>
-                  <div className={`font-semibold ${parametros.roas >= resultado.roasBE ? "text-emerald-700" : "text-red-700"}`}>
-                    {parametros.roas >= resultado.roasBE ? "Ganancia" : "Pérdida"}
+                  <div className={`font-semibold ${zonaActualConfig.textClass}`}>
+                    {zonaActualConfig.title}
                   </div>
                 </div>
               </div>
@@ -1147,10 +1188,16 @@ export function CalculadoraPrecios({
                     return roasValues.map(roas => {
                       const costoPublicidadEscenario = parametros.precioVenta / roas
                       const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
-                      const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
-                      const margenSobrePrecioEscenario = (margenNetoEscenario / parametros.precioVenta) * 100
+                      const margenSobrePrecioEscenario = (margenOperativoEscenario / parametros.precioVenta) * 100
                       const isActual = Math.abs(roas - parametros.roas) < 0.01
                       const isBE = Math.abs(roas - resultado.roasBE) < 0.01
+                      const zonaEscenario = getRoasZona(roas, resultado.roasBE)
+                      const zonaEscenarioConfig = ROAS_ZONE_CONFIG[zonaEscenario]
+                      const colorResultadoEscenario = margenOperativoEscenario > 0
+                        ? "text-green-700"
+                        : margenOperativoEscenario < 0
+                          ? "text-red-700"
+                          : "text-amber-700"
                       return (
                         <div
                           key={roas}
@@ -1162,13 +1209,13 @@ export function CalculadoraPrecios({
                             <div className="font-mono">
                               ROAS {roas.toFixed(2)}x {isActual ? "(actual)" : ""} {isBE ? "(BE)" : ""}
                             </div>
-                            <div className={`text-xs ${roas >= resultado.roasBE ? "text-green-700" : "text-red-700"}`}>
-                              {roas >= resultado.roasBE ? "Zona de ganancia" : "Zona de pérdida"}
+                            <div className={`text-xs ${zonaEscenarioConfig.textClass}`}>
+                              {zonaEscenarioConfig.detail}
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className={`font-mono ${margenNetoEscenario >= 0 ? "text-green-700" : "text-red-700"}`}>
-                              ${margenNetoEscenario.toFixed(2)}
+                            <div className={`font-mono ${colorResultadoEscenario}`}>
+                              ${margenOperativoEscenario.toFixed(2)}
                             </div>
                             <div className="text-xs text-muted-foreground">{margenSobrePrecioEscenario.toFixed(1)}% s/PV</div>
                           </div>
@@ -1187,10 +1234,9 @@ export function CalculadoraPrecios({
                         return valoresUnicos.map(roas => {
                           const costoPublicidadEscenario = parametros.precioVenta / roas
                           const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
-                          const margenNetoEscenario = margenOperativoEscenario - parametros.costoGastosNegocio
                           return {
                             roas,
-                            margenNeto: Number(margenNetoEscenario.toFixed(2)),
+                            margenOperativo: Number(margenOperativoEscenario.toFixed(2)),
                           }
                         })
                       })()}
@@ -1199,7 +1245,7 @@ export function CalculadoraPrecios({
                       <YAxis tickFormatter={(value) => `$${value}`} />
                       <Tooltip
                         formatter={(value, name) => {
-                          if (name === "margenNeto") return [`$${value}`, "Margen neto"]
+                          if (name === "margenOperativo") return [`$${value}`, "Margen operativo"]
                           return [value, name]
                         }}
                         labelFormatter={(value) => `ROAS: ${value}x`}
@@ -1219,7 +1265,7 @@ export function CalculadoraPrecios({
                         strokeDasharray="4 4"
                         label={{ value: "ROAS actual", position: "top" }}
                       />
-                      <Line type="monotone" dataKey="margenNeto" stroke="#16a34a" strokeWidth={3} dot={false} />
+                      <Line type="monotone" dataKey="margenOperativo" stroke="#16a34a" strokeWidth={3} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
