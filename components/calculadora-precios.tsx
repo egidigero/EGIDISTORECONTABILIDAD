@@ -1186,11 +1186,13 @@ export function CalculadoraPrecios({
                     const valoresExtra = [Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
                     const roasValues = Array.from(new Set([...valoresBase, ...valoresExtra])).filter(v => v > 0).sort((a, b) => a - b)
                     return roasValues.map(roas => {
-                      const costoPublicidadEscenario = parametros.precioVenta / roas
-                      const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
-                      const margenSobrePrecioEscenario = (margenOperativoEscenario / parametros.precioVenta) * 100
                       const isActual = Math.abs(roas - parametros.roas) < 0.01
                       const isBE = Math.abs(roas - resultado.roasBE) < 0.01
+                      const roasEscenario = isBE ? resultado.roasBE : roas
+                      const costoPublicidadEscenario = parametros.precioVenta / roasEscenario
+                      const margenOperativoEscenarioRaw = resultado.margenContribucion - costoPublicidadEscenario
+                      const margenOperativoEscenario = Math.abs(margenOperativoEscenarioRaw) < 0.01 ? 0 : margenOperativoEscenarioRaw
+                      const margenSobrePrecioEscenario = (margenOperativoEscenario / parametros.precioVenta) * 100
                       const zonaEscenario = getRoasZona(roas, resultado.roasBE)
                       const zonaEscenarioConfig = ROAS_ZONE_CONFIG[zonaEscenario]
                       const colorResultadoEscenario = margenOperativoEscenario > 0
@@ -1229,11 +1231,14 @@ export function CalculadoraPrecios({
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={(() => {
-                        const roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2))]
+                        const roasValues = [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, Number(parametros.roas.toFixed(2)), Number(resultado.roasBE.toFixed(2)), resultado.roasBE]
                         const valoresUnicos = Array.from(new Set(roasValues)).filter(v => v > 0).sort((a, b) => a - b)
                         return valoresUnicos.map(roas => {
-                          const costoPublicidadEscenario = parametros.precioVenta / roas
-                          const margenOperativoEscenario = resultado.margenContribucion - costoPublicidadEscenario
+                          const isBE = Math.abs(roas - resultado.roasBE) < 0.01
+                          const roasEscenario = isBE ? resultado.roasBE : roas
+                          const costoPublicidadEscenario = parametros.precioVenta / roasEscenario
+                          const margenOperativoEscenarioRaw = resultado.margenContribucion - costoPublicidadEscenario
+                          const margenOperativoEscenario = Math.abs(margenOperativoEscenarioRaw) < 0.01 ? 0 : margenOperativoEscenarioRaw
                           return {
                             roas,
                             margenOperativo: Number(margenOperativoEscenario.toFixed(2)),

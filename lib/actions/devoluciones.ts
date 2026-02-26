@@ -2520,13 +2520,32 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     }, 0) || 0) * 100) / 100
     console.log('[getCostosEstimados30Dias] Total gastos UGC:', totalGastosUGC, 'error:', errorUGC)
 
-    // Calcular envÃ­o promedio (total envÃ­os / cantidad de ventas) por plataforma
-    const totalEnvios = ventas?.reduce((sum, v) => {
+    // Calcular envÃ­o promedio GLOBAL por plataforma (no por producto)
+    let ventasEnvioQuery = supabase
+      .from('ventas')
+      .select('cargoEnvioCosto, cargo_envio_costo, costo_envio, costoEnvio')
+      .gte('fecha', fechaInicioDateTime)
+      .lte('fecha', fechaFinDateTime)
+
+    if (plataforma) {
+      ventasEnvioQuery = ventasEnvioQuery.eq('plataforma', plataforma)
+      console.log('[getCostosEstimados30Dias] Envios promedio: filtrando por plataforma:', plataforma)
+    } else {
+      console.log('[getCostosEstimados30Dias] Envios promedio: todas las plataformas')
+    }
+
+    const { data: ventasParaEnvio, error: errorVentasEnvio } = await ventasEnvioQuery
+    const totalVentasParaEnvio = ventasParaEnvio?.length || 0
+    if (errorVentasEnvio) {
+      console.error('[getCostosEstimados30Dias] Error ventas para envío promedio:', JSON.stringify(errorVentasEnvio))
+    }
+
+    const totalEnvios = ventasParaEnvio?.reduce((sum, v) => {
       const envio = Number(v.cargoEnvioCosto || v.cargo_envio_costo || v.costo_envio || v.costoEnvio) || 0
       return sum + envio
     }, 0) || 0
-    const envioPromedio = totalVentas > 0 ? Math.round((totalEnvios / totalVentas) * 100) / 100 : 0
-    console.log('[getCostosEstimados30Dias] Total envios:', totalEnvios, 'Envio promedio:', envioPromedio)
+    const envioPromedio = totalVentasParaEnvio > 0 ? Math.round((totalEnvios / totalVentasParaEnvio) * 100) / 100 : 0
+    console.log('[getCostosEstimados30Dias] Total envios (base global por plataforma):', totalEnvios, 'Ventas base:', totalVentasParaEnvio, 'Envio promedio:', envioPromedio)
 
     // Calcular precio de venta promedio por plataforma
     const totalPrecioVenta = ventas?.reduce((sum, v) => {
