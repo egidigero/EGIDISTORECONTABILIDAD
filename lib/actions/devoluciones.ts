@@ -2523,7 +2523,7 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     // Calcular envÃ­o promedio GLOBAL por plataforma (no por producto)
     let ventasEnvioQuery = supabase
       .from('ventas')
-      .select('cargoEnvioCosto, cargo_envio_costo, costo_envio, costoEnvio')
+      .select('*')
       .gte('fecha', fechaInicioDateTime)
       .lte('fecha', fechaFinDateTime)
 
@@ -2534,14 +2534,24 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
       console.log('[getCostosEstimados30Dias] Envios promedio: todas las plataformas')
     }
 
-    const { data: ventasParaEnvio, error: errorVentasEnvio } = await ventasEnvioQuery
-    const totalVentasParaEnvio = ventasParaEnvio?.length || 0
+    const { data: ventasParaEnvioRaw, error: errorVentasEnvio } = await ventasEnvioQuery
+    const ventasParaEnvio = errorVentasEnvio ? (ventas || []) : (ventasParaEnvioRaw || [])
+    const totalVentasParaEnvio = ventasParaEnvio.length
     if (errorVentasEnvio) {
       console.error('[getCostosEstimados30Dias] Error ventas para envío promedio:', JSON.stringify(errorVentasEnvio))
+      console.warn('[getCostosEstimados30Dias] Fallback envíos: usando ventas filtradas por producto/plataforma')
     }
 
     const totalEnvios = ventasParaEnvio?.reduce((sum, v) => {
-      const envio = Number(v.cargoEnvioCosto || v.cargo_envio_costo || v.costo_envio || v.costoEnvio) || 0
+      const envio = Number(
+        v.cargoEnvioCosto ??
+        v.cargo_envio_costo ??
+        v.cargoEnvio ??
+        v.cargo_envio ??
+        v.costo_envio ??
+        v.costoEnvio ??
+        0
+      ) || 0
       return sum + envio
     }, 0) || 0
     const envioPromedio = totalVentasParaEnvio > 0 ? Math.round((totalEnvios / totalVentasParaEnvio) * 100) / 100 : 0
