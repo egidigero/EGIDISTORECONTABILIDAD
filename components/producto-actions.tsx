@@ -35,6 +35,9 @@ interface ProductoActionsProps {
     costoUnitarioARS?: number
     precio_venta?: number
     sku?: string
+    stockTotal?: number
+    stockPropio?: number
+    stockFull?: number
   }
   onUpdate?: () => void
   movimientos?: any[]
@@ -57,6 +60,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
   const [observacionesMovimiento, setObservacionesMovimiento] = useState('')
   const [isSubmittingMovimiento, setIsSubmittingMovimiento] = useState(false)
   const router = useRouter()
+  const stockActualProducto = Number(producto.stockTotal ?? producto.stockPropio ?? 0)
 
   // Handler para cuando se calcula un nuevo precio en la calculadora
   const handlePrecioCalculado = async (nuevoPrecio: number) => {
@@ -137,7 +141,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
       return
     }
 
-    const stockActual = Number(producto.stockTotal || producto.stockPropio || 0)
+    const stockActual = stockActualProducto
     if (tipoMovimiento === 'salida' && cantidadMovimiento > stockActual) {
       toast({
         title: "Error",
@@ -244,7 +248,7 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                 {showAgregarMovimiento ? 'Cancelar' : 'Agregar Movimiento'}
               </Button>
             </DialogTitle>
-            <p className="text-sm text-muted-foreground">Stock actual: {producto.stockTotal || producto.stockPropio || 0} unidades</p>
+            <p className="text-sm text-muted-foreground">Stock actual: {stockActualProducto} unidades</p>
           </DialogHeader>
 
           {/* Formulario para agregar movimiento */}
@@ -303,9 +307,9 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                 <div className={`p-3 rounded border ${tipoMovimiento === 'entrada' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
                   <div className="text-sm font-medium">
                     Nuevo stock: {tipoMovimiento === 'entrada' 
-                      ? (Number(producto.stockTotal || producto.stockPropio || 0) + cantidadMovimiento)
-                      : (Number(producto.stockTotal || producto.stockPropio || 0) - cantidadMovimiento)} unidades
-                    {tipoMovimiento === 'salida' && cantidadMovimiento > Number(producto.stockTotal || producto.stockPropio || 0) && (
+                      ? (stockActualProducto + cantidadMovimiento)
+                      : (stockActualProducto - cantidadMovimiento)} unidades
+                    {tipoMovimiento === 'salida' && cantidadMovimiento > stockActualProducto && (
                       <span className="text-red-600 block mt-1">⚠️ Stock insuficiente</span>
                     )}
                   </div>
@@ -336,29 +340,40 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                 )
               }
 
-              // Calcular stock acumulado de atrás hacia adelante
+              // Reconstruir stock por movimiento partiendo del stock actual.
+              const getCambioMovimiento = (mov: any) => {
+                const cantidad = Number(mov?.cantidad || 0)
+                const tipo = String(mov?.tipo || '').toLowerCase()
+                if (tipo === 'entrada') return cantidad
+                if (tipo === 'salida') return -cantidad
+                return 0
+              }
+
+              let stockEnMomento = stockActualProducto
               const movimientosConStock = [...movimientosProducto]
-                .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
-                .reduce((acc: any[], mov: any, index: number) => {
-                  const stockAnterior = index === 0 ? 0 : acc[index - 1].stockParcial
-                  const cambio = mov.tipo === 'entrada' ? mov.cantidad : -mov.cantidad
-                  const stockParcial = stockAnterior + cambio
-                  acc.push({ ...mov, stockParcial, cambio })
-                  return acc
-                }, [])
-                .reverse() // Mostrar más recientes primero
+                .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+                .map((mov: any) => {
+                  const cambio = getCambioMovimiento(mov)
+                  const stockParcial = stockEnMomento
+                  stockEnMomento -= cambio
+                  return { ...mov, stockParcial, cambio }
+                })
 
               return (
                 <div className="space-y-3">
                   {movimientosConStock.map((mov: any, idx: number) => {
-                    const isEntrada = mov.tipo === 'entrada'
+                    const tipoMov = String(mov?.tipo || '').toLowerCase()
+                    const isEntrada = tipoMov === 'entrada'
+                    const isSalida = tipoMov === 'salida'
                     return (
                       <div 
                         key={idx}
                         className={`p-4 rounded-lg border-l-4 ${
                           isEntrada 
                             ? 'bg-green-50 border-green-500' 
-                            : 'bg-red-50 border-red-500'
+                            : isSalida
+                              ? 'bg-red-50 border-red-500'
+                              : 'bg-gray-50 border-gray-400'
                         }`}
                       >
                         <div className="flex items-start justify-between">
@@ -367,9 +382,11 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                 isEntrada 
                                   ? 'bg-green-100 text-green-800' 
-                                  : 'bg-red-100 text-red-800'
+                                  : isSalida
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-gray-100 text-gray-700'
                               }`}>
-                                {isEntrada ? '↑ Entrada' : '↓ Salida'}
+                                {isEntrada ? '↑ Entrada' : isSalida ? '↓ Salida' : '↔ Movimiento'}
                               </span>
                               <span className="text-sm text-gray-600">
                                 {new Date(mov.fecha).toLocaleDateString('es-AR', { 
@@ -406,9 +423,9 @@ export function ProductoActions({ producto, onUpdate, movimientos, ventasPorProd
 
                           <div className="flex flex-col items-end gap-1 ml-4">
                             <div className={`text-2xl font-bold ${
-                              isEntrada ? 'text-green-600' : 'text-red-600'
+                              isEntrada ? 'text-green-600' : isSalida ? 'text-red-600' : 'text-gray-700'
                             }`}>
-                              {isEntrada ? '+' : '-'}{mov.cantidad}
+                              {isEntrada ? '+' : isSalida ? '-' : ''}{mov.cantidad}
                             </div>
                             <div className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">
                               Stock: {mov.stockParcial}

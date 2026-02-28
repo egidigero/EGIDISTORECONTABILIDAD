@@ -37,7 +37,7 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
         console.error('Error cargando movimientos:', e)
       }
     })()
-  }, [])
+  }, [initialProductos])
 
   // Calcular patrimonio total en stock (usando stock total: propio + full)
   const patrimonioStock = initialProductos.reduce((total, p) => {
