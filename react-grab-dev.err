@@ -1,0 +1,69 @@
+ ⚠ `eslint` configuration in next.config.mjs is no longer supported. See more info here: https://nextjs.org/docs/app/api-reference/cli/next#next-lint-options
+ ⚠ Invalid next.config.mjs options detected: 
+ ⚠     Unrecognized key(s) in object: 'eslint'
+ ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+ ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+ ⚠ ./components/producto-form.tsx:93:42
+Module not found: Can't resolve '@/lib/supabase/client'
+[0m [90m 91 |[39m         [90m// Si es una creación y hay stock inicial, crear movimiento inicial[39m
+ [90m 92 |[39m         [36mif[39m ([33m![39misEditing [33m&&[39m cantidadInicial [33m>[39m [35m0[39m [33m&&[39m result[33m.[39mdata[33m?[39m[33m.[39mid) {
+[31m[1m>[22m[39m[90m 93 |[39m           [36mconst[39m { createClient } [33m=[39m [36mawait[39m [36mimport[39m([32m"@/lib/supabase/client"[39m)
+ [90m    |[39m                                          [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 94 |[39m           [36mconst[39m supabase [33m=[39m createClient()
+ [90m 95 |[39m           
+ [90m 96 |[39m           [36mawait[39m supabase[33m.[39m[36mfrom[39m([32m'movimientos_stock'[39m)[33m.[39minsert({[0m
+
+Import map: aliased to relative './lib/supabase/client' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./components/producto-form.tsx [Client Component Browser]
+    ./components/nuevo-producto-modal.tsx [Client Component Browser]
+    ./app/productos/productos-client.tsx [Client Component Browser]
+    ./app/productos/productos-client.tsx [Server Component]
+    ./app/productos/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/producto-form.tsx [Client Component SSR]
+    ./components/nuevo-producto-modal.tsx [Client Component SSR]
+    ./app/productos/productos-client.tsx [Client Component SSR]
+    ./app/productos/productos-client.tsx [Server Component]
+    ./app/productos/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./components/producto-form.tsx:93:42
+Module not found: Can't resolve '@/lib/supabase/client'
+[0m [90m 91 |[39m         [90m// Si es una creación y hay stock inicial, crear movimiento inicial[39m
+ [90m 92 |[39m         [36mif[39m ([33m![39misEditing [33m&&[39m cantidadInicial [33m>[39m [35m0[39m [33m&&[39m result[33m.[39mdata[33m?[39m[33m.[39mid) {
+[31m[1m>[22m[39m[90m 93 |[39m           [36mconst[39m { createClient } [33m=[39m [36mawait[39m [36mimport[39m([32m"@/lib/supabase/client"[39m)
+ [90m    |[39m                                          [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 94 |[39m           [36mconst[39m supabase [33m=[39m createClient()
+ [90m 95 |[39m           
+ [90m 96 |[39m           [36mawait[39m supabase[33m.[39m[36mfrom[39m([32m'movimientos_stock'[39m)[33m.[39minsert({[0m
+
+Import map: aliased to relative './lib/supabase/client' inside of [project]/
+
+
+Import traces:
+  Client Component Browser:
+    ./components/producto-form.tsx [Client Component Browser]
+    ./components/nuevo-producto-modal.tsx [Client Component Browser]
+    ./app/productos/productos-client.tsx [Client Component Browser]
+    ./app/productos/productos-client.tsx [Server Component]
+    ./app/productos/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/producto-form.tsx [Client Component SSR]
+    ./components/nuevo-producto-modal.tsx [Client Component SSR]
+    ./app/productos/productos-client.tsx [Client Component SSR]
+    ./app/productos/productos-client.tsx [Server Component]
+    ./app/productos/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+^C^C

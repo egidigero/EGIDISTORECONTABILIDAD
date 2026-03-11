@@ -49,14 +49,29 @@ DECLARE
   v_total_liq NUMERIC(14,2);
   v_patrimonio_total NUMERIC(14,2);
 BEGIN
-  -- Calcular patrimonio en stock
-  SELECT 
-    COALESCE(SUM(("costoUnitarioARS" * ("stockPropio" + "stockFull"))), 0),
-    COALESCE(SUM("stockPropio" + "stockFull"), 0)
-  INTO 
+  -- Calcular patrimonio en stock usando movimientos hasta la fecha del snapshot
+  WITH stock_por_producto AS (
+    SELECT
+      m.producto_id,
+      SUM(
+        CASE
+          WHEN m.tipo = 'entrada' THEN m.cantidad
+          WHEN m.tipo = 'salida' THEN -m.cantidad
+          ELSE 0
+        END
+      ) AS cantidad_stock
+    FROM movimientos_stock m
+    WHERE m.fecha < (p_fecha + INTERVAL '1 day')
+    GROUP BY m.producto_id
+  )
+  SELECT
+    COALESCE(SUM(p."costoUnitarioARS" * spp.cantidad_stock), 0),
+    COALESCE(SUM(spp.cantidad_stock), 0)
+  INTO
     v_patrimonio_stock,
     v_unidades_stock
-  FROM productos;
+  FROM stock_por_producto spp
+  JOIN productos p ON p.id = spp.producto_id;
   
   -- Obtener última liquidación <= fecha
   SELECT 
