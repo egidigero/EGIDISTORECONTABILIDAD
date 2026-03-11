@@ -17,6 +17,19 @@ type SnapshotPatrimonio = {
   patrimonio_total: number
 }
 
+function safeRevalidatePatrimonio() {
+  try {
+    revalidatePath("/patrimonio")
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("static generation store missing")) {
+      console.warn("revalidatePath omitido fuera del contexto de Next")
+      return
+    }
+    throw error
+  }
+}
+
 function sumarUnDia(fecha: string) {
   const [anio, mes, dia] = fecha.split("-").map(Number)
   const base = new Date(Date.UTC(anio, mes - 1, dia))
@@ -117,7 +130,7 @@ export async function registrarPatrimonioDiario(fecha?: string) {
 
     if (error) throw error
 
-    revalidatePath("/patrimonio")
+    safeRevalidatePatrimonio()
     return { success: true, data }
   } catch (error: any) {
     console.error("Error al registrar patrimonio:", error)
@@ -182,12 +195,12 @@ export async function getPatrimonioTiempoReal() {
     ])
 
     const patrimonioStock = (productos || []).reduce((total: number, p: any) => {
-      const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+      const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
       return total + (Number(p.costoUnitarioARS || 0) * stockTotal)
     }, 0)
 
     const unidadesStock = (productos || []).reduce((total: number, p: any) => {
-      return total + Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+      return total + Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     }, 0)
 
     const ultimaLiquidacion = liquidaciones?.[0]
@@ -234,7 +247,7 @@ export async function registrarPatrimonioRango(fechaInicio: string, fechaFin: st
       resultados.push({ fecha: fechaStr, ...resultado })
     }
 
-    revalidatePath("/patrimonio")
+    safeRevalidatePatrimonio()
     return { success: true, data: resultados }
   } catch (error: any) {
     console.error("Error al registrar patrimonio en rango:", error)

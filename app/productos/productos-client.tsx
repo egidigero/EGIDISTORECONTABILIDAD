@@ -41,7 +41,7 @@ export function ProductosPageClient({ initialProductos }: ProductosPageClientPro
 
   // Calcular patrimonio total en stock (usando stock total: propio + full)
   const patrimonioStock = initialProductos.reduce((total, p) => {
-    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     return total + (p.costoUnitarioARS * stockTotal)
   }, 0)
 

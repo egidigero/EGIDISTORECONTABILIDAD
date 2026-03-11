@@ -37,7 +37,7 @@ export function StockResumen({ productos }: StockResumenProps) {
 
   // Calcular patrimonio total en stock (stock total = propio + full)
   const patrimonioStock = productos.reduce((total, p) => {
-    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     return total + (Number(p.costoUnitarioARS || 0) * stockTotal);
   }, 0);
 

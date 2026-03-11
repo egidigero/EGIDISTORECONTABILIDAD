@@ -150,14 +150,14 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   // ========== PROYECCIÓN FUTURA (si vendemos todo el stock) ==========
   // Facturación futura = PV × Stock de cada producto
   const facturacionFutura = productos.reduce((total, p) => {
-    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     const precioVenta = Number(p.precio_venta || 0)
     return total + (stockTotal * precioVenta)
   }, 0)
 
   // Costo de productos (ya lo tenemos, es el patrimonio en stock)
   const costoProductosFuturo = productos.reduce((total, p) => {
-    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     const costoUnitario = Number(p.costoUnitarioARS || 0)
     return total + (stockTotal * costoUnitario)
   }, 0)
@@ -179,7 +179,7 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
 
   // Unidades totales en stock
   const unidadesTotales = productos.reduce((total, p) => {
-    const stockTotal = Number(p.stockPropio || 0) + Number(p.stockFull || 0)
+    const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
     return total + stockTotal
   }, 0)
 
@@ -310,8 +310,8 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
               {productos
                 .map((p) => ({
                   ...p,
-                  stockTotal: Number(p.stockPropio || 0) + Number(p.stockFull || 0),
-                  valorStock: (Number(p.stockPropio || 0) + Number(p.stockFull || 0)) * Number(p.precio_venta || 0),
+                  stockTotal: Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0))),
+                  valorStock: Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0))) * Number(p.precio_venta || 0),
                 }))
                 .sort((a, b) => b.valorStock - a.valorStock)
                 .slice(0, 5)
