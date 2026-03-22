@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   TrendingDown,
@@ -54,6 +55,93 @@ const estadoLabels: Record<string, string> = {
   "Entregada - Cambio otro producto": "Cambio otro",
   "Entregada - Sin reembolso": "Sin reembolso",
   "Rechazada": "Rechazada",
+}
+
+type DevolucionCasoDetalle = {
+  id: string
+  fechaReclamo: string | null
+  comprador: string
+  estado: string
+  tipoResolucion: string | null
+  resultadoPrueba: string | null
+  productoRecuperable: boolean
+  perdidaTotal: number
+  detalle: string | null
+  ventaReferencia: string | null
+}
+
+type MotivoDetalle = {
+  cantidad: number
+  recuperables: number
+  noRecuperables: number
+  perdidaTotal: number
+  casos: DevolucionCasoDetalle[]
+}
+
+const getAlias = (row: any, keys: string[], fallback: any = null) => {
+  for (const key of keys) {
+    if (row == null) break
+    const value = row[key]
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value
+    }
+  }
+
+  return fallback
+}
+
+const formatCurrency = (value: number) =>
+  `$${Number(value || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+
+const formatDate = (value: unknown) => {
+  if (!value) return "Sin fecha"
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const [year, month, day] = value.trim().split("-").map(Number)
+    return `${day}/${month}/${year}`
+  }
+
+  const parsed = new Date(String(value))
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha"
+  return parsed.toLocaleDateString("es-AR", { timeZone: "UTC" })
+}
+
+const parseDateValue = (value: unknown) => {
+  if (!value) return 0
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return new Date(`${value.trim()}T00:00:00Z`).getTime()
+  }
+
+  const parsed = new Date(String(value))
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
+
+const buildDetalleCaso = (
+  dev: any,
+  perdidaTotal: number,
+  productoRecuperable: boolean
+): DevolucionCasoDetalle => {
+  const observaciones = getAlias(dev, ["observaciones", "observacion", "notes"], null)
+  const observacionesPrueba = getAlias(dev, ["observaciones_prueba", "observacionesPrueba"], null)
+  const detalle = [observaciones, observacionesPrueba].filter(Boolean).join(" | ") || null
+
+  return {
+    id: String(getAlias(dev, ["id_devolucion", "numeroDevolucion", "idDevolucion", "id"], "Sin ID")),
+    fechaReclamo: getAlias(dev, ["fecha_reclamo", "fechaReclamo"], null),
+    comprador: getAlias(
+      dev,
+      ["comprador", "buyer_name", "nombre_contacto", "nombreContacto", "displayName", "cliente", "buyer"],
+      "Sin comprador"
+    ),
+    estado: getAlias(dev, ["estado", "status"], "Sin estado"),
+    tipoResolucion: getAlias(dev, ["tipo_resolucion", "tipoResolucion"], null),
+    resultadoPrueba: getAlias(dev, ["resultado_prueba", "resultadoPrueba"], null),
+    productoRecuperable,
+    perdidaTotal,
+    detalle,
+    ventaReferencia: getAlias(dev, ["saleCode", "externalOrderId", "external_order_id", "venta_id", "ventaId"], null),
+  }
 }
 
 export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) {
@@ -141,7 +229,8 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
         perdidaEnvioDevolucion: 0,
         perdidaEnvioNuevo: 0,
         perdidaProductos: 0,
-        perdidaReembolsos: 0
+        perdidaReembolsos: 0,
+        motivosDetalle: {} as Record<string, MotivoDetalle>
       }
     }
     acc[producto].cantidad++
@@ -154,12 +243,29 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
     
     const motivo = dev.motivo || 'Sin especificar'
     acc[producto].motivos[motivo] = (acc[producto].motivos[motivo] || 0) + 1
+    if (!acc[producto].motivosDetalle[motivo]) {
+      acc[producto].motivosDetalle[motivo] = {
+        cantidad: 0,
+        recuperables: 0,
+        noRecuperables: 0,
+        perdidaTotal: 0,
+        casos: []
+      }
+    }
     
     if (esRecuperable) {
       acc[producto].recuperables++
+      acc[producto].motivosDetalle[motivo].recuperables++
     } else {
       acc[producto].noRecuperables++
+      acc[producto].motivosDetalle[motivo].noRecuperables++
     }
+
+    acc[producto].motivosDetalle[motivo].cantidad++
+    acc[producto].motivosDetalle[motivo].perdidaTotal += perdidaTotal
+    acc[producto].motivosDetalle[motivo].casos.push(
+      buildDetalleCaso(dev, perdidaTotal, esRecuperable)
+    )
     
     // Calcular detalle de pérdidas (mismo criterio ajustado).
     acc[producto].perdidaEnvioOriginal += costoEnvioOriginalPerdido(dev)
@@ -195,7 +301,24 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
       perdidaEnvioDevolucion: data.perdidaEnvioDevolucion,
       perdidaEnvioNuevo: data.perdidaEnvioNuevo,
       perdidaProductos: data.perdidaProductos,
-      perdidaReembolsos: data.perdidaReembolsos
+      perdidaReembolsos: data.perdidaReembolsos,
+      motivosDetalle: Object.entries(data.motivosDetalle)
+        .map(([motivo, detalle]: [string, any]) => ({
+          motivo,
+          cantidad: detalle.cantidad,
+          recuperables: detalle.recuperables,
+          noRecuperables: detalle.noRecuperables,
+          perdidaTotal: detalle.perdidaTotal,
+          casos: [...detalle.casos].sort((a: DevolucionCasoDetalle, b: DevolucionCasoDetalle) => {
+            const diffFecha = parseDateValue(b.fechaReclamo) - parseDateValue(a.fechaReclamo)
+            if (diffFecha !== 0) return diffFecha
+            return b.perdidaTotal - a.perdidaTotal
+          })
+        }))
+        .sort((a, b) => {
+          if (b.cantidad !== a.cantidad) return b.cantidad - a.cantidad
+          return b.perdidaTotal - a.perdidaTotal
+        })
     }))
     .sort((a, b) => b.cantidad - a.cantidad)
 
@@ -564,17 +687,117 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                   </div>
 
                   <div className="bg-muted/50 rounded p-3">
-                    <div className="text-xs text-muted-foreground mb-2">Problema principal:</div>
-                    <div className="font-medium">{prod.motivoPrincipal}</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Problema principal:</div>
+                        <div className="font-medium">{prod.motivoPrincipal}</div>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        {prod.motivosDetalle.length} {prod.motivosDetalle.length === 1 ? 'motivo' : 'motivos'}
+                      </Badge>
+                    </div>
+
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {Object.entries(prod.motivos)
-                        .sort(([, a]: [string, any], [, b]: [string, any]) => b - a)
-                        .slice(0, 3)
-                        .map(([motivo, cant]: [string, any]) => (
-                          <Badge key={motivo} variant="outline" className="text-xs">
-                            {motivo}: {cant}
-                          </Badge>
+                      {prod.motivosDetalle.slice(0, 4).map((motivoDetalle: any) => (
+                        <Badge key={motivoDetalle.motivo} variant="outline" className="text-xs">
+                          {motivoDetalle.motivo}: {motivoDetalle.cantidad}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 border-t pt-3">
+                      <div className="text-xs text-muted-foreground mb-2">Detalle de casos por motivo:</div>
+                      <Accordion type="multiple" className="space-y-2">
+                        {prod.motivosDetalle.map((motivoDetalle: any, index: number) => (
+                          <AccordionItem
+                            key={`${prod.producto}-${motivoDetalle.motivo}`}
+                            value={`${prod.producto}-${index}`}
+                            className="border rounded-md bg-background px-3"
+                          >
+                            <AccordionTrigger className="py-3 hover:no-underline">
+                              <div className="flex flex-1 items-start justify-between gap-3 pr-3 text-left">
+                                <div className="min-w-0">
+                                  <div className="font-medium">{motivoDetalle.motivo}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {motivoDetalle.cantidad} {motivoDetalle.cantidad === 1 ? 'devolucion' : 'devoluciones'}
+                                    {' - '}
+                                    {motivoDetalle.recuperables} recuperables
+                                    {' - '}
+                                    {motivoDetalle.noRecuperables} no recuperables
+                                  </div>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  {motivoDetalle.motivo === prod.motivoPrincipal && (
+                                    <Badge variant="secondary" className="mb-1 text-xs">
+                                      Principal
+                                    </Badge>
+                                  )}
+                                  <div className="text-xs text-muted-foreground">Perdida</div>
+                                  <div className="font-semibold text-destructive">
+                                    {formatCurrency(motivoDetalle.perdidaTotal)}
+                                  </div>
+                                </div>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="pb-3">
+                              <div className="space-y-2">
+                                {motivoDetalle.casos.map((caso: DevolucionCasoDetalle, casoIndex: number) => (
+                                  <div
+                                    key={`${caso.id}-${casoIndex}`}
+                                    className="rounded-md border bg-muted/30 p-3"
+                                  >
+                                    <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                                      <div>
+                                        <div className="font-medium text-sm">{caso.comprador}</div>
+                                        <div className="text-xs text-muted-foreground break-words">
+                                          {caso.id}
+                                          {caso.ventaReferencia ? ` - Venta ${caso.ventaReferencia}` : ''}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          Reclamo: {formatDate(caso.fechaReclamo)}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1">
+                                        <Badge variant="outline" className="text-xs">
+                                          {caso.estado}
+                                        </Badge>
+                                        {caso.tipoResolucion && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {caso.tipoResolucion}
+                                          </Badge>
+                                        )}
+                                        <Badge
+                                          variant={caso.productoRecuperable ? "secondary" : "destructive"}
+                                          className="text-xs"
+                                        >
+                                          {caso.productoRecuperable ? 'Recuperable' : 'No recuperable'}
+                                        </Badge>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-3">
+                                      <div>
+                                        <span className="text-muted-foreground block">Perdida</span>
+                                        <span className="font-semibold text-destructive">
+                                          {formatCurrency(caso.perdidaTotal)}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground block">Resultado prueba</span>
+                                        <span className="break-words">{caso.resultadoPrueba || 'Sin prueba cargada'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground block">Detalle cargado</span>
+                                        <span className="break-words">{caso.detalle || 'Sin detalle cargado'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
                         ))}
+                      </Accordion>
                     </div>
                   </div>
                 </div>
