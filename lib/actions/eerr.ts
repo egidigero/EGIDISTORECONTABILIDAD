@@ -6,6 +6,15 @@ import { supabase } from "@/lib/supabase"
 import type { EERRData, Plataforma, MetodoPago } from "@/lib/types"
 import { calcularVenta, getTarifa } from "@/lib/calculos"
 import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
+import { calcularCostoEnvioTotalVenta, GASTO_ENVIO_TN_CATEGORY } from "@/lib/envios"
+
+function normalizeText(value: string | null | undefined): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
 
 export async function calcularEERR(
   fechaDesde: Date,
@@ -152,7 +161,7 @@ export async function calcularEERR(
     for (const venta of ventas || []) {
       const pvBruto = Number(venta.pvBruto || 0);
       const costoProducto = Number(venta.costoProducto || 0);
-      const cargoEnvioCosto = Number(venta.cargoEnvioCosto || 0);
+      const cargoEnvioCosto = calcularCostoEnvioTotalVenta(venta.plataforma, venta.cargoEnvioCosto);
       // En la BD, "comision" es la base (sin IVA para ML, sin IVA ni IIBB para TN)
       const comisionBase = Number(venta.comision || 0);
       // Usar el IIBB guardado en la BD (para TN es auto-calculado, para ML es manual)
@@ -227,9 +236,19 @@ export async function calcularEERR(
     // Pago de Importación afecta liquidaciones pero NO aparece en EERR
     // Nota: Los ingresos personales se excluyen más abajo
     const categoriasPersonales = ["Gastos de Casa", "Gastos de Geronimo", "Gastos de Sergio"];
-    const categoriasExcluirEERR = [...categoriasPersonales, "Pago de Importación"];
-    const gastosNegocio = otrosGastosData 
-      ? otrosGastosData.filter(g => !categoriasExcluirEERR.includes(g.categoria))
+    const categoriasExcluirDetalle = new Set([
+      normalizeText("Gastos del negocio - ADS"),
+      normalizeText(GASTO_ENVIO_TN_CATEGORY),
+      normalizeText("Gastos del negocio - Envios devoluciones"),
+    ]);
+    const detalleOtrosGastos = otrosGastosData
+      ? otrosGastosData.filter(g => !categoriasExcluirDetalle.has(normalizeText(g.categoria)))
+      : [];
+    const categoriasExcluirEERRSet = new Set(
+      [...categoriasPersonales, "Pago de Importacion"].map(normalizeText)
+    );
+    const gastosNegocio = detalleOtrosGastos
+      ? detalleOtrosGastos.filter(g => !categoriasExcluirEERRSet.has(normalizeText(g.categoria)))
       : [];
     const otrosGastos = !otrosGastosError && gastosNegocio.length > 0
       ? Math.round(gastosNegocio.reduce((acc, gasto) => acc + Number(gasto.montoARS || 0), 0) * 100) / 100
@@ -453,7 +472,7 @@ export async function calcularEERR(
   roas: Math.round(roas * 100) / 100,
   margenOperativo: margenOperativoConPerdidas,
       otrosGastos: Math.round(otrosGastos * 100) / 100,
-      detalleOtrosGastos: otrosGastosData || [],
+      detalleOtrosGastos: detalleOtrosGastos || [],
   otrosIngresos: Math.round(otrosIngresos * 100) / 100,
       detalleOtrosIngresos: ingresosNegocio || [], // Solo ingresos del negocio (sin personales)
       ingresosPersonales: Math.round(totalIngresosPersonales * 100) / 100,

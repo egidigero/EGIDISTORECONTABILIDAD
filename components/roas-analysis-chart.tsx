@@ -46,9 +46,17 @@ const HELP_TEXTS: Record<string, HelpText> = {
     simple: "ROAS minimo para que marketing no pierda plata. Si tu ROAS actual esta arriba, podes aumentar inversion.",
     avanzado: "Se calcula contra el margen de contribucion. Mide la rentabilidad del sistema de adquisicion sin considerar gastos fijos.",
   },
+  roasActual: {
+    simple: "ROAS real del marketing cargado en este panel.",
+    avanzado: "Se calcula como ventas netas / inversion marketing total. Aca suma Ads + UGC; para separar Meta Ads o UGC necesitas ventas atribuidas por fuente.",
+  },
   roasNegocio: {
     simple: "ROAS necesario para cubrir marketing + estructura del negocio.",
     avanzado: "Incluye gastos fijos del negocio sin intereses MP. Si estas arriba, el negocio completo es rentable.",
+  },
+  colchonRoas: {
+    simple: "Distancia entre tu ROAS actual y el piso de break-even.",
+    avanzado: "Positivo = estas arriba del piso. Negativo = estas abajo y mas inversion empeora la rentabilidad.",
   },
   baseNegocioSinMarketing: {
     simple: "Lo que genera el negocio antes de invertir en marketing.",
@@ -109,15 +117,14 @@ export function ROASAnalysisChart({
   const roasEscalaBE = margenContribucion > 0 ? ventasNetas / margenContribucion : 0
   const roasNegocioBE = baseNegocioAntesAds > 0 ? ventasNetas / baseNegocioAntesAds : 0
   const roasActual = inversionMarketing > 0 ? ventasNetas / inversionMarketing : 0
-
-  const acosBeEscala = ventasNetas > 0 ? margenContribucion / ventasNetas : 0
-  const acosActual = ventasNetas > 0 ? inversionMarketing / ventasNetas : 0
+  const colchonRoasEscala = roasActual - roasEscalaBE
+  const colchonRoasEscalaPct = roasEscalaBE > 0 ? (colchonRoasEscala / roasEscalaBE) * 100 : 0
+  const colchonRoasNegocio = roasActual - roasNegocioBE
+  const colchonRoasNegocioPct = roasNegocioBE > 0 ? (colchonRoasNegocio / roasNegocioBE) * 100 : 0
 
   const cpaBeMarketing = cantidadVentas > 0 ? margenContribucion / cantidadVentas : 0
   const cpaActual = cantidadVentas > 0 ? inversionMarketing / cantidadVentas : 0
 
-  const colchonAcosEscala = acosBeEscala - acosActual
-  const colchonAcosEscalaPct = acosBeEscala > 0 ? (colchonAcosEscala / acosBeEscala) * 100 : 0
   const colchonCpa = cpaBeMarketing - cpaActual
   const colchonCpaPct = cpaBeMarketing > 0 ? (colchonCpa / cpaBeMarketing) * 100 : 0
   const margenObjetivoPct = 0.1
@@ -167,15 +174,30 @@ export function ROASAnalysisChart({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between"><span>ROAS para ESCALAR ADS (BE)</span><span className="font-semibold">{roasEscalaBE.toFixed(2)}x</span></div>
-            <div className="flex justify-between"><span>ROAS Actual</span><span className={`font-semibold ${roasActual >= roasEscalaBE ? "text-green-600" : "text-red-600"}`}>{roasActual.toFixed(2)}x</span></div>
-            <div className="flex justify-between"><span>ACOS BE Escala</span><span className="font-semibold">{acosBeEscala.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>ACOS Actual</span><span className="font-semibold">{acosActual.toFixed(2)}</span></div>
-            <div className={`rounded-md px-2 py-1 text-xs ${colchonAcosEscala >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-              {colchonAcosEscala >= 0
-                ? `Podes aumentar inversion manteniendo rentabilidad: +${Math.abs(colchonAcosEscalaPct).toFixed(0)}%`
-                : `Estas por encima del limite de escala: -${Math.abs(colchonAcosEscalaPct).toFixed(0)}%`}
+            <div className="flex justify-between">
+              <span className="inline-flex items-center gap-1">
+                ROAS Actual
+                <HelpTooltip helpKey="roasActual" />
+              </span>
+              <span className={`font-semibold ${roasActual >= roasEscalaBE ? "text-green-600" : "text-red-600"}`}>{roasActual.toFixed(2)}x</span>
             </div>
-            <div className="pt-2 border-t text-xs text-muted-foreground">Inversion = Ads {formatCurrency(gastosAds)} + UGC {formatCurrency(gastosUGC)}</div>
+            <div className="flex justify-between">
+              <span className="inline-flex items-center gap-1">
+                Colchon ROAS escala
+                <HelpTooltip helpKey="colchonRoas" />
+              </span>
+              <span className={`font-semibold ${colchonRoasEscala >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {colchonRoasEscala >= 0 ? "+" : ""}{colchonRoasEscala.toFixed(2)}x ({colchonRoasEscalaPct >= 0 ? "+" : ""}{colchonRoasEscalaPct.toFixed(0)}%)
+              </span>
+            </div>
+            <div className={`rounded-md px-2 py-1 text-xs ${colchonRoasEscala >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+              {colchonRoasEscala >= 0
+                ? `Estas arriba del piso de escala por ${colchonRoasEscala.toFixed(2)}x`
+                : `Estas abajo del piso de escala por ${Math.abs(colchonRoasEscala).toFixed(2)}x`}
+            </div>
+            <div className="pt-2 border-t text-xs text-muted-foreground">
+              ROAS actual = ventas / (Ads {formatCurrency(gastosAds)} + UGC {formatCurrency(gastosUGC)}). Meta Ads y UGC solo se separan bien con ventas atribuidas por fuente.
+            </div>
           </CardContent>
         </Card>
 
@@ -192,8 +214,22 @@ export function ROASAnalysisChart({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between"><span>ROAS para NO PERDER PLATA (BE)</span><span className="font-semibold">{roasNegocioBE.toFixed(2)}x</span></div>
-            <div className="flex justify-between"><span>ROAS Actual</span><span className={`font-semibold ${roasActual >= roasNegocioBE ? "text-green-600" : "text-red-600"}`}>{roasActual.toFixed(2)}x</span></div>
-            <div className="flex justify-between"><span>Brecha</span><span className="font-semibold">{(roasActual - roasNegocioBE >= 0 ? "+" : "") + (roasActual - roasNegocioBE).toFixed(2)}x</span></div>
+            <div className="flex justify-between">
+              <span className="inline-flex items-center gap-1">
+                ROAS Actual
+                <HelpTooltip helpKey="roasActual" />
+              </span>
+              <span className={`font-semibold ${roasActual >= roasNegocioBE ? "text-green-600" : "text-red-600"}`}>{roasActual.toFixed(2)}x</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="inline-flex items-center gap-1">
+                Colchon ROAS negocio
+                <HelpTooltip helpKey="colchonRoas" />
+              </span>
+              <span className={`font-semibold ${colchonRoasNegocio >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {colchonRoasNegocio >= 0 ? "+" : ""}{colchonRoasNegocio.toFixed(2)}x ({colchonRoasNegocioPct >= 0 ? "+" : ""}{colchonRoasNegocioPct.toFixed(0)}%)
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="inline-flex items-center gap-1">
                 Ganancia del negocio sin marketing

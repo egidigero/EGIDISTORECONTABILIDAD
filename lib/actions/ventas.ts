@@ -8,7 +8,91 @@ import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 import { calcularMargenVenta } from "@/lib/margen-venta"
 import { recalcularLiquidacionesEnCascada } from "@/lib/actions/recalcular-liquidaciones"
+import {
+  buildEnvioTNGastoDescripcion,
+  calcularCostoEnvioTotalVenta,
+  debeCrearGastoEnvioTN,
+  GASTO_ENVIO_TN_CATEGORY,
+} from "@/lib/envios"
 import type { VentaFilters, EstadoEnvio, Plataforma, MetodoPago } from "@/lib/types"
+
+function toFechaISO(value: Date | string | null | undefined): string {
+  if (!value) return new Date().toISOString().split("T")[0]
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? new Date().toISOString().split("T")[0] : date.toISOString().split("T")[0]
+}
+
+async function findGastoEnvioTNBySaleCode(saleCode?: string | null) {
+  if (!saleCode) return null
+
+  const { data, error } = await supabase
+    .from("gastos_ingresos")
+    .select("id")
+    .eq("tipo", "Gasto")
+    .eq("categoria", GASTO_ENVIO_TN_CATEGORY)
+    .eq("canal", "TN")
+    .ilike("descripcion", `%Venta ${saleCode}%`)
+    .order("updatedAt", { ascending: false })
+    .limit(1)
+
+  if (error) {
+    console.error("Error buscando gasto de envio TN:", error)
+    return null
+  }
+
+  return data?.[0] ?? null
+}
+
+async function syncGastoEnvioTNForVenta(venta: {
+  saleCode?: string | null
+  comprador: string
+  plataforma?: string | null
+  cargoEnvioCosto?: number | null
+  fecha: Date | string
+}) {
+  const existing = await findGastoEnvioTNBySaleCode(venta.saleCode)
+
+  if (!debeCrearGastoEnvioTN(venta.plataforma, venta.cargoEnvioCosto)) {
+    if (existing?.id) {
+      const { error } = await supabase.from("gastos_ingresos").delete().eq("id", existing.id)
+      if (error) {
+        console.error("Error eliminando gasto de envio TN:", error)
+      }
+    }
+    return
+  }
+
+  const payload = {
+    fecha: toFechaISO(venta.fecha),
+    tipo: "Gasto" as const,
+    categoria: GASTO_ENVIO_TN_CATEGORY,
+    descripcion: buildEnvioTNGastoDescripcion(venta.comprador, venta.saleCode),
+    montoARS: calcularCostoEnvioTotalVenta(venta.plataforma, venta.cargoEnvioCosto),
+    canal: "TN" as const,
+    esPersonal: false,
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("gastos_ingresos")
+      .update(payload)
+      .eq("id", existing.id)
+
+    if (error) {
+      console.error("Error actualizando gasto de envio TN:", error)
+    }
+    return
+  }
+
+  const { error } = await supabase
+    .from("gastos_ingresos")
+    .insert([{ id: crypto.randomUUID(), ...payload }])
+
+  if (error) {
+    console.error("Error creando gasto de envio TN:", error)
+  }
+}
 
 export async function getVentas(filters?: VentaFilters) {
   try {
@@ -96,11 +180,21 @@ export async function createVenta(data: VentaFormData) {
       plataformaParaCostos,
       (producto as any).sku || undefined
     )
+    const costoEnvioTotalVenta = calcularCostoEnvioTotalVenta(validatedData.plataforma, validatedData.cargoEnvioCosto)
+    const precioNetoCalculado = Number(
+      (
+        pvBrutoConDescuento -
+        Number(calculos.comision || 0) -
+        Number(calculos.iva || 0) -
+        Number(calculos.iibb || 0) -
+        costoEnvioTotalVenta
+      ).toFixed(2)
+    )
     let totalCostosPlataformaMargen =
       Number(calculos.comision || 0) +
       Number(calculos.iva || 0) +
       Number(calculos.iibb || 0) +
-      Number(validatedData.cargoEnvioCosto || 0)
+      costoEnvioTotalVenta
 
     // En ML, el fijo se guarda neto en "comision". Para margen se usa costo total.
     if (validatedData.plataforma === "ML") {
@@ -113,7 +207,7 @@ export async function createVenta(data: VentaFormData) {
       resultadoOperativo: resultadoOperativoMargen,
       totalCostosPlataforma: totalCostosPlataformaMargen,
       costoProducto: Number(producto.costoUnitarioARS),
-      costoEnvio: Number(validatedData.cargoEnvioCosto || 0),
+      costoEnvio: costoEnvioTotalVenta,
       costosEstimados: costosEstimadosMargen,
     })
 
@@ -130,6 +224,7 @@ export async function createVenta(data: VentaFormData) {
       ...ventaDataParaInsertar,
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
+      precioNeto: precioNetoCalculado,
       ingresoMargen: Number(margenActualizado.margenNeto.toFixed(2)),
       rentabilidadSobrePV: Number(margenActualizado.rentabilidadSobrePV.toFixed(4)),
       rentabilidadSobreCosto: Number(margenActualizado.rentabilidadSobreCosto.toFixed(4)),
@@ -184,6 +279,14 @@ export async function createVenta(data: VentaFormData) {
     // Actualizar liquidación si la venta fue creada exitosamente
     if (venta?.[0]) {
       // Asegurar que existe liquidación para esa fecha antes de recalcular
+      await syncGastoEnvioTNForVenta({
+        saleCode: venta[0].saleCode,
+        comprador: venta[0].comprador,
+        plataforma: venta[0].plataforma,
+        cargoEnvioCosto: venta[0].cargoEnvioCosto,
+        fecha: venta[0].fecha,
+      })
+
       const fechaVenta = new Date(venta[0].fecha).toISOString().split('T')[0]
       
       // Importar función para asegurar liquidación
@@ -195,6 +298,8 @@ export async function createVenta(data: VentaFormData) {
     }
 
     revalidatePath("/ventas")
+    revalidatePath("/gastos")
+    revalidatePath("/eerr")
     revalidatePath("/liquidaciones")
     revalidatePath("/productos")
     return { success: true, data: venta?.[0] }
@@ -284,11 +389,21 @@ export async function updateVenta(id: string, data: VentaFormData) {
       plataformaParaCostos,
       (producto as any).sku || undefined
     )
+    const costoEnvioTotalVenta = calcularCostoEnvioTotalVenta(validatedData.plataforma, validatedData.cargoEnvioCosto)
+    const precioNetoCalculado = Number(
+      (
+        pvBrutoConDescuento -
+        Number(calculos.comision || 0) -
+        Number(calculos.iva || 0) -
+        Number(calculos.iibb || 0) -
+        costoEnvioTotalVenta
+      ).toFixed(2)
+    )
     let totalCostosPlataformaMargen =
       Number(calculos.comision || 0) +
       Number(calculos.iva || 0) +
       Number(calculos.iibb || 0) +
-      Number(validatedData.cargoEnvioCosto || 0)
+      costoEnvioTotalVenta
 
     // En ML, el fijo se guarda neto en "comision". Para margen se usa costo total.
     if (validatedData.plataforma === "ML") {
@@ -301,7 +416,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
       resultadoOperativo: resultadoOperativoMargen,
       totalCostosPlataforma: totalCostosPlataformaMargen,
       costoProducto: Number(producto.costoUnitarioARS),
-      costoEnvio: Number(validatedData.cargoEnvioCosto || 0),
+      costoEnvio: costoEnvioTotalVenta,
       costosEstimados: costosEstimadosMargen,
     })
 
@@ -309,6 +424,7 @@ export async function updateVenta(id: string, data: VentaFormData) {
       ...ventaDataParaActualizar,
       pvBruto: pvBrutoConDescuento, // Guardar el precio con descuento ya aplicado
       ...calculosSinDescuento,
+      precioNeto: precioNetoCalculado,
       ingresoMargen: Number(margenActualizado.margenNeto.toFixed(2)),
       rentabilidadSobrePV: Number(margenActualizado.rentabilidadSobrePV.toFixed(4)),
       rentabilidadSobreCosto: Number(margenActualizado.rentabilidadSobreCosto.toFixed(4)),
@@ -328,6 +444,14 @@ export async function updateVenta(id: string, data: VentaFormData) {
     // Actualizar liquidación si la venta fue actualizada exitosamente
     if (venta?.[0]) {
       // Usar el nuevo sistema de recálculo en cascada desde la fecha más antigua afectada
+      await syncGastoEnvioTNForVenta({
+        saleCode: venta[0].saleCode,
+        comprador: venta[0].comprador,
+        plataforma: venta[0].plataforma,
+        cargoEnvioCosto: venta[0].cargoEnvioCosto,
+        fecha: venta[0].fecha,
+      })
+
       const fechaVentaNueva = new Date(venta[0].fecha).toISOString().split('T')[0]
       const fechaVentaAnterior = new Date(ventaAnterior.fecha).toISOString().split('T')[0]
       const fechaMasAntigua = fechaVentaNueva < fechaVentaAnterior ? fechaVentaNueva : fechaVentaAnterior
@@ -343,6 +467,8 @@ export async function updateVenta(id: string, data: VentaFormData) {
     }
 
     revalidatePath("/ventas")
+    revalidatePath("/gastos")
+    revalidatePath("/eerr")
     revalidatePath("/liquidaciones")
     return { success: true, data: venta?.[0] }
   } catch (error) {
@@ -376,6 +502,14 @@ export async function deleteVenta(id: string) {
     if (deleteError) {
       throw deleteError
     }
+
+    await syncGastoEnvioTNForVenta({
+      saleCode: venta.saleCode,
+      comprador: venta.comprador,
+      plataforma: "ML",
+      cargoEnvioCosto: 0,
+      fecha: venta.fecha,
+    })
 
     // Restaurar stock del producto mediante movimiento de stock
     const producto = venta.producto
@@ -420,6 +554,7 @@ export async function deleteVenta(id: string) {
 
     // Forzar revalidación de todas las rutas críticas
     revalidatePath("/ventas")
+    revalidatePath("/gastos")
     revalidatePath("/liquidaciones")
     revalidatePath("/eerr")
     revalidatePath("/dashboard")

@@ -65,7 +65,7 @@ export function ROASAnalysisModal({
         <DialogHeader>
           <DialogTitle>Panel ROAS y contribucion por modelo</DialogTitle>
           <DialogDescription>
-            Incluye ROAS BE de escala, ROAS BE de negocio, ACOS/CPA operativos y sensibilidad.
+            Incluye ROAS BE de escala, ROAS BE de negocio, colchones de ROAS/CPA y sensibilidad.
           </DialogDescription>
         </DialogHeader>
         <ROASAnalysisChart

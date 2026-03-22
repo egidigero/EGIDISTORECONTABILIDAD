@@ -6,6 +6,7 @@ import { devolucionSchema, devolucionSchemaBase, devolucionSchemaWithRecoveryChe
 import { eliminarVentaDeLiquidacion } from "@/lib/actions/actualizar-liquidacion"
 import { recalcularLiquidacionesEnCascada } from "@/lib/actions/recalcular-liquidaciones"
 import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
+import { calcularCostoEnvioTotalVenta, GASTO_ENVIO_TN_CATEGORY } from "@/lib/envios"
 
 // Helper: convert camelCase object keys to snake_case for PostgREST/Supabase
 function toSnakeCase(obj: any): any {
@@ -2543,7 +2544,7 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     }
 
     const totalEnvios = ventasParaEnvio?.reduce((sum, v) => {
-      const envio = Number(
+      const envioBase = Number(
         v.cargoEnvioCosto ??
         v.cargo_envio_costo ??
         v.cargoEnvio ??
@@ -2552,6 +2553,7 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
         v.costoEnvio ??
         0
       ) || 0
+      const envio = calcularCostoEnvioTotalVenta(v.plataforma, envioBase)
       return sum + envio
     }, 0) || 0
     const envioPromedio = totalVentasParaEnvio > 0 ? Math.round((totalEnvios / totalVentasParaEnvio) * 100) / 100 : 0
@@ -2669,6 +2671,7 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
     const gastosNegocio = otrosGastosData 
       ? otrosGastosData.filter(g =>
           !categoriasExcluirEERRNorm.has(normalize(g.categoria)) &&
+          normalize(g.categoria) !== normalize(GASTO_ENVIO_TN_CATEGORY) &&
           normalize(g.categoria) !== normalize('Gastos del negocio - Envios devoluciones') &&
           !isUGC(g)
         )
@@ -2685,20 +2688,16 @@ export async function getCostosEstimados30Dias(productoId?: string, plataforma?:
       .reduce((acc, v) => acc + (Number(v.cargoEnvioCosto) || 0), 0)
     
     // 3. Diferencia (envÃ­os pagados - envÃ­os en plataforma)
-    const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
     
     // 4. Otros gastos del negocio: todos menos los envÃ­os TN (que se suman como diferencia)
     const otrosGastosNegocio = gastosNegocio.filter(g => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
     const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc, g) => acc + (Number(g.montoARS) || 0), 0)
     
-    // 5. Total final de otros gastos del negocio incluye la diferencia de envÃ­os
-    const totalGastosNegocio = Math.round((totalOtrosGastosNegocio + diferenciaEnvios) * 100) / 100
+    // 5. Total final de gastos del negocio sin envios TN ni envios de devoluciones
+    const totalGastosNegocio = Math.round(gastosNegocio.reduce((acc, g) => acc + (Number(g.montoARS) || 0), 0) * 100) / 100
     
     console.log('[getCostosEstimados30Dias] Total gastos obtenidos:', otrosGastosData?.length, 'Gastos negocio (filtrados):', gastosNegocio.length, 'error:', errorGastosNegocio)
-    console.log('[getCostosEstimados30Dias] ðŸ“¦ CÃLCULO ENVÃOS TN:')
-    console.log('   - EnvÃ­os TN pagados (gastos):', totalEnviosNegocioTN.toFixed(2), `(${enviosNegocioTN.length} registros)`)
-    console.log('   - EnvÃ­os TN en plataforma (ventas):', totalEnviosCostosPlataformaTN.toFixed(2))
-    console.log('   - Diferencia (pagados - plataforma):', diferenciaEnvios.toFixed(2))
+    console.log('[getCostosEstimados30Dias] Envios TN excluidos de gastos de negocio:', totalEnviosNegocioTN.toFixed(2), `(${enviosNegocioTN.length} registros)`)
     
     if (gastosNegocio && gastosNegocio.length > 0) {
       console.log('[getCostosEstimados30Dias] Muestra gastos negocio:', otrosGastosNegocio.slice(0, 5).map(g => ({ categoria: g.categoria, monto: g.montoARS })))

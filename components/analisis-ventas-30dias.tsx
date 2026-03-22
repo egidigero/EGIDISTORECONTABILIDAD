@@ -108,29 +108,21 @@ export function AnalisisVentas30Dias({ productos }: AnalisisVentas30DiasProps) {
   let gastosNegocioArr = Array.isArray(eerrData.detalleOtrosGastos)
     ? eerrData.detalleOtrosGastos.filter((g: any) =>
         !categoriasExcluirEERR.includes(g.categoria) &&
+        g.categoria !== 'Gastos del negocio - Envios' &&
         g.categoria !== 'Gastos del negocio - Envios devoluciones'
       )
     : []
   
   // Separar envíos TN para calcular diferencia
-  const enviosNegocioTN = gastosNegocioArr.filter((g: any) => g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN')
-  const totalEnviosNegocioTN = enviosNegocioTN.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
-  const totalEnviosCostosPlataformaTN = eerrData.envios || 0 // envíos TN en costos de plataforma
-  const diferenciaEnvios = totalEnviosNegocioTN - totalEnviosCostosPlataformaTN
-  
-  // Otros gastos del negocio (todos menos los envíos TN)
-  const otrosGastosNegocio = gastosNegocioArr.filter((g: any) => !(g.categoria === 'Gastos del negocio - Envios' && g.canal === 'TN'))
-  const totalOtrosGastosNegocio = otrosGastosNegocio.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
-  
-  // Total gastos del negocio = otros gastos + diferencia envíos
-  const gastosNegocio30d = totalOtrosGastosNegocio + diferenciaEnvios
+  // Los envios TN ya viven en el costo de venta, no en gastos de estructura.
+  const gastosNegocio30d = gastosNegocioArr.reduce((acc: number, g: any) => acc + (g.montoARS || 0), 0)
   
   console.log('📊 VALORES EXTRAÍDOS DEL EERR:')
   console.log('Ventas:', ventasTotales30d)
   console.log('Comisiones Netas:', comisionesNetas30d, '(base:', eerrData.comisionesBase, 'iva:', eerrData.ivaComisiones, 'iibb:', eerrData.iibbComisiones, ')')
   console.log('Envíos:', enviosTotales30d)
   console.log('Publicidad:', publicidad30d)
-  console.log('Gastos Negocio:', gastosNegocio30d, '(otrosGastos:', totalOtrosGastosNegocio, 'difEnvios:', diferenciaEnvios, ')')
+  console.log('Gastos Negocio:', gastosNegocio30d)
   console.log('Devoluciones:', devoluciones30d, '(de', devols.length, 'devoluciones)')
   
   // Calcular porcentajes sobre ventas

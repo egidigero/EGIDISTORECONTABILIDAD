@@ -18,6 +18,7 @@ import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { ventaSchema, VentaFormData } from "@/lib/validations"
 import { getRecargoCuotasMP } from "@/lib/calculos"
 import { calcularMargenVenta } from "@/lib/margen-venta"
+import { calcularCostoEnvioTotalVenta, calcularIibbEnvioVenta } from "@/lib/envios"
 import { Calculator } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
@@ -306,6 +307,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         ? comisionExtraManual
         : precioConDescuento * (tarifa.comisionExtraPct || 0)
       const envio = cargoEnvioCosto
+      const iibbEnvio = calcularIibbEnvioVenta(plataforma, cargoEnvioCosto)
+      const envioTotal = calcularCostoEnvioTotalVenta(plataforma, cargoEnvioCosto)
       
       let iva = 0
       let iibb = 0
@@ -374,10 +377,10 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
       // Para TN tradicional: subtotales ya incluyen IVA e IIBB calculado, sumar envo, fijo y IIBB manual adicional
       // Para TN+MP y ML: subtotales + envo + fijo + IIBB manual
       const totalCostosPlataforma = metodoPago === "Transferencia"
-        ? iibb + envio // IIBB manual + envo (para margen operativo)
+        ? iibb + envioTotal // IIBB manual + costo total de envio
         : plataforma === "TN" && metodoPago !== "MercadoPago"
-          ? subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envo + fijo + IIBB manual adicional
-          : subtotalComision + subtotalComisionExtra + envio + (tarifa.fijoPorOperacion || 0) + iibb
+          ? subtotalComision + subtotalComisionExtra + envioTotal + (tarifa.fijoPorOperacion || 0) + (iibbManual || 0) // TN tradicional: subtotales (con IIBB calculado) + envio total + fijo + IIBB manual adicional
+          : subtotalComision + subtotalComisionExtra + envioTotal + (tarifa.fijoPorOperacion || 0) + iibb
 
       // 4. Margen Operativo = Resultado Operativo - Costos Plataforma - Devoluciones - Estructura prorrateada
       const margenCalculado = calcularMargenVenta({
@@ -385,7 +388,7 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         resultadoOperativo,
         totalCostosPlataforma,
         costoProducto: costo,
-        costoEnvio: envio,
+        costoEnvio: envioTotal,
         costosEstimados,
       })
 
@@ -399,6 +402,8 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
         comisionSinIva,
         comisionExtraSinIva,
         envio,
+        iibbEnvio,
+        envioTotal,
         iva,
         iibb,
         subtotalComision,
@@ -1001,6 +1006,12 @@ export function VentaForm({ venta, onSuccess }: VentaFormProps) {
                       <span>Envio:</span>
                       <span className="font-mono">${preview.data.envio.toFixed(2)}</span>
                     </div>
+                    {preview.data.iibbEnvio > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>IIBB envio (1%):</span>
+                        <span className="font-mono">${preview.data.iibbEnvio.toFixed(2)}</span>
+                      </div>
+                    )}
                     
                     <div className="border-t pt-1 mt-2">
                       <div className="flex justify-between font-semibold text-orange-700">

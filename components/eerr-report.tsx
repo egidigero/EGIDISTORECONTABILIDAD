@@ -224,22 +224,15 @@ const buildComparativeMetrics = (
     const categoria = normalize(row?.categoria)
     if (categoriasPersonales.map(normalize).includes(categoria)) return false
     if (categoria === normalize(PAGO_IMPORTACION_CATEGORY)) return false
+    if (categoria === normalize(ENVIO_CATEGORY)) return false
     if (categoria === normalize(ENVIO_DEVOLUCIONES_CATEGORY)) return false
     if (categoria === normalize(ADS_CATEGORY)) return false
     if (isUGC(row)) return false
     return true
   })
-  const enviosTNRows = gastosEstructuraBase.filter(
-    (row: any) => normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN",
-  )
-  const totalEnviosTNRows = round2(enviosTNRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
-  const totalEnviosCostosPlataformaTN = round2(toNumber(eerrData?.envios))
-  const diferenciaEnviosTN = round2(totalEnviosTNRows - totalEnviosCostosPlataformaTN)
-  const estructuraRows = gastosEstructuraBase.filter(
-    (row: any) => !(normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN"),
-  )
+  const estructuraRows = gastosEstructuraBase
   const estructuraRowsTotal = round2(estructuraRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
-  const estructuraTotal = round2(estructuraRowsTotal + diferenciaEnviosTN)
+  const estructuraTotal = estructuraRowsTotal
 
   const detalleOtrosIngresos = Array.isArray(eerrData?.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : []
   const interesesMPRows = detalleOtrosIngresos.filter((row: any) =>
@@ -561,24 +554,16 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     const categoria = normalize(row?.categoria)
     if (categoriasPersonales.map(normalize).includes(categoria)) return false
     if (categoria === normalize(PAGO_IMPORTACION_CATEGORY)) return false
+    if (categoria === normalize(ENVIO_CATEGORY)) return false
     if (categoria === normalize(ENVIO_DEVOLUCIONES_CATEGORY)) return false
     if (categoria === normalize(ADS_CATEGORY)) return false
     if (isUGC(row)) return false
     return true
   })
 
-  const enviosTNRows = gastosEstructuraBase.filter(
-    (row: any) => normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN",
-  )
-  const totalEnviosTNRows = round2(enviosTNRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
-  const totalEnviosCostosPlataformaTN = round2(toNumber(eerrData.envios))
-  const diferenciaEnviosTN = round2(totalEnviosTNRows - totalEnviosCostosPlataformaTN)
-
-  const estructuraRows = gastosEstructuraBase.filter(
-    (row: any) => !(normalize(row?.categoria) === normalize(ENVIO_CATEGORY) && String(row?.canal) === "TN"),
-  )
+  const estructuraRows = gastosEstructuraBase
   const estructuraRowsTotal = round2(estructuraRows.reduce((acc: number, row: any) => acc + toNumber(row?.montoARS), 0))
-  const estructuraTotal = round2(estructuraRowsTotal + diferenciaEnviosTN)
+  const estructuraTotal = estructuraRowsTotal
   const estructuraAgrupada = groupByCategoria(estructuraRows)
 
   const detalleOtrosIngresos = Array.isArray(eerrData.detalleOtrosIngresos) ? eerrData.detalleOtrosIngresos : []
@@ -614,9 +599,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const roasEscalaBE = margenContribucion > 0 ? round2(ventasNetas / margenContribucion) : 0
   const roasNegocioBE = baseNegocioAntesAds > 0 ? round2(ventasNetas / baseNegocioAntesAds) : 0
   const roasActual = inversionMarketing > 0 ? round2(ventasNetas / inversionMarketing) : 0
-  const acosBeEscala = ventasNetas > 0 ? round2(margenContribucion / ventasNetas) : 0
   const cpaBeMarketing = cantidadVentas > 0 ? round2(margenContribucion / cantidadVentas) : 0
   const cpaActual = cantidadVentas > 0 ? round2(inversionMarketing / cantidadVentas) : 0
+  const colchonCpa = round2(cpaBeMarketing - cpaActual)
+  const colchonCpaPct = cpaBeMarketing > 0 ? round2((colchonCpa / cpaBeMarketing) * 100) : 0
 
   const gastosPersonalesRows = detalleOtrosGastos.filter((row: any) =>
     categoriasPersonales.map(normalize).includes(normalize(row?.categoria)),
@@ -639,8 +625,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     roasEscalaBE,
     cpaActual,
     cpaBeMarketing,
-    colchonCpa: round2(cpaBeMarketing - cpaActual),
-    colchonCpaPct: cpaBeMarketing > 0 ? round2(((cpaBeMarketing - cpaActual) / cpaBeMarketing) * 100) : 0,
+    colchonCpa,
+    colchonCpaPct,
     costosPlataformaPct: ventasNetas > 0 ? round2(((comisionesTotales + enviosTotales) / ventasNetas) * 100) : 0,
     devolucionesTasaPct: Array.isArray(detalleVentas) && detalleVentas.length > 0 ? round2((devoluciones.length / detalleVentas.length) * 100) : 0,
     devolucionesPctSobreVentas: ventasNetas > 0 ? round2((perdidasDevoluciones / ventasNetas) * 100) : 0,
@@ -1301,12 +1287,77 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <div className="flex justify-between text-red-600"><span>(-) UGC</span><span>-{formatCurrency(gastosUGC)}</span></div>
             <div className="flex justify-between text-red-600 font-medium"><span>(-) Inversion Marketing</span><span>-{formatCurrency(inversionMarketing)}</span></div>
             <div className="grid md:grid-cols-2 gap-2 text-xs pt-1 rounded-md border bg-white/70 p-2">
-              <div>ROAS para ESCALAR ADS (BE): <span className="font-semibold">{roasEscalaBE.toFixed(2)}x</span></div>
-              <div>ROAS para NO PERDER PLATA (BE): <span className="font-semibold">{roasNegocioBE.toFixed(2)}x</span></div>
-              <div>ROAS Actual: <span className="font-semibold">{roasActual.toFixed(2)}x</span></div>
-              <div>ACOS BE Escala: <span className="font-semibold">{acosBeEscala.toFixed(2)}</span></div>
-              <div>CPA BE Marketing: <span className="font-semibold">{formatCurrency(cpaBeMarketing)}</span></div>
-              <div>CPA Actual: <span className="font-semibold">{formatCurrency(cpaActual)}</span></div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  ROAS para ESCALAR ADS (BE)
+                  <MetricInfoTooltip
+                    queMide="El ROAS minimo para que el bloque de marketing no se coma el margen de contribucion."
+                    paraQueSirve="Define el piso desde el cual podes escalar ads sin deteriorar la rentabilidad del sistema de adquisicion."
+                    comoDecidir="Si el ROAS actual queda abajo, meter mas pauta empeora el negocio."
+                  />
+                </span>
+                <span className="font-semibold">{roasEscalaBE.toFixed(2)}x</span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  ROAS para NO PERDER PLATA (BE)
+                  <MetricInfoTooltip
+                    queMide="El ROAS necesario para que el negocio completo no quede en negativo antes de intereses MP."
+                    paraQueSirve="Te muestra el piso real para no perder plata incluyendo estructura."
+                    comoDecidir="Si el ROAS actual no llega, el marketing puede vender pero el negocio igual pierde."
+                  />
+                </span>
+                <span className="font-semibold">{roasNegocioBE.toFixed(2)}x</span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  ROAS Actual
+                  <MetricInfoTooltip
+                    queMide="Ventas netas sobre la inversion marketing total del periodo."
+                    paraQueSirve="Resume si el mix de adquisicion esta devolviendo suficiente facturacion."
+                    comoDecidir="Aca se calcula con Ads + UGC. Para separar Meta Ads de UGC necesitas ventas atribuidas por fuente."
+                  />
+                </span>
+                <span className={`font-semibold ${roasActual >= roasNegocioBE ? "text-emerald-700" : "text-red-700"}`}>{roasActual.toFixed(2)}x</span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  Colchon CPA
+                  <MetricInfoTooltip
+                    queMide="La diferencia entre el CPA maximo soportable y el CPA real."
+                    paraQueSirve="Te dice rapido cuanto te sobra o cuanto te pasaste por venta."
+                    comoDecidir="Positivo = todavia hay margen. Negativo = cada venta esta entrando mas cara de lo que soporta el margen."
+                  />
+                </span>
+                <span className={`font-semibold ${colchonCpa >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                  {formatCurrency(colchonCpa)} ({colchonCpaPct >= 0 ? "+" : ""}{colchonCpaPct.toFixed(0)}%)
+                </span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  CPA BE Marketing
+                  <MetricInfoTooltip
+                    queMide="El maximo costo por venta que el margen de contribucion puede pagar sin romper marketing."
+                    paraQueSirve="Es tu techo operativo de adquisicion por venta."
+                    comoDecidir="Si el CPA actual supera este valor, hace falta bajar costo o subir margen."
+                  />
+                </span>
+                <span className="font-semibold">{formatCurrency(cpaBeMarketing)}</span>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex items-center gap-1">
+                  CPA Actual
+                  <MetricInfoTooltip
+                    queMide="La inversion marketing real dividida por la cantidad de ventas del periodo."
+                    paraQueSirve="Muestra cuanto te costo traer cada venta."
+                    comoDecidir="Leelo contra el CPA BE, no aislado."
+                  />
+                </span>
+                <span className={`font-semibold ${cpaActual <= cpaBeMarketing ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(cpaActual)}</span>
+              </div>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              ROAS actual = ventas netas / (Ads + UGC). ROAS Meta Ads usa solo ventas atribuidas a Meta sobre gasto Meta; ROAS UGC usa ventas atribuidas a UGC sobre gasto UGC.
             </div>
             <div className="flex justify-between border-t pt-2 font-semibold">
               <span>= Resultado Operativo Marketing</span>
@@ -1324,12 +1375,6 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
               <span>(-) Total Estructura</span>
               <span>-{formatCurrency(estructuraTotal)}</span>
             </div>
-            {diferenciaEnviosTN !== 0 && (
-              <div className="flex justify-between text-xs text-red-600">
-                <span>Ajuste envios TN (pagados - plataforma)</span>
-                <span>-{formatCurrency(diferenciaEnviosTN)}</span>
-              </div>
-            )}
             {estructuraAgrupada.length > 0 ? (
               <Accordion type="multiple" className="w-full">
                 {estructuraAgrupada.map(([categoria, rows], index) => {
