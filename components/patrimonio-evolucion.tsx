@@ -2,8 +2,20 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { addDaysToDateOnly, getTodayDateOnly, parseDateOnly } from "@/lib/date"
 import { supabase } from "@/lib/supabase"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 interface PatrimonioData {
   fecha: string
@@ -14,64 +26,96 @@ interface PatrimonioData {
   variacion_porcentaje: number | null
 }
 
-function formatDateOnly(date: Date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, "0")
-  const d = String(date.getDate()).padStart(2, "0")
-  return `${y}-${m}-${d}`
+type RangoPatrimonio = "7d" | "30d" | "90d" | "todo"
+
+function formatCurrency(value: number) {
+  return `$${Number(value || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function parseDateOnly(value: string) {
-  const [y, m, d] = String(value).split("-").map(Number)
-  if (!y || !m || !d) return new Date(value)
-  return new Date(y, m - 1, d)
+function formatSignedCurrency(value: number) {
+  return `${value >= 0 ? "+" : "-"}${formatCurrency(Math.abs(value))}`
+}
+
+function formatSignedPercent(value: number | null) {
+  if (value === null) return null
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`
+}
+
+function metricTone(value: number | null) {
+  if (value === null || Math.abs(value) < 0.01) return "text-muted-foreground"
+  return value >= 0 ? "text-green-600" : "text-red-600"
+}
+
+function getRangeLabel(rango: RangoPatrimonio) {
+  switch (rango) {
+    case "7d":
+      return "7 días"
+    case "30d":
+      return "30 días"
+    case "90d":
+      return "90 días"
+    default:
+      return "todo el histórico"
+  }
+}
+
+function getRangeButtonLabel(rango: RangoPatrimonio) {
+  return rango === "todo" ? "Todo" : getRangeLabel(rango)
+}
+
+function getRangeStart(rango: RangoPatrimonio) {
+  const hoy = getTodayDateOnly()
+
+  switch (rango) {
+    case "7d":
+      return addDaysToDateOnly(hoy, -6)
+    case "30d":
+      return addDaysToDateOnly(hoy, -29)
+    case "90d":
+      return addDaysToDateOnly(hoy, -89)
+    default:
+      return null
+  }
+}
+
+function safePercentage(value: number, total: number) {
+  if (!total) return 0
+  return (value / total) * 100
 }
 
 export function PatrimonioEvolucion() {
   const [datos, setDatos] = useState<PatrimonioData[]>([])
   const [loading, setLoading] = useState(true)
-  const [rango, setRango] = useState<'7d' | '30d' | '90d' | 'todo'>('30d')
+  const [rango, setRango] = useState<RangoPatrimonio>("30d")
 
   const cargarDatos = async () => {
     try {
       setLoading(true)
-      
-      // Calcular fecha de inicio según rango
-      const hoy = new Date()
-      let fechaInicio: Date | null = null
-      
-      if (rango === '7d') {
-        fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 6)
-      } else if (rango === '30d') {
-        fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 29)
-      } else if (rango === '90d') {
-        fechaInicio = new Date(hoy)
-        fechaInicio.setDate(hoy.getDate() - 89)
-      }
+
+      const fechaInicio = getRangeStart(rango)
 
       let query = supabase
-        .from('patrimonio_evolucion')
-        .select('*')
-        .order('fecha', { ascending: true })
+        .from("patrimonio_evolucion")
+        .select("*")
+        .order("fecha", { ascending: true })
 
       if (fechaInicio) {
-        query = query.gte('fecha', formatDateOnly(fechaInicio))
+        query = query.gte("fecha", fechaInicio)
       }
 
       const { data, error } = await query
 
       if (error) throw error
-      
-      // Formatear datos para el gráfico
-      const formateados = (data || []).map(d => ({
-        ...d,
-        patrimonio_stock: Number(d.patrimonio_stock),
-        patrimonio_total: Number(d.patrimonio_total),
-        total_liquidaciones: Number(d.total_liquidaciones),
-        variacion_dia: d.variacion_dia ? Number(d.variacion_dia) : null,
-        variacion_porcentaje: d.variacion_porcentaje ? Number(d.variacion_porcentaje) : null,
+
+      const formateados = (data || []).map((row) => ({
+        ...row,
+        fecha: String(row.fecha).split("T")[0],
+        patrimonio_stock: Number(row.patrimonio_stock || 0),
+        patrimonio_total: Number(row.patrimonio_total || 0),
+        total_liquidaciones: Number(row.total_liquidaciones || 0),
+        variacion_dia: row.variacion_dia === null || row.variacion_dia === undefined ? null : Number(row.variacion_dia),
+        variacion_porcentaje:
+          row.variacion_porcentaje === null || row.variacion_porcentaje === undefined ? null : Number(row.variacion_porcentaje),
       }))
 
       setDatos(formateados)
@@ -83,141 +127,183 @@ export function PatrimonioEvolucion() {
   }
 
   useEffect(() => {
-    cargarDatos()
+    void cargarDatos()
   }, [rango])
 
   if (loading) {
     return <div className="p-4">Cargando evolución del patrimonio...</div>
   }
 
-  const ultimoDato = datos.length > 0 ? datos[datos.length - 1] : null
+  const primerDato = datos[0] || null
+  const ultimoDato = datos[datos.length - 1] || null
+  const rangoLabel = getRangeLabel(rango)
+
+  const variacionPeriodo = primerDato && ultimoDato
+    ? ultimoDato.patrimonio_total - primerDato.patrimonio_total
+    : null
+
+  const variacionPeriodoPorcentaje = primerDato && variacionPeriodo !== null && primerDato.patrimonio_total > 0
+    ? (variacionPeriodo / primerDato.patrimonio_total) * 100
+    : null
+
+  const variacionPeriodoStock = primerDato && ultimoDato
+    ? ultimoDato.patrimonio_stock - primerDato.patrimonio_stock
+    : null
+
+  const variacionPeriodoLiquidaciones = primerDato && ultimoDato
+    ? ultimoDato.total_liquidaciones - primerDato.total_liquidaciones
+    : null
+
+  const porcentajeStock = ultimoDato
+    ? safePercentage(ultimoDato.patrimonio_stock, ultimoDato.patrimonio_total)
+    : 0
+
+  const porcentajeLiquidaciones = ultimoDato
+    ? safePercentage(ultimoDato.total_liquidaciones, ultimoDato.patrimonio_total)
+    : 0
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <CardTitle>📊 Evolución del Patrimonio</CardTitle>
+              <CardTitle>Evolución del Patrimonio</CardTitle>
               <CardDescription>
-                Seguimiento histórico por snapshots diarios (00:00 AR), no en vivo
+                Historial por snapshots diarios. El número principal refleja el cierre del rango seleccionado.
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              <button
-                className={`px-3 py-1 rounded text-sm ${rango === '7d' ? 'bg-primary text-white' : 'bg-gray-100'}`}
-                onClick={() => setRango('7d')}
-              >
-                7 días
-              </button>
-              <button
-                className={`px-3 py-1 rounded text-sm ${rango === '30d' ? 'bg-primary text-white' : 'bg-gray-100'}`}
-                onClick={() => setRango('30d')}
-              >
-                30 días
-              </button>
-              <button
-                className={`px-3 py-1 rounded text-sm ${rango === '90d' ? 'bg-primary text-white' : 'bg-gray-100'}`}
-                onClick={() => setRango('90d')}
-              >
-                90 días
-              </button>
-              <button
-                className={`px-3 py-1 rounded text-sm ${rango === 'todo' ? 'bg-primary text-white' : 'bg-gray-100'}`}
-                onClick={() => setRango('todo')}
-              >
-                Todo
-              </button>
+              {(["7d", "30d", "90d", "todo"] as RangoPatrimonio[]).map((opcion) => (
+                <button
+                  key={opcion}
+                  className={`px-3 py-1 rounded text-sm ${rango === opcion ? "bg-primary text-white" : "bg-gray-100"}`}
+                  onClick={() => setRango(opcion)}
+                >
+                  {getRangeButtonLabel(opcion)}
+                </button>
+              ))}
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {ultimoDato && (
+        <CardContent className="space-y-6">
+          {primerDato && ultimoDato ? (
             <>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Último snapshot: {parseDateOnly(ultimoDato.fecha).toLocaleDateString("es-AR")}
-              </p>
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-muted-foreground">Patrimonio Total</p>
-                  <p className="text-2xl font-bold text-blue-600">
-                    ${ultimoDato.patrimonio_total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+                <p>Periodo analizado: {parseDateOnly(primerDato.fecha).toLocaleDateString("es-AR")} al {parseDateOnly(ultimoDato.fecha).toLocaleDateString("es-AR")}</p>
+                <p>Último snapshot: {parseDateOnly(ultimoDato.fecha).toLocaleDateString("es-AR")}</p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="p-4 rounded-lg border bg-slate-50">
+                  <p className="text-sm text-muted-foreground">Apertura del período</p>
+                  <p className="text-2xl font-bold">{formatCurrency(primerDato.patrimonio_total)}</p>
+                </div>
+
+                <div className="p-4 rounded-lg border bg-blue-50">
+                  <p className="text-sm text-muted-foreground">Cierre del período</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(ultimoDato.patrimonio_total)}</p>
+                </div>
+
+                <div className="p-4 rounded-lg border bg-amber-50">
+                  <p className="text-sm text-muted-foreground">Variación del período</p>
+                  <p className={`text-2xl font-bold ${metricTone(variacionPeriodo)}`}>
+                    {formatSignedCurrency(variacionPeriodo || 0)}
                   </p>
-                  {ultimoDato.variacion_dia !== null && (
-                    <p className={`text-sm ${ultimoDato.variacion_dia >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {ultimoDato.variacion_dia >= 0 ? '+' : ''}
-                      ${ultimoDato.variacion_dia.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                      {ultimoDato.variacion_porcentaje !== null && 
-                        ` (${ultimoDato.variacion_porcentaje >= 0 ? '+' : ''}${ultimoDato.variacion_porcentaje.toFixed(2)}%)`
-                      }
+                  {variacionPeriodoPorcentaje !== null ? (
+                    <p className={`text-sm ${metricTone(variacionPeriodo)}`}>{formatSignedPercent(variacionPeriodoPorcentaje)}</p>
+                  ) : null}
+                  <p className="mt-1 text-xs text-muted-foreground">{rangoLabel}</p>
+                </div>
+
+                <div className="p-4 rounded-lg border bg-white">
+                  <p className="text-sm text-muted-foreground">Último cambio diario</p>
+                  <p className={`text-2xl font-bold ${metricTone(ultimoDato.variacion_dia)}`}>
+                    {formatSignedCurrency(ultimoDato.variacion_dia || 0)}
+                  </p>
+                  {ultimoDato.variacion_porcentaje !== null ? (
+                    <p className={`text-sm ${metricTone(ultimoDato.variacion_dia)}`}>
+                      {formatSignedPercent(ultimoDato.variacion_porcentaje)}
                     </p>
-                  )}
+                  ) : null}
+                  <p className="mt-1 text-xs text-muted-foreground">Contra el snapshot anterior</p>
                 </div>
-                
-                <div className="p-4 bg-purple-50 rounded-lg">
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="p-4 rounded-lg bg-purple-50">
                   <p className="text-sm text-muted-foreground">En Stock</p>
-                  <p className="text-2xl font-bold text-purple-600">
-                    ${ultimoDato.patrimonio_stock.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {((ultimoDato.patrimonio_stock / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
-                  </p>
+                  <p className="text-2xl font-bold text-purple-600">{formatCurrency(ultimoDato.patrimonio_stock)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{porcentajeStock.toFixed(1)}% del total</p>
+                  {variacionPeriodoStock !== null ? (
+                    <p className={`text-sm mt-2 ${metricTone(variacionPeriodoStock)}`}>
+                      Periodo: {formatSignedCurrency(variacionPeriodoStock)}
+                    </p>
+                  ) : null}
                 </div>
-                
-                <div className="p-4 bg-green-50 rounded-lg">
+
+                <div className="p-4 rounded-lg bg-green-50">
                   <p className="text-sm text-muted-foreground">En Liquidaciones</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    ${ultimoDato.total_liquidaciones.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {((ultimoDato.total_liquidaciones / ultimoDato.patrimonio_total) * 100).toFixed(1)}% del total
-                  </p>
+                  <p className="text-2xl font-bold text-green-600">{formatCurrency(ultimoDato.total_liquidaciones)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{porcentajeLiquidaciones.toFixed(1)}% del total</p>
+                  {variacionPeriodoLiquidaciones !== null ? (
+                    <p className={`text-sm mt-2 ${metricTone(variacionPeriodoLiquidaciones)}`}>
+                      Periodo: {formatSignedCurrency(variacionPeriodoLiquidaciones)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </>
-          )}
+          ) : null}
 
           {datos.length > 0 ? (
-            <ResponsiveContainer width="100%" height={400}>
-              <AreaChart data={datos}>
+            <ResponsiveContainer width="100%" height={420}>
+              <ComposedChart data={datos}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="fecha" 
-                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
+                <XAxis
+                  dataKey="fecha"
+                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString("es-AR", { month: "short", day: "numeric" })}
                 />
-                <YAxis 
-                  tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
-                />
-                <Tooltip 
-                  formatter={(value: any) => `$${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                  labelFormatter={(label) => parseDateOnly(String(label)).toLocaleDateString('es-AR', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                <YAxis tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => formatCurrency(Number(value))}
+                  labelFormatter={(label) =>
+                    parseDateOnly(String(label)).toLocaleDateString("es-AR", {
+                      weekday: "short",
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })
+                  }
                 />
                 <Legend />
-                <Area 
-                  type="monotone" 
-                  dataKey="patrimonio_total" 
-                  stackId="1"
-                  stroke="#3b82f6" 
-                  fill="#93c5fd" 
-                  name="Patrimonio Total"
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="patrimonio_stock" 
-                  stackId="2"
-                  stroke="#a855f7" 
-                  fill="#d8b4fe" 
+                <Area
+                  type="monotone"
+                  dataKey="patrimonio_stock"
+                  stackId="composicion"
+                  stroke="#a855f7"
+                  fill="#d8b4fe"
+                  fillOpacity={0.75}
                   name="Stock"
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="total_liquidaciones" 
-                  stackId="3"
-                  stroke="#22c55e" 
-                  fill="#86efac" 
+                <Area
+                  type="monotone"
+                  dataKey="total_liquidaciones"
+                  stackId="composicion"
+                  stroke="#22c55e"
+                  fill="#86efac"
+                  fillOpacity={0.55}
                   name="Liquidaciones"
                 />
-              </AreaChart>
+                <Line
+                  type="monotone"
+                  dataKey="patrimonio_total"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
+                  dot={false}
+                  name="Patrimonio Total"
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <p className="text-center text-muted-foreground py-8">
@@ -227,37 +313,38 @@ export function PatrimonioEvolucion() {
         </CardContent>
       </Card>
 
-      {datos.length > 1 && (
+      {datos.length > 1 ? (
         <Card>
           <CardHeader>
-            <CardTitle>📈 Variaciones Diarias</CardTitle>
+            <CardTitle>Variaciones Diarias</CardTitle>
+            <CardDescription>Cambio día contra día del patrimonio total.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={datos.filter(d => d.variacion_dia !== null)}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={datos.filter((dato) => dato.variacion_dia !== null)}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="fecha" 
-                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' })}
+                <XAxis
+                  dataKey="fecha"
+                  tickFormatter={(value) => parseDateOnly(String(value)).toLocaleDateString("es-AR", { month: "short", day: "numeric" })}
                 />
-                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-                <Tooltip 
-                  formatter={(value: any) => `$${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                  labelFormatter={(label) => parseDateOnly(String(label)).toLocaleDateString('es-AR')}
+                <YAxis tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => formatCurrency(Number(value))}
+                  labelFormatter={(label) => parseDateOnly(String(label)).toLocaleDateString("es-AR")}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="variacion_dia" 
-                  stroke="#f59e0b" 
+                <Line
+                  type="monotone"
+                  dataKey="variacion_dia"
+                  stroke="#f59e0b"
                   strokeWidth={2}
                   name="Variación Diaria"
-                  dot={{ fill: '#f59e0b' }}
+                  dot={{ fill: "#f59e0b" }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   )
 }

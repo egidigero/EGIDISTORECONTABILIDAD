@@ -1,8 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { getLiquidaciones } from "@/lib/actions/liquidaciones"
-import { getProductos } from "@/lib/actions/productos"
+import { addDaysToDateOnly, getTodayDateOnly, normalizeDateOnly } from "@/lib/date"
 import { supabase } from "@/lib/supabase"
 
 type SnapshotPatrimonio = {
@@ -30,31 +29,44 @@ function safeRevalidatePatrimonio() {
   }
 }
 
-function sumarUnDia(fecha: string) {
-  const [anio, mes, dia] = fecha.split("-").map(Number)
-  const base = new Date(Date.UTC(anio, mes - 1, dia))
-  base.setUTCDate(base.getUTCDate() + 1)
-  return base.toISOString().split("T")[0]
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100
 }
 
-async function calcularPatrimonioSnapshot(fecha: string): Promise<SnapshotPatrimonio> {
-  const fechaFinExclusiva = sumarUnDia(fecha)
+async function calcularPatrimonio(fecha?: string): Promise<SnapshotPatrimonio> {
+  const fechaCorte = normalizeDateOnly(fecha) || null
+  const fechaFinExclusiva = fechaCorte ? addDaysToDateOnly(fechaCorte, 1) : null
+
+  const productosQuery = supabase
+    .from("productos")
+    .select("id, costoUnitarioARS")
+
+  let movimientosQuery = supabase
+    .from("movimientos_stock")
+    .select("producto_id, cantidad, tipo")
+
+  if (fechaFinExclusiva) {
+    movimientosQuery = movimientosQuery.lt("fecha", fechaFinExclusiva)
+  }
+
+  let liquidacionQuery = supabase
+    .from("liquidaciones")
+    .select("fecha, mp_disponible, mp_a_liquidar, mp_retenido, tn_a_liquidar, updatedAt")
+
+  if (fechaFinExclusiva) {
+    liquidacionQuery = liquidacionQuery.lt("fecha", fechaFinExclusiva)
+  }
+
+  const liquidacionResultQuery = liquidacionQuery
+    .order("fecha", { ascending: false })
+    .order("updatedAt", { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   const [productosResult, movimientosResult, liquidacionResult] = await Promise.all([
-    supabase
-      .from("productos")
-      .select("id, costoUnitarioARS"),
-    supabase
-      .from("movimientos_stock")
-      .select("producto_id, cantidad, tipo, fecha")
-      .lt("fecha", fechaFinExclusiva),
-    supabase
-      .from("liquidaciones")
-      .select("fecha, mp_disponible, mp_a_liquidar, mp_retenido, tn_a_liquidar")
-      .lte("fecha", fecha)
-      .order("fecha", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    productosQuery,
+    movimientosQuery,
+    liquidacionResultQuery,
   ])
 
   if (productosResult.error) throw productosResult.error
@@ -102,15 +114,15 @@ async function calcularPatrimonioSnapshot(fecha: string): Promise<SnapshotPatrim
   const totalLiquidaciones = mpDisponible + mpALiquidar + tnALiquidar
 
   return {
-    fecha,
-    patrimonio_stock: Math.round(patrimonioStock * 100) / 100,
+    fecha: fechaCorte || normalizeDateOnly(liquidacion?.fecha) || getTodayDateOnly(),
+    patrimonio_stock: roundCurrency(patrimonioStock),
     unidades_stock: unidadesStock,
     mp_disponible: mpDisponible,
     mp_a_liquidar: mpALiquidar,
     mp_retenido: mpRetenido,
     tn_a_liquidar: tnALiquidar,
-    total_liquidaciones: Math.round(totalLiquidaciones * 100) / 100,
-    patrimonio_total: Math.round((patrimonioStock + totalLiquidaciones) * 100) / 100,
+    total_liquidaciones: roundCurrency(totalLiquidaciones),
+    patrimonio_total: roundCurrency(patrimonioStock + totalLiquidaciones),
   }
 }
 
@@ -119,8 +131,8 @@ async function calcularPatrimonioSnapshot(fecha: string): Promise<SnapshotPatrim
  */
 export async function registrarPatrimonioDiario(fecha?: string) {
   try {
-    const fechaParam = fecha || new Date().toISOString().split("T")[0]
-    const snapshot = await calcularPatrimonioSnapshot(fechaParam)
+    const fechaParam = normalizeDateOnly(fecha) || getTodayDateOnly()
+    const snapshot = await calcularPatrimonio(fechaParam)
 
     const { data, error } = await supabase
       .from("patrimonio_historico")
@@ -189,41 +201,11 @@ export async function getPatrimonioActual() {
  */
 export async function getPatrimonioTiempoReal() {
   try {
-    const [productos, liquidaciones] = await Promise.all([
-      getProductos(),
-      getLiquidaciones(),
-    ])
-
-    const patrimonioStock = (productos || []).reduce((total: number, p: any) => {
-      const stockTotal = Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
-      return total + (Number(p.costoUnitarioARS || 0) * stockTotal)
-    }, 0)
-
-    const unidadesStock = (productos || []).reduce((total: number, p: any) => {
-      return total + Number(p.stockTotal ?? (Number(p.stockPropio || 0) + Number(p.stockFull || 0)))
-    }, 0)
-
-    const ultimaLiquidacion = liquidaciones?.[0]
-    const mpDisponible = Number(ultimaLiquidacion?.mp_disponible || 0)
-    const mpALiquidar = Number(ultimaLiquidacion?.mp_a_liquidar || 0)
-    const mpRetenido = Number(ultimaLiquidacion?.mp_retenido || 0)
-    const tnALiquidar = Number(ultimaLiquidacion?.tn_a_liquidar || 0)
-    const totalLiquidaciones = mpDisponible + mpALiquidar + tnALiquidar
-    const patrimonioTotal = patrimonioStock + totalLiquidaciones
+    const data = await calcularPatrimonio()
 
     return {
       success: true,
-      data: {
-        fecha: ultimaLiquidacion?.fecha || new Date().toISOString().split("T")[0],
-        patrimonio_stock: patrimonioStock,
-        unidades_stock: unidadesStock,
-        mp_disponible: mpDisponible,
-        mp_a_liquidar: mpALiquidar,
-        mp_retenido: mpRetenido,
-        tn_a_liquidar: tnALiquidar,
-        total_liquidaciones: totalLiquidaciones,
-        patrimonio_total: patrimonioTotal,
-      },
+      data,
     }
   } catch (error: any) {
     console.error("Error al obtener patrimonio en tiempo real:", error)
@@ -237,12 +219,11 @@ export async function getPatrimonioTiempoReal() {
  */
 export async function registrarPatrimonioRango(fechaInicio: string, fechaFin: string) {
   try {
-    const inicio = new Date(fechaInicio)
-    const fin = new Date(fechaFin)
+    const inicio = normalizeDateOnly(fechaInicio)
+    const fin = normalizeDateOnly(fechaFin)
     const resultados = []
 
-    for (let fecha = new Date(inicio); fecha <= fin; fecha.setDate(fecha.getDate() + 1)) {
-      const fechaStr = fecha.toISOString().split("T")[0]
+    for (let fechaStr = inicio; fechaStr <= fin; fechaStr = addDaysToDateOnly(fechaStr, 1)) {
       const resultado = await registrarPatrimonioDiario(fechaStr)
       resultados.push({ fecha: fechaStr, ...resultado })
     }

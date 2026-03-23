@@ -46,8 +46,8 @@ BEGIN
     v_mp_retenido,
     v_tn_a_liquidar
   FROM liquidaciones
-  WHERE fecha <= p_fecha
-  ORDER BY fecha DESC
+  WHERE fecha < (p_fecha + INTERVAL '1 day')
+  ORDER BY fecha DESC, "updatedAt" DESC NULLS LAST
   LIMIT 1;
 
   v_mp_disponible := COALESCE(v_mp_disponible, 0);

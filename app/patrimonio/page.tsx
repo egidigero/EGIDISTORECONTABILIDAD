@@ -4,6 +4,7 @@ import { PatrimonioConciliacion } from "@/components/patrimonio-conciliacion"
 import { PatrimonioEvolucion } from "@/components/patrimonio-evolucion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { addDaysToDateOnly, getTodayDateOnly, parseDateOnly } from "@/lib/date"
 import { RefreshCw, TrendingUp, Wallet, Package } from "lucide-react"
 import { revalidatePath } from "next/cache"
 
@@ -24,22 +25,14 @@ async function RegistrarPatrimonioButton() {
   )
 }
 
-function formatDateOnly(date: Date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, "0")
-  const d = String(date.getDate()).padStart(2, "0")
-  return `${y}-${m}-${d}`
-}
-
 async function RecalcularPatrimonioButton() {
   async function recalcular() {
     "use server"
 
-    const fin = new Date()
-    const inicio = new Date(fin)
-    inicio.setDate(inicio.getDate() - 89)
+    const fin = getTodayDateOnly()
+    const inicio = addDaysToDateOnly(fin, -89)
 
-    await registrarPatrimonioRango(formatDateOnly(inicio), formatDateOnly(fin))
+    await registrarPatrimonioRango(inicio, fin)
     revalidatePath("/patrimonio")
   }
 
@@ -54,10 +47,7 @@ async function RecalcularPatrimonioButton() {
 }
 
 function formatearFechaLocal(fecha: string) {
-  const fechaSolo = String(fecha).split("T")[0]
-  const [anio, mes, dia] = fechaSolo.split("-").map(Number)
-  if (!anio || !mes || !dia) return String(fecha)
-  return new Date(anio, mes - 1, dia).toLocaleDateString("es-AR")
+  return parseDateOnly(fecha).toLocaleDateString("es-AR")
 }
 
 async function PatrimonioActualCard() {

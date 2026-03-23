@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { getTodayDateOnly } from "@/lib/date"
 import { supabase } from "@/lib/supabase"
 import { liquidacionSchema, type LiquidacionFormData } from "@/lib/validations"
 import { calcularImpactoEnMPDisponible } from "@/lib/actions/gastos-ingresos"
@@ -96,7 +97,7 @@ export async function asegurarLiquidacionParaFecha(fecha: string) {
 // Función para obtener o crear automáticamente la liquidación del día
 export async function obtenerLiquidacionHoy() {
   try {
-    const hoy = new Date().toISOString().split('T')[0] // Formato YYYY-MM-DD
+    const hoy = getTodayDateOnly()
     console.log('Buscando liquidación para:', hoy)
     
     // Intentar obtener la liquidación de hoy
