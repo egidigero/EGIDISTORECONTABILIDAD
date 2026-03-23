@@ -11,6 +11,7 @@ import { buildModelBreakdown } from "@/lib/eerr/model-breakdown"
 import { supabase } from "@/lib/supabase"
 import { EERRVentasTable } from "@/components/eerr-ventas-table"
 import { EERRGastosIngresosTable } from "@/components/eerr-gastos-ingresos-table"
+import { EERRPuntoEquilibrioPanel } from "@/components/eerr-punto-equilibrio-panel"
 import { ROASAnalysisModal } from "@/components/roas-analysis-modal"
 import { MetricInfoTooltip } from "@/components/metric-info-tooltip"
 import {
@@ -171,7 +172,9 @@ interface StockCoverageProductRow {
 }
 
 interface StockCoverageMetrics {
+  unidadesStockActual: number
   unidadesExcedentes90d: number
+  pctExcedenteSobreStockActual: number
   valorExcedente90d: number
   coberturaMeses: number | null
   detalleProductos: StockCoverageProductRow[]
@@ -183,6 +186,14 @@ const calculateVariationPct = (current: number, previous: number): number | null
     return null
   }
   return round2(((current - previous) / Math.abs(previous)) * 100)
+}
+
+const calculateReductionPct = (start: number, end: number): number | null => {
+  if (Math.abs(start) < 0.000001) {
+    if (Math.abs(end) < 0.000001) return 0
+    return null
+  }
+  return round2(((start - end) / Math.abs(start)) * 100)
 }
 
 const getTrendTone = (deltaPct: number | null, higherIsBetter: boolean): TrendTone => {
@@ -391,7 +402,14 @@ const getStockCoverageMetrics = async (
 
   if (productosError) {
     console.warn("No se pudo calcular cobertura de stock: error leyendo productos", productosError)
-    return { unidadesExcedentes90d: 0, valorExcedente90d: 0, coberturaMeses: null, detalleProductos: [] }
+    return {
+      unidadesStockActual: 0,
+      unidadesExcedentes90d: 0,
+      pctExcedenteSobreStockActual: 0,
+      valorExcedente90d: 0,
+      coberturaMeses: null,
+      detalleProductos: [],
+    }
   }
 
   const movimientos: any[] = []
@@ -407,7 +425,14 @@ const getStockCoverageMetrics = async (
 
     if (error) {
       console.warn("No se pudo calcular cobertura de stock: error leyendo movimientos_stock", error)
-      return { unidadesExcedentes90d: 0, valorExcedente90d: 0, coberturaMeses: null, detalleProductos: [] }
+      return {
+        unidadesStockActual: 0,
+        unidadesExcedentes90d: 0,
+        pctExcedenteSobreStockActual: 0,
+        valorExcedente90d: 0,
+        coberturaMeses: null,
+        detalleProductos: [],
+      }
     }
 
     if (!data || data.length === 0) break
@@ -450,6 +475,7 @@ const getStockCoverageMetrics = async (
   }
 
   let totalStockValue = 0
+  let totalStockUnits = 0
   let totalDemand90dValue = 0
   let totalExcessUnits = 0
   let totalExcessValue = 0
@@ -467,6 +493,7 @@ const getStockCoverageMetrics = async (
     const pctExcedenteSobreStockActual =
       stockActualUnidades > 0 ? round2((unidadesExcedentes90d / stockActualUnidades) * 100) : 0
 
+    totalStockUnits += stockActualUnidades
     totalStockValue += round2(stockActualUnidades * meta.cost)
     totalDemand90dValue += round2(ventas90dUnidades * meta.cost)
     totalExcessUnits += unidadesExcedentes90d
@@ -488,9 +515,13 @@ const getStockCoverageMetrics = async (
 
   const coberturaMeses =
     totalDemand90dValue > 0 ? round2(totalStockValue / (totalDemand90dValue / 3)) : null
+  const pctExcedenteSobreStockActual =
+    totalStockUnits > 0 ? round2((totalExcessUnits / totalStockUnits) * 100) : 0
 
   return {
+    unidadesStockActual: round2(totalStockUnits),
     unidadesExcedentes90d: round2(totalExcessUnits),
+    pctExcedenteSobreStockActual,
     valorExcedente90d: round2(totalExcessValue),
     coberturaMeses,
     detalleProductos: detalleProductos.sort((a, b) => {
@@ -657,7 +688,19 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     detalleGastosIngresosAnterior,
     cantidadVentasAnterior,
   )
-  const stockCoverageActual = await getStockCoverageMetrics(fechaHasta, canal)
+  const fechaInicioPeriodoSnapshot = new Date(startOfLocalDay(fechaDesde).getTime() - 1)
+  const fechaInicioPeriodoAnteriorSnapshot = new Date(startOfLocalDay(fechaDesdeAnterior).getTime() - 1)
+  const [
+    stockCoverageActual,
+    stockCoverageAnterior,
+    stockCoverageInicioPeriodo,
+    stockCoverageInicioPeriodoAnterior,
+  ] = await Promise.all([
+    getStockCoverageMetrics(fechaHasta, canal),
+    getStockCoverageMetrics(fechaHastaAnterior, canal),
+    getStockCoverageMetrics(fechaInicioPeriodoSnapshot, canal),
+    getStockCoverageMetrics(fechaInicioPeriodoAnteriorSnapshot, canal),
+  ])
   const topSkuRows = buildTopSkuRows(devoluciones, detalleVentas, ventaIdToModelFallback)
   const marginStatus = getMarginStatus(metricsActual.margenOperativoPct)
   const escalaBadge = getEscalaBadge(metricsActual.margenOperativoPct)
@@ -676,6 +719,33 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const trendCostosPlataforma = buildTrend(metricsActual.costosPlataformaPct, metricsAnterior.costosPlataformaPct, false)
   const trendDevoluciones = buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false)
   const trendDevolucionesTasa = buildTrend(metricsActual.devolucionesTasaPct, metricsAnterior.devolucionesTasaPct, false)
+  const trendExcedenteValor = buildTrend(
+    stockCoverageActual.valorExcedente90d,
+    stockCoverageAnterior.valorExcedente90d,
+    false,
+  )
+  const trendExcedentePct = buildTrend(
+    stockCoverageActual.pctExcedenteSobreStockActual,
+    stockCoverageAnterior.pctExcedenteSobreStockActual,
+    false,
+  )
+  const trendCoberturaStock =
+    stockCoverageActual.coberturaMeses === null || stockCoverageAnterior.coberturaMeses === null
+      ? { deltaPct: null, tone: "neutral" as TrendTone }
+      : buildTrend(stockCoverageActual.coberturaMeses, stockCoverageAnterior.coberturaMeses, false)
+
+  const reduccionExcedentePeriodoActual = calculateReductionPct(
+    stockCoverageInicioPeriodo.unidadesExcedentes90d,
+    stockCoverageActual.unidadesExcedentes90d,
+  )
+  const reduccionExcedentePeriodoAnterior = calculateReductionPct(
+    stockCoverageInicioPeriodoAnterior.unidadesExcedentes90d,
+    stockCoverageAnterior.unidadesExcedentes90d,
+  )
+  const trendReduccionExcedentePeriodo =
+    reduccionExcedentePeriodoActual === null || reduccionExcedentePeriodoAnterior === null
+      ? { deltaPct: null, tone: "neutral" as TrendTone }
+      : buildTrend(reduccionExcedentePeriodoActual, reduccionExcedentePeriodoAnterior, true)
 
   const objetivosEnRiesgo: string[] = []
   if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen neto")
@@ -1086,25 +1156,50 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             Cobertura de stock
           </CardTitle>
           <CardDescription>
-            {`Objetivo #3: detectar sobrestock segun rotacion. Excedente = stock actual menos ventas de los ultimos ${STOCK_COVERAGE_DAYS} dias.`}
+            {`Objetivo #3: detectar sobrestock segun rotacion. Excedente = stock actual menos ventas de los ultimos ${STOCK_COVERAGE_DAYS} dias. La reduccion compara inicio y cierre del periodo filtrado.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-              <div className="text-sm font-medium">Unidades excedentes a 90 dias</div>
-              <div className="text-2xl font-semibold">{`${formatUnits(stockCoverageActual.unidadesExcedentes90d)}u`}</div>
-              <div className="text-xs text-muted-foreground">Unidades que sobran por encima de lo que se vendio en los ultimos 90 dias.</div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
               <div className="text-sm font-medium">$ excedente a 90 dias</div>
               <div className="text-2xl font-semibold">{formatCurrency(stockCoverageActual.valorExcedente90d)}</div>
-              <div className="text-xs text-muted-foreground">Valuado a costo actual del producto.</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{`Anterior: ${formatCurrency(stockCoverageAnterior.valorExcedente90d)}`}</span>
+                {renderTrend(trendExcedenteValor)}
+              </div>
+              <div className="text-xs text-muted-foreground">{`${formatUnits(stockCoverageActual.unidadesExcedentes90d)}u excedentes valuadas a costo actual.`}</div>
+            </div>
+            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
+              <div className="text-sm font-medium">% del stock actual que es excedente</div>
+              <div className="text-2xl font-semibold">{formatPercent(stockCoverageActual.pctExcedenteSobreStockActual)}</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(stockCoverageAnterior.pctExcedenteSobreStockActual)}`}</span>
+                {renderTrend(trendExcedentePct)}
+              </div>
+              <div className="text-xs text-muted-foreground">{`${formatUnits(stockCoverageActual.unidadesExcedentes90d)}u de ${formatUnits(stockCoverageActual.unidadesStockActual)}u totales.`}</div>
             </div>
             <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
               <div className="text-sm font-medium">Meses de cobertura</div>
               <div className="text-2xl font-semibold">{formatCoverageMonths(stockCoverageActual.coberturaMeses)}</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{`Anterior: ${formatCoverageMonths(stockCoverageAnterior.coberturaMeses)}`}</span>
+                {renderTrend(trendCoberturaStock)}
+              </div>
               <div className="text-xs text-muted-foreground">{`Basado en la velocidad de venta de los ultimos ${STOCK_COVERAGE_DAYS} dias.`}</div>
+            </div>
+            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
+              <div className="text-sm font-medium">Reduccion del excedente en el periodo</div>
+              <div className="text-2xl font-semibold">{reduccionExcedentePeriodoActual === null ? "N/A" : formatPercent(reduccionExcedentePeriodoActual)}</div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {`Anterior: ${reduccionExcedentePeriodoAnterior === null ? "N/A" : formatPercent(reduccionExcedentePeriodoAnterior)}`}
+                </span>
+                {renderTrend(trendReduccionExcedentePeriodo)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {`Paso de ${formatUnits(stockCoverageInicioPeriodo.unidadesExcedentes90d)}u a ${formatUnits(stockCoverageActual.unidadesExcedentes90d)}u en el periodo.`}
+              </div>
             </div>
           </div>
 
@@ -1495,6 +1590,16 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
           </div>
         </CardContent>
       </Card>
+
+      <EERRPuntoEquilibrioPanel
+        ventasNetas={ventasNetas}
+        cantidadVentas={cantidadVentas}
+        margenContribucion={margenContribucion}
+        resultadoOperativoMarketing={resultadoOperativoMarketing}
+        estructuraTotal={estructuraTotal}
+        otrosIngresosOperativos={otrosIngresosOperativos}
+        roasActual={roasActual}
+      />
 
       <Card>
         <CardHeader>

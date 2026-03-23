@@ -13,6 +13,7 @@ interface PuntoEquilibrioAnalisisProps {
   margenOperativoUnitario: number
   roasActual?: number
   costosFijosSugeridos?: number
+  otrosIngresosOperativos?: number
   unidadesSugeridas?: number
   periodoLabel?: string
 }
@@ -44,6 +45,7 @@ export function PuntoEquilibrioAnalisis({
   margenOperativoUnitario,
   roasActual = 0,
   costosFijosSugeridos,
+  otrosIngresosOperativos = 0,
   unidadesSugeridas,
   periodoLabel = "los ultimos 30 dias",
 }: PuntoEquilibrioAnalisisProps) {
@@ -70,23 +72,24 @@ export function PuntoEquilibrioAnalisis({
   const costosFijosActivos = costosFijosPeriodo > 0
   const margenUnitario = round2(margenOperativoUnitario)
   const ingresosReferencia = round2(precioVenta * unidadesReferencia)
-  const costoFijoPorUnidadReferencia = unidadesReferencia > 0 ? round2(costosFijosPeriodo / unidadesReferencia) : 0
-  const resultadoTotalReferencia = round2(margenUnitario * unidadesReferencia - costosFijosPeriodo)
+  const costoFijoNeto = round2(costosFijosPeriodo - otrosIngresosOperativos)
+  const costoFijoPorUnidadReferencia = unidadesReferencia > 0 ? round2(costoFijoNeto / unidadesReferencia) : 0
+  const resultadoTotalReferencia = round2(margenUnitario * unidadesReferencia - costosFijosPeriodo + otrosIngresosOperativos)
   const margenNetoPorUnidadReferencia = unidadesReferencia > 0 ? round2(resultadoTotalReferencia / unidadesReferencia) : 0
   const margenPctReferencia = ingresosReferencia > 0 ? round2((resultadoTotalReferencia / ingresosReferencia) * 100) : 0
 
   const puntoEquilibrioExacto =
-    costosFijosActivos && margenUnitario > 0 ? costosFijosPeriodo / margenUnitario : null
-  const puntoEquilibrioUnidades = puntoEquilibrioExacto ? Math.ceil(puntoEquilibrioExacto) : null
+    costosFijosActivos && margenUnitario > 0 ? Math.max(costoFijoNeto, 0) / margenUnitario : null
+  const puntoEquilibrioUnidades = puntoEquilibrioExacto !== null ? Math.ceil(puntoEquilibrioExacto) : null
 
   const buildScenario = (unidades: number): EscenarioEscala => {
     const unidadesNormalizadas = Math.max(1, Math.round(unidades))
     const ingresos = round2(precioVenta * unidadesNormalizadas)
-    const resultadoTotal = round2(margenUnitario * unidadesNormalizadas - costosFijosPeriodo)
-    const costoFijoPorUnidad = round2(costosFijosPeriodo / unidadesNormalizadas)
+    const resultadoTotal = round2(margenUnitario * unidadesNormalizadas - costosFijosPeriodo + otrosIngresosOperativos)
+    const costoFijoPorUnidad = round2(costoFijoNeto / unidadesNormalizadas)
     const margenNetoPorUnidad = round2(resultadoTotal / unidadesNormalizadas)
     const margenPctSobreVenta = ingresos > 0 ? round2((resultadoTotal / ingresos) * 100) : 0
-    const baseNegocioAntesAds = round2(margenContribucionUnitario * unidadesNormalizadas - costosFijosPeriodo)
+    const baseNegocioAntesAds = round2(margenContribucionUnitario * unidadesNormalizadas - costosFijosPeriodo + otrosIngresosOperativos)
     const roasNegocioBE = ingresos > 0 && baseNegocioAntesAds > 0
       ? round2(ingresos / baseNegocioAntesAds)
       : null
@@ -147,6 +150,7 @@ export function PuntoEquilibrioAnalisis({
   }
 
   const chartData = Array.from(chartMap.values()).sort((a, b) => a.unidades - b.unidades)
+  const escenarioReferencia = buildScenario(unidadesReferencia)
 
   return (
     <Card className="border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50">
@@ -258,11 +262,17 @@ export function PuntoEquilibrioAnalisis({
               <div>
                 <span className="text-muted-foreground">ROAS negocio BE con {unidadesReferencia} u.:</span>{" "}
                 <span className="font-semibold text-sky-700">
-                  {escenarios.find((escenario) => escenario.unidades === unidadesReferencia)?.roasNegocioBE
-                    ? `${escenarios.find((escenario) => escenario.unidades === unidadesReferencia)?.roasNegocioBE?.toFixed(2)}x`
+                  {escenarioReferencia.roasNegocioBE
+                    ? `${escenarioReferencia.roasNegocioBE.toFixed(2)}x`
                     : "No cubre estructura"}
                 </span>
               </div>
+              {otrosIngresosOperativos !== 0 && (
+                <div>
+                  <span className="text-muted-foreground">Otros ingresos operativos:</span>{" "}
+                  <span className="font-semibold text-emerald-700">${formatCurrency(otrosIngresosOperativos)}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

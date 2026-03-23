@@ -9,12 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { Calculator, TrendingUp, BarChart3, List, Activity, Target } from "lucide-react"
+import { Calculator, TrendingUp, BarChart3, List, Activity } from "lucide-react"
 import { getTarifaEspecifica } from "@/lib/actions/tarifas"
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, LineChart, Line, ReferenceLine } from "recharts"
 import { getCostosEstimados30Dias } from "@/lib/actions/devoluciones"
 import { getRecargoCuotasMP } from "@/lib/calculos"
-import { PuntoEquilibrioAnalisis } from "@/components/punto-equilibrio-analisis"
 
 interface CalculadoraPreciosProps {
   costoProducto: number
@@ -26,9 +25,6 @@ interface CalculadoraPreciosProps {
   costosEstimados?: {
     costoDevolucionesPorVenta: number
     costoGastosNegocioPorVenta: number
-    totalGastosNegocio?: number
-    totalVentas?: number
-    unidadesVendidasNoDevueltas?: number
   }
   productoId?: string
   productoSku?: string
@@ -84,10 +80,8 @@ interface DatosReales30Dias {
   costoPromedio: number
   envioPromedio: number
   gastosNegocioPromedio: number
-  totalGastosNegocio: number
   devolucionPromedio: number
   totalVentas: number
-  unidadesVendidasNoDevueltas: number
   cantidadDevoluciones: number
   roas: number
 }
@@ -309,7 +303,6 @@ export function CalculadoraPrecios({
   const [resultado, setResultado] = useState<ResultadoCalculo | null>(null)
   const [loadingTarifa, setLoadingTarifa] = useState(false)
   const [vistaGrafico, setVistaGrafico] = useState(false)
-  const [mostrarPuntoEquilibrio, setMostrarPuntoEquilibrio] = useState(false)
   
   // Estado para modo análisis de últimos 30 días
   const [modoAnalisis30Dias, setModoAnalisis30Dias] = useState(false)
@@ -338,12 +331,6 @@ export function CalculadoraPrecios({
       }
     }
   }, [parametros.plataforma, parametros.metodoPago, parametros.condicion]);
-
-  useEffect(() => {
-    if (!open) {
-      setMostrarPuntoEquilibrio(false)
-    }
-  }, [open])
 
   // Auto-establecer 1 cuota por defecto cuando se selecciona TN + MercadoPago + Cuotas sin interés
   useEffect(() => {
@@ -401,10 +388,8 @@ export function CalculadoraPrecios({
           costoPromedio: costoProducto,
           envioPromedio: datos.envioPromedio || 0,
           gastosNegocioPromedio: datos.costoGastosNegocioPorVenta || 0,
-          totalGastosNegocio: datos.totalGastosNegocio || 0,
           devolucionPromedio: datos.costoDevolucionesPorVenta || 0,
           totalVentas: datos.totalVentas || 0,
-          unidadesVendidasNoDevueltas: datos.unidadesVendidasNoDevueltas || 0,
           cantidadDevoluciones: datos.cantidadDevoluciones || 0,
           roas: datos.roas || 0
         }
@@ -1294,34 +1279,6 @@ export function CalculadoraPrecios({
           </Card>
         )}
 
-        {resultado && (
-          <div className="mt-6 space-y-4">
-            <Button
-              variant="outline"
-              onClick={() => setMostrarPuntoEquilibrio((prev) => !prev)}
-              className="w-full md:w-auto"
-            >
-              <Target className="mr-2 h-4 w-4" />
-              {mostrarPuntoEquilibrio ? "Ocultar punto de equilibrio" : "Analizar punto de equilibrio"}
-            </Button>
-
-            {mostrarPuntoEquilibrio && (
-              <PuntoEquilibrioAnalisis
-                precioVenta={resultado.precio}
-                margenContribucionUnitario={resultado.margenContribucion}
-                margenOperativoUnitario={resultado.margenOperativo}
-                roasActual={parametros.roas}
-                costosFijosSugeridos={datosReales30Dias?.totalGastosNegocio || costosEstimados?.totalGastosNegocio}
-                unidadesSugeridas={
-                  datosReales30Dias?.unidadesVendidasNoDevueltas ||
-                  costosEstimados?.unidadesVendidasNoDevueltas ||
-                  costosEstimados?.totalVentas
-                }
-                periodoLabel={modoAnalisis30Dias ? "los ultimos 30 dias" : "la base historica disponible"}
-              />
-            )}
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   )
