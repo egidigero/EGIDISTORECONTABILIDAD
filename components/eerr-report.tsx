@@ -1162,37 +1162,42 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             </div>
           </div>
 
-          <div className="rounded-lg border p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium">Detalle por producto</div>
-                <div className="text-xs text-muted-foreground">Cada fila muestra solo la parte vieja del stock de ese producto.</div>
-              </div>
-              <div className="text-xs text-muted-foreground">{`${stockDrainageActual.detalleProductos.length} productos con stock +90 dias`}</div>
-            </div>
-
-            {stockDrainageRows.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Sin stock viejo inmovilizado al cierre del periodo.</div>
-            ) : (
-              <div className="space-y-2">
-                {stockDrainageRows.map((row) => (
-                  <div key={row.productoId} className="flex items-center justify-between gap-4 rounded-md bg-slate-50/80 p-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{row.label}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {row.sku ? `SKU ${row.sku} - ` : ""}
-                        {`${formatUnits(row.stockViejoUnidades)}u viejas de ${formatUnits(row.stockActualUnidades)}u en stock`}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{formatCurrency(row.stockViejoInmovilizado)}</div>
-                      <div className="text-xs text-muted-foreground">{`${formatPercent(row.pctViejoSobreStockActual)} del stock actual`}</div>
-                    </div>
+          <Accordion type="single" collapsible className="rounded-lg border px-4">
+            <AccordionItem value="stock-drainage-detail" className="border-none">
+              <AccordionTrigger className="py-4 hover:no-underline">
+                <div className="flex w-full items-center justify-between gap-3 pr-3 text-left">
+                  <div>
+                    <div className="text-sm font-medium">Detalle por producto</div>
+                    <div className="text-xs text-muted-foreground">Cada fila muestra solo la parte vieja del stock de ese producto.</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <div className="text-xs text-muted-foreground">{`${stockDrainageActual.detalleProductos.length} productos con stock +90 dias`}</div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pb-4">
+                {stockDrainageRows.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Sin stock viejo inmovilizado al cierre del periodo.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {stockDrainageRows.map((row) => (
+                      <div key={row.productoId} className="flex items-center justify-between gap-4 rounded-md bg-slate-50/80 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{row.label}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.sku ? `SKU ${row.sku} - ` : ""}
+                            {`${formatUnits(row.stockViejoUnidades)}u viejas de ${formatUnits(row.stockActualUnidades)}u en stock`}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold">{formatCurrency(row.stockViejoInmovilizado)}</div>
+                          <div className="text-xs text-muted-foreground">{`${formatPercent(row.pctViejoSobreStockActual)} del stock actual`}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </CardContent>
       </Card>
 
