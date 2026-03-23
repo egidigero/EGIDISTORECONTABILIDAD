@@ -49,8 +49,7 @@ const ENVIO_DEVOLUCIONES_CATEGORY = "Gastos del negocio - Envios devoluciones"
 const PAGO_IMPORTACION_CATEGORY = "Pago de Importacion"
 const DAY_MS = 24 * 60 * 60 * 1000
 
-const startOfLocalMonth = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0)
-
+const startOfLocalDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0)
 const endOfLocalDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
 
 const toNumber = (value: unknown): number => {
@@ -159,21 +158,23 @@ interface TopSkuRow {
   perdida: number
 }
 
-interface StockDrainageProductRow {
+interface StockCoverageProductRow {
   productoId: string
   label: string
   sku: string
   stockActualUnidades: number
-  stockViejoUnidades: number
-  stockViejoInmovilizado: number
-  pctViejoSobreStockActual: number
+  ventas90dUnidades: number
+  unidadesExcedentes90d: number
+  valorExcedente90d: number
+  coberturaMeses: number | null
+  pctExcedenteSobreStockActual: number
 }
 
-interface StockDrainageMetrics {
-  stockViejoInmovilizado: number
-  unidadesViejasInmovilizadas: number
-  pctDrenadoMes: number
-  detalleProductos: StockDrainageProductRow[]
+interface StockCoverageMetrics {
+  unidadesExcedentes90d: number
+  valorExcedente90d: number
+  coberturaMeses: number | null
+  detalleProductos: StockCoverageProductRow[]
 }
 
 const calculateVariationPct = (current: number, previous: number): number | null => {
@@ -374,35 +375,23 @@ const buildTopSkuRows = (
     .slice(0, 5)
 }
 
-const STOCK_OLD_DAYS = 90
+const STOCK_COVERAGE_DAYS = 90
 
-interface StockLot {
-  remaining: number
-  entryTs: number
-  oldAtMonthStart: boolean
-}
-
-interface StockProductState {
-  lots: StockLot[]
-  oldUnitsAtMonthStart: number
-  drainedOldUnitsMonth: number
-}
-
-const getStockDrainageMetrics = async (fechaHasta: Date): Promise<StockDrainageMetrics> => {
+const getStockCoverageMetrics = async (
+  fechaHasta: Date,
+  canal?: Plataforma | "General",
+): Promise<StockCoverageMetrics> => {
   const fechaCierre = endOfLocalDay(fechaHasta)
-  const cierreTs = fechaCierre.getTime()
-  const monthStart = startOfLocalMonth(fechaCierre)
-  const monthStartTs = monthStart.getTime()
-  const cutoffMonthStartTs = monthStartTs - STOCK_OLD_DAYS * DAY_MS
-  const cutoffEndTs = cierreTs - STOCK_OLD_DAYS * DAY_MS
+  const ventasWindowStart = startOfLocalDay(new Date(fechaCierre.getTime() - (STOCK_COVERAGE_DAYS - 1) * DAY_MS))
 
-  const { data: productosData, error: productosError } = await supabase
-    .from("productos")
-    .select("id,modelo,sku,costoUnitarioARS")
+  const [{ data: productosData, error: productosError }, ventas90d] = await Promise.all([
+    supabase.from("productos").select("id,modelo,sku,costoUnitarioARS"),
+    getDetalleVentas(ventasWindowStart, fechaCierre, canal),
+  ])
 
   if (productosError) {
-    console.warn("No se pudo calcular drenaje de stock: error leyendo productos", productosError)
-    return { stockViejoInmovilizado: 0, unidadesViejasInmovilizadas: 0, pctDrenadoMes: 0, detalleProductos: [] }
+    console.warn("No se pudo calcular cobertura de stock: error leyendo productos", productosError)
+    return { unidadesExcedentes90d: 0, valorExcedente90d: 0, coberturaMeses: null, detalleProductos: [] }
   }
 
   const movimientos: any[] = []
@@ -417,8 +406,8 @@ const getStockDrainageMetrics = async (fechaHasta: Date): Promise<StockDrainageM
       .range(from, from + pageSize - 1)
 
     if (error) {
-      console.warn("No se pudo calcular drenaje de stock: error leyendo movimientos_stock", error)
-      return { stockViejoInmovilizado: 0, unidadesViejasInmovilizadas: 0, pctDrenadoMes: 0, detalleProductos: [] }
+      console.warn("No se pudo calcular cobertura de stock: error leyendo movimientos_stock", error)
+      return { unidadesExcedentes90d: 0, valorExcedente90d: 0, coberturaMeses: null, detalleProductos: [] }
     }
 
     if (!data || data.length === 0) break
@@ -440,119 +429,76 @@ const getStockDrainageMetrics = async (fechaHasta: Date): Promise<StockDrainageM
     })
   }
 
-  const productStates = new Map<string, StockProductState>()
-  const ensureState = (pid: string) => {
-    const current = productStates.get(pid)
-    if (current) return current
-    const created: StockProductState = { lots: [], oldUnitsAtMonthStart: 0, drainedOldUnitsMonth: 0 }
-    productStates.set(pid, created)
-    return created
-  }
-
-  let monthStartMarked = false
-  const markMonthStart = () => {
-    if (monthStartMarked) return
-    for (const state of productStates.values()) {
-      let oldUnitsAtMonthStart = 0
-      for (const lot of state.lots) {
-        const isOldAtMonthStart = lot.entryTs <= cutoffMonthStartTs
-        lot.oldAtMonthStart = isOldAtMonthStart
-        if (isOldAtMonthStart) oldUnitsAtMonthStart += lot.remaining
-      }
-      state.oldUnitsAtMonthStart = round2(oldUnitsAtMonthStart)
-    }
-    monthStartMarked = true
-  }
-
+  const stockByProduct = new Map<string, number>()
   for (const mov of movimientos) {
     const pid = String(mov?.producto_id ?? "").trim()
     if (!pid) continue
     const tipo = String(mov?.tipo ?? "").toLowerCase()
     const qty = Math.abs(toNumber(mov?.cantidad))
     if (qty <= 0 || (tipo !== "entrada" && tipo !== "salida")) continue
-    const ts = new Date(mov?.fecha).getTime()
-    if (Number.isNaN(ts)) continue
-
-    if (!monthStartMarked && ts >= monthStartTs) {
-      markMonthStart()
-    }
-
-    const state = ensureState(pid)
-
-    if (tipo === "entrada") {
-      state.lots.push({
-        remaining: qty,
-        entryTs: ts,
-        oldAtMonthStart: false,
-      })
-      continue
-    }
-
-    let remainingToConsume = qty
-    while (remainingToConsume > 0 && state.lots.length > 0) {
-      const lot = state.lots[0]
-      const consumed = Math.min(lot.remaining, remainingToConsume)
-
-      if (monthStartMarked && lot.oldAtMonthStart) {
-        state.drainedOldUnitsMonth = round2(state.drainedOldUnitsMonth + consumed)
-      }
-
-      lot.remaining = round2(lot.remaining - consumed)
-      remainingToConsume = round2(remainingToConsume - consumed)
-      if (lot.remaining <= 0.000001) {
-        state.lots.shift()
-      }
-    }
+    const delta = tipo === "entrada" ? qty : -qty
+    stockByProduct.set(pid, round2((stockByProduct.get(pid) ?? 0) + delta))
   }
 
-  markMonthStart()
+  const ventas90dByProduct = new Map<string, number>()
+  for (const venta of Array.isArray(ventas90d) ? ventas90d : []) {
+    const pid = String(
+      venta?.productoId ?? venta?.producto_id ?? venta?.producto?.id ?? venta?.productos?.id ?? "",
+    ).trim()
+    if (!pid) continue
+    ventas90dByProduct.set(pid, (ventas90dByProduct.get(pid) ?? 0) + 1)
+  }
 
-  let oldValueMonthStart = 0
-  let oldValueEnd = 0
-  let oldUnitsEnd = 0
-  let drainedOldValueMonth = 0
+  let totalStockValue = 0
+  let totalDemand90dValue = 0
+  let totalExcessUnits = 0
+  let totalExcessValue = 0
 
-  const detalleProductos: StockDrainageProductRow[] = []
-  const allProductIds = new Set<string>([...productMeta.keys(), ...productStates.keys()])
+  const detalleProductos: StockCoverageProductRow[] = []
+  const allProductIds = new Set<string>([...productMeta.keys(), ...stockByProduct.keys(), ...ventas90dByProduct.keys()])
   for (const pid of allProductIds) {
-    const state = productStates.get(pid) ?? { lots: [], oldUnitsAtMonthStart: 0, drainedOldUnitsMonth: 0 }
     const meta = productMeta.get(pid) ?? { label: pid, sku: "", cost: 0 }
-    const stockActualUnidades = round2(state.lots.reduce((acc, lot) => acc + lot.remaining, 0))
-    const stockViejoUnidades = round2(
-      state.lots.reduce((acc, lot) => acc + (lot.entryTs <= cutoffEndTs ? lot.remaining : 0), 0),
-    )
-    const stockViejoInmovilizado = round2(stockViejoUnidades * meta.cost)
-    const pctViejoSobreStockActual =
-      stockActualUnidades > 0 ? round2((stockViejoUnidades / stockActualUnidades) * 100) : 0
+    const stockActualUnidades = Math.max(0, round2(stockByProduct.get(pid) ?? 0))
+    const ventas90dUnidades = round2(ventas90dByProduct.get(pid) ?? 0)
+    const unidadesExcedentes90d = Math.max(0, round2(stockActualUnidades - ventas90dUnidades))
+    const valorExcedente90d = round2(unidadesExcedentes90d * meta.cost)
+    const promedioMensual = ventas90dUnidades / 3
+    const coberturaMeses = promedioMensual > 0 ? round2(stockActualUnidades / promedioMensual) : null
+    const pctExcedenteSobreStockActual =
+      stockActualUnidades > 0 ? round2((unidadesExcedentes90d / stockActualUnidades) * 100) : 0
 
-    oldValueMonthStart += round2(state.oldUnitsAtMonthStart * meta.cost)
-    drainedOldValueMonth += round2(Math.min(state.drainedOldUnitsMonth, state.oldUnitsAtMonthStart) * meta.cost)
-    oldValueEnd += stockViejoInmovilizado
-    oldUnitsEnd += stockViejoUnidades
+    totalStockValue += round2(stockActualUnidades * meta.cost)
+    totalDemand90dValue += round2(ventas90dUnidades * meta.cost)
+    totalExcessUnits += unidadesExcedentes90d
+    totalExcessValue += valorExcedente90d
 
-    if (stockViejoUnidades <= 0) continue
+    if (unidadesExcedentes90d <= 0) continue
     detalleProductos.push({
       productoId: pid,
       label: meta.label,
       sku: meta.sku,
       stockActualUnidades,
-      stockViejoUnidades,
-      stockViejoInmovilizado,
-      pctViejoSobreStockActual,
+      ventas90dUnidades,
+      unidadesExcedentes90d,
+      valorExcedente90d,
+      coberturaMeses,
+      pctExcedenteSobreStockActual,
     })
   }
 
-  const pctDrenadoMes = oldValueMonthStart > 0 ? round2((drainedOldValueMonth / oldValueMonthStart) * 100) : 0
+  const coberturaMeses =
+    totalDemand90dValue > 0 ? round2(totalStockValue / (totalDemand90dValue / 3)) : null
 
   return {
-    stockViejoInmovilizado: round2(oldValueEnd),
-    unidadesViejasInmovilizadas: round2(oldUnitsEnd),
-    pctDrenadoMes,
+    unidadesExcedentes90d: round2(totalExcessUnits),
+    valorExcedente90d: round2(totalExcessValue),
+    coberturaMeses,
     detalleProductos: detalleProductos.sort((a, b) => {
-      if (b.stockViejoInmovilizado !== a.stockViejoInmovilizado) {
-        return b.stockViejoInmovilizado - a.stockViejoInmovilizado
+      if (b.valorExcedente90d !== a.valorExcedente90d) return b.valorExcedente90d - a.valorExcedente90d
+      if ((b.coberturaMeses ?? Number.POSITIVE_INFINITY) !== (a.coberturaMeses ?? Number.POSITIVE_INFINITY)) {
+        return (b.coberturaMeses ?? Number.POSITIVE_INFINITY) - (a.coberturaMeses ?? Number.POSITIVE_INFINITY)
       }
-      return b.stockViejoUnidades - a.stockViejoUnidades
+      return b.unidadesExcedentes90d - a.unidadesExcedentes90d
     }),
   }
 }
@@ -711,7 +657,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     detalleGastosIngresosAnterior,
     cantidadVentasAnterior,
   )
-  const stockDrainageActual = await getStockDrainageMetrics(fechaHasta)
+  const stockCoverageActual = await getStockCoverageMetrics(fechaHasta, canal)
   const topSkuRows = buildTopSkuRows(devoluciones, detalleVentas, ventaIdToModelFallback)
   const marginStatus = getMarginStatus(metricsActual.margenOperativoPct)
   const escalaBadge = getEscalaBadge(metricsActual.margenOperativoPct)
@@ -740,8 +686,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const formatRatio = (value: number) => `${value.toFixed(2)}x`
   const formatUnits = (value: number) =>
     value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-  const stockDrainageMonthLabel = fechaHasta.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
-  const stockDrainageRows = stockDrainageActual.detalleProductos.slice(0, 8)
+  const formatCoverageMonths = (value: number | null) => (value === null ? "Sin ventas 90d" : `${value.toFixed(1)} meses`)
+  const stockCoverageRows = stockCoverageActual.detalleProductos.slice(0, 12)
 
   const comparisonMetrics: MetricComparison[] = [
     {
@@ -1137,28 +1083,28 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Warehouse className="h-5 w-5 text-slate-700" />
-            Drenaje de stock
+            Cobertura de stock
           </CardTitle>
           <CardDescription>
-            {`Objetivo #3: stock con mas de ${STOCK_OLD_DAYS} dias al cierre. Un mismo producto puede tener solo una parte vieja.`}
+            {`Objetivo #3: detectar sobrestock segun rotacion. Excedente = stock actual menos ventas de los ultimos ${STOCK_COVERAGE_DAYS} dias.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-              <div className="text-sm font-medium">$ stock viejo inmovilizado</div>
-              <div className="text-2xl font-semibold">{formatCurrency(stockDrainageActual.stockViejoInmovilizado)}</div>
-              <div className="text-xs text-muted-foreground">Valuado a costo actual solo para la porcion +90 dias.</div>
+              <div className="text-sm font-medium">Unidades excedentes a 90 dias</div>
+              <div className="text-2xl font-semibold">{`${formatUnits(stockCoverageActual.unidadesExcedentes90d)}u`}</div>
+              <div className="text-xs text-muted-foreground">Unidades que sobran por encima de lo que se vendio en los ultimos 90 dias.</div>
             </div>
             <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-              <div className="text-sm font-medium">Unidades viejas inmovilizadas</div>
-              <div className="text-2xl font-semibold">{`${formatUnits(stockDrainageActual.unidadesViejasInmovilizadas)}u`}</div>
-              <div className="text-xs text-muted-foreground">Solo cuenta unidades que siguen en stock con antiguedad mayor a 90 dias.</div>
+              <div className="text-sm font-medium">$ excedente a 90 dias</div>
+              <div className="text-2xl font-semibold">{formatCurrency(stockCoverageActual.valorExcedente90d)}</div>
+              <div className="text-xs text-muted-foreground">Valuado a costo actual del producto.</div>
             </div>
             <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-              <div className="text-sm font-medium">% drenado en el mes</div>
-              <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.pctDrenadoMes)}</div>
-              <div className="text-xs text-muted-foreground">{`Sobre el stock +90 dias que existia al arrancar ${stockDrainageMonthLabel}.`}</div>
+              <div className="text-sm font-medium">Meses de cobertura</div>
+              <div className="text-2xl font-semibold">{formatCoverageMonths(stockCoverageActual.coberturaMeses)}</div>
+              <div className="text-xs text-muted-foreground">{`Basado en la velocidad de venta de los ultimos ${STOCK_COVERAGE_DAYS} dias.`}</div>
             </div>
           </div>
 
@@ -1168,28 +1114,31 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
                 <div className="flex w-full items-center justify-between gap-3 pr-3 text-left">
                   <div>
                     <div className="text-sm font-medium">Detalle por producto</div>
-                    <div className="text-xs text-muted-foreground">Cada fila muestra solo la parte vieja del stock de ese producto.</div>
+                    <div className="text-xs text-muted-foreground">Cada fila muestra el excedente proyectado a 90 dias segun ventas recientes.</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">{`${stockDrainageActual.detalleProductos.length} productos con stock +90 dias`}</div>
+                  <div className="text-xs text-muted-foreground">{`${stockCoverageActual.detalleProductos.length} productos con excedente`}</div>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                {stockDrainageRows.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Sin stock viejo inmovilizado al cierre del periodo.</div>
+                {stockCoverageRows.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Sin sobrestock segun rotacion de los ultimos 90 dias.</div>
                 ) : (
                   <div className="space-y-2">
-                    {stockDrainageRows.map((row) => (
+                    {stockCoverageRows.map((row) => (
                       <div key={row.productoId} className="flex items-center justify-between gap-4 rounded-md bg-slate-50/80 p-3">
                         <div className="min-w-0">
                           <div className="truncate font-medium">{row.label}</div>
                           <div className="text-xs text-muted-foreground">
                             {row.sku ? `SKU ${row.sku} - ` : ""}
-                            {`${formatUnits(row.stockViejoUnidades)}u viejas de ${formatUnits(row.stockActualUnidades)}u en stock`}
+                            {`${formatUnits(row.stockActualUnidades)}u stock - ${formatUnits(row.ventas90dUnidades)}u vendidas en 90d`}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(row.stockViejoInmovilizado)}</div>
-                          <div className="text-xs text-muted-foreground">{`${formatPercent(row.pctViejoSobreStockActual)} del stock actual`}</div>
+                          <div className="font-semibold">{formatCurrency(row.valorExcedente90d)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {`${formatUnits(row.unidadesExcedentes90d)}u excedentes - ${formatCoverageMonths(row.coberturaMeses)}`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{`${formatPercent(row.pctExcedenteSobreStockActual)} del stock actual`}</div>
                         </div>
                       </div>
                     ))}
