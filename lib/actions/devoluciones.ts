@@ -2199,18 +2199,31 @@ export async function buscarVentas(query: string) {
   }
 }
 
-// Obtener estadÃ­sticas para reportes
-export async function getEstadisticasDevoluciones(
-  fechaInicio?: string, 
-  fechaFin?: string,
-  fechaCompraInicio?: string,
-  fechaCompraFin?: string,
-  plataforma?: string,
-  estado?: string,
-  estadoRecepcion?: string,
+// Obtener estadisticas para reportes
+export type DevolucionesStatsModoFecha = "reclamo" | "compra"
+
+type GetEstadisticasDevolucionesParams = {
+  modoFecha?: DevolucionesStatsModoFecha
+  fechaInicio?: string
+  fechaFin?: string
+  plataforma?: string
+  estado?: string
+  estadoRecepcion?: string
   estadoPrueba?: string
-) {
+}
+
+export async function getEstadisticasDevoluciones({
+  modoFecha = "reclamo",
+  fechaInicio,
+  fechaFin,
+  plataforma,
+  estado,
+  estadoRecepcion,
+  estadoPrueba,
+}: GetEstadisticasDevolucionesParams = {}) {
   try {
+    const columnaFechaBase = modoFecha === "compra" ? "fecha_compra" : "fecha_reclamo"
+
     let query = supabase
       .from('devoluciones_resumen')
       .select('*')
@@ -2218,20 +2231,12 @@ export async function getEstadisticasDevoluciones(
       // Solo excluir las rechazadas que no tienen impacto
       .neq('estado', 'Rechazada')
 
-    // Filtrar por fecha de reclamo
+    // Filtrar por la fecha base de la vista seleccionada
     if (fechaInicio) {
-      query = query.gte('fecha_reclamo', fechaInicio)
+      query = query.gte(columnaFechaBase, fechaInicio)
     }
     if (fechaFin) {
-      query = query.lte('fecha_reclamo', fechaFin)
-    }
-
-    // Filtrar por fecha de compra
-    if (fechaCompraInicio) {
-      query = query.gte('fecha_compra', fechaCompraInicio)
-    }
-    if (fechaCompraFin) {
-      query = query.lte('fecha_compra', fechaCompraFin)
+      query = query.lte(columnaFechaBase, fechaFin)
     }
 
     // Filtrar por plataforma
@@ -2317,30 +2322,29 @@ export async function getEstadisticasDevoluciones(
       ? perdidaTotal / devolucionesConPerdida.length
       : 0
 
-    // Obtener conteo de ventas en el rango proporcionado (si aplica) para mostrar % devoluciones sobre ventas
-    // IMPORTANTE: Usar fechas de COMPRA (no de reclamo) para comparar con las ventas correctamente
-    let totalVentas = 0
-    try {
-      // Preferir filtrar por 'fecha' en ventas; si falla, caer a 'created_at'
-      let ventasQuery: any = supabase.from('ventas').select('id', { count: 'exact', head: true })
-      // Usar fechaCompraInicio/Fin si estÃ¡n disponibles, sino caer a fechaInicio/Fin
-      const fechaVentasInicio = fechaCompraInicio || fechaInicio
-      const fechaVentasFin = fechaCompraFin || fechaFin
-      
-      if (fechaVentasInicio) {
-        try { ventasQuery = ventasQuery.gte('fecha', fechaVentasInicio) } catch { ventasQuery = ventasQuery.gte('created_at', fechaVentasInicio) }
+    // Solo la vista por compra se compara contra ventas del mismo periodo.
+    let totalVentas: number | undefined
+    if (modoFecha === "compra") {
+      try {
+        let ventasQuery: any = supabase.from('ventas').select('id', { count: 'exact', head: true })
+
+        if (fechaInicio) {
+          try { ventasQuery = ventasQuery.gte('fecha', fechaInicio) } catch { ventasQuery = ventasQuery.gte('created_at', fechaInicio) }
+        }
+        if (fechaFin) {
+          try { ventasQuery = ventasQuery.lte('fecha', fechaFin) } catch { ventasQuery = ventasQuery.lte('created_at', fechaFin) }
+        }
+
+        const ventasResp = await ventasQuery
+        totalVentas = Number(ventasResp?.count ?? 0)
+      } catch (errVentas) {
+        console.warn('No se pudo obtener conteo de ventas para estadisticas de devoluciones (no critico)', errVentas)
+        totalVentas = 0
       }
-      if (fechaVentasFin) {
-        try { ventasQuery = ventasQuery.lte('fecha', fechaVentasFin) } catch { ventasQuery = ventasQuery.lte('created_at', fechaVentasFin) }
-      }
-      const ventasResp = await ventasQuery
-      totalVentas = Number(ventasResp?.count ?? 0)
-    } catch (errVentas) {
-      console.warn('No se pudo obtener conteo de ventas para estadisticas de devoluciones (no crÃ­tico)', errVentas)
-      totalVentas = 0
     }
 
     return {
+      modoFecha,
       total,
       porEstado,
       porPlataforma,

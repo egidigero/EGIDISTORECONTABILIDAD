@@ -23,6 +23,7 @@ import {
 
 interface DevolucionesReporteProps {
   estadisticas: {
+    modoFecha?: "reclamo" | "compra"
     total: number
     porEstado: Record<string, number>
     porPlataforma: Record<string, number>
@@ -60,6 +61,7 @@ const estadoLabels: Record<string, string> = {
 type DevolucionCasoDetalle = {
   id: string
   fechaReclamo: string | null
+  fechaCompra: string | null
   comprador: string
   estado: string
   tipoResolucion: string | null
@@ -129,6 +131,7 @@ const buildDetalleCaso = (
   return {
     id: String(getAlias(dev, ["id_devolucion", "numeroDevolucion", "idDevolucion", "id"], "Sin ID")),
     fechaReclamo: getAlias(dev, ["fecha_reclamo", "fechaReclamo"], null),
+    fechaCompra: getAlias(dev, ["fecha_compra", "fechaCompra"], null),
     comprador: getAlias(
       dev,
       ["comprador", "buyer_name", "nombre_contacto", "nombreContacto", "displayName", "cliente", "buyer"],
@@ -145,10 +148,26 @@ const buildDetalleCaso = (
 }
 
 export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) {
+  const modoFecha = estadisticas.modoFecha === "compra" ? "compra" : "reclamo"
+  const esVistaCompra = modoFecha === "compra"
+  const etiquetaFecha = esVistaCompra ? "compra" : "reclamo"
+  const badgeVista = esVistaCompra ? "Cohorte por compra" : "Operativa por reclamo"
+  const descripcionVista = esVistaCompra
+    ? "Estas metricas muestran devoluciones asociadas a compras del periodo seleccionado y permiten compararlas contra ventas del mismo periodo."
+    : "Estas metricas muestran el flujo operativo segun cuando entra el reclamo. El impacto contable sigue esta misma fecha."
   // Calcular métricas adicionales
   const totalEntregadas = Object.entries(estadisticas.porEstado)
     .filter(([estado]) => estado.startsWith("Entregada"))
     .reduce((sum, [, count]) => sum + count, 0)
+
+  const mostrarMetricasSobreVentas =
+    esVistaCompra && typeof estadisticas.totalVentas === "number" && estadisticas.totalVentas > 0
+  const porcentajeSobreVentas = mostrarMetricasSobreVentas
+    ? (estadisticas.total / Number(estadisticas.totalVentas || 0)) * 100
+    : 0
+  const ventasSinDevolucion = mostrarMetricasSobreVentas
+    ? Math.max(Number(estadisticas.totalVentas || 0) - estadisticas.total, 0)
+    : 0
 
   // Calcular reembolsos reales (solo reembolsos completados)
   const devolucionesReembolso = estadisticas.data.filter(d => d.tipo_resolucion === 'Reembolso')
@@ -310,7 +329,9 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
           noRecuperables: detalle.noRecuperables,
           perdidaTotal: detalle.perdidaTotal,
           casos: [...detalle.casos].sort((a: DevolucionCasoDetalle, b: DevolucionCasoDetalle) => {
-            const diffFecha = parseDateValue(b.fechaReclamo) - parseDateValue(a.fechaReclamo)
+            const fechaA = esVistaCompra ? a.fechaCompra : a.fechaReclamo
+            const fechaB = esVistaCompra ? b.fechaCompra : b.fechaReclamo
+            const diffFecha = parseDateValue(fechaB) - parseDateValue(fechaA)
             if (diffFecha !== 0) return diffFecha
             return b.perdidaTotal - a.perdidaTotal
           })
@@ -324,6 +345,17 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Vista temporal</span>
+            <Badge variant={esVistaCompra ? "default" : "secondary"}>{badgeVista}</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">{descripcionVista}</p>
+        </div>
+      </div>
+
       {/* Tarjetas de resumen */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -335,8 +367,11 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
             <div className="text-2xl font-bold">{estadisticas.total}</div>
             <p className="text-xs text-muted-foreground mt-1">
               {totalEntregadas} completadas
-              {typeof estadisticas.totalVentas === 'number' && estadisticas.totalVentas > 0 && (
-                <span className="ml-2">· {((estadisticas.total / estadisticas.totalVentas) * 100).toFixed(1)}% ventas</span>
+              {mostrarMetricasSobreVentas && (
+                <span className="ml-2">· {porcentajeSobreVentas.toFixed(1)}% ventas del periodo</span>
+              )}
+              {!mostrarMetricasSobreVentas && (
+                <span className="ml-2">· vista por {etiquetaFecha}</span>
               )}
             </p>
           </CardContent>
@@ -353,6 +388,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Promedio: ${(estadisticas.total > 0 ? perdidaTotalAjustada / estadisticas.total : 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              <span className="ml-2">· {esVistaCompra ? "compras del periodo" : "reclamos del periodo"}</span>
             </p>
           </CardContent>
         </Card>
@@ -517,7 +553,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
             Detalle de Pérdidas por Tipo
           </CardTitle>
           <CardDescription>
-            Desglose de costos y pérdidas del sistema de devoluciones
+            Desglose de costos y pérdidas del sistema de devoluciones para la vista por {etiquetaFecha}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -574,11 +610,17 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                     ${perdidaTotalAjustada.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Costo de incidencia por venta: ${(typeof estadisticas.totalVentas === 'number' && estadisticas.totalVentas > 0) 
-                    ? (perdidaTotalAjustada / (estadisticas.totalVentas - estadisticas.total)).toLocaleString('es-AR', { minimumFractionDigits: 2 })
-                    : '0.00'} (sobre ventas sin devolución)
-                </p>
+                {mostrarMetricasSobreVentas ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Costo de incidencia por venta: {ventasSinDevolucion > 0
+                      ? `$${(perdidaTotalAjustada / ventasSinDevolucion).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                      : 'No aplica'} (sobre ventas del periodo sin devolucion)
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    En vista por reclamo no se compara contra ventas del periodo, porque la base temporal es operativa y no de compra.
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -754,7 +796,7 @@ export function DevolucionesReporte({ estadisticas }: DevolucionesReporteProps) 
                                           {caso.ventaReferencia ? ` - Venta ${caso.ventaReferencia}` : ''}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
-                                          Reclamo: {formatDate(caso.fechaReclamo)}
+                                          {esVistaCompra ? "Compra" : "Reclamo"}: {formatDate(esVistaCompra ? caso.fechaCompra : caso.fechaReclamo)}
                                         </div>
                                       </div>
                                       <div className="flex flex-wrap gap-1">

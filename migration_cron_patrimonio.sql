@@ -4,11 +4,11 @@
 -- 1. Habilitar extensión pg_cron (requiere permisos de superusuario en Supabase)
 -- Nota: En Supabase, pg_cron ya está habilitado por defecto
 
--- 2. Programar tarea diaria a las 03:00 UTC (00:00 Argentina)
+-- 2. Programar tarea diaria a las 02:59 UTC (23:59 Argentina)
 -- Ajusta la zona horaria según necesites
 SELECT cron.schedule(
   'registrar-patrimonio-diario',  -- nombre del job
-  '0 3 * * *',                   -- cron expression: todos los dias a las 03:00 UTC
+  '59 2 * * *',                  -- cron expression: todos los dias a las 02:59 UTC
   $$
   SELECT registrar_patrimonio_diario();
   $$
@@ -23,7 +23,7 @@ SELECT cron.schedule(
 -- Para desactivar el cron:
 -- SELECT cron.unschedule('registrar-patrimonio-diario');
 
--- Para cambiar el horario (ej: 20:00 hora Argentina):
+-- Para cambiar el horario:
 -- SELECT cron.unschedule('registrar-patrimonio-diario');
--- SELECT cron.schedule('registrar-patrimonio-diario', '0 20 * * *', 'SELECT registrar_patrimonio_diario();');
+-- SELECT cron.schedule('registrar-patrimonio-diario', '59 2 * * *', 'SELECT registrar_patrimonio_diario();');
 

@@ -1,12 +1,25 @@
-import { Suspense } from "react"
 import { getPatrimonioTiempoReal, registrarPatrimonioDiario, registrarPatrimonioRango } from "@/lib/actions/patrimonio"
-import { PatrimonioConciliacion } from "@/components/patrimonio-conciliacion"
 import { PatrimonioEvolucion } from "@/components/patrimonio-evolucion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { addDaysToDateOnly, getTodayDateOnly, parseDateOnly } from "@/lib/date"
 import { RefreshCw, TrendingUp, Wallet, Package } from "lucide-react"
 import { revalidatePath } from "next/cache"
+
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
+type PatrimonioActual = {
+  fecha: string
+  patrimonio_stock: number
+  unidades_stock: number
+  mp_disponible: number
+  mp_a_liquidar: number
+  mp_retenido: number
+  tn_a_liquidar: number
+  total_liquidaciones: number
+  patrimonio_total: number
+}
 
 async function RegistrarPatrimonioButton() {
   async function registrar() {
@@ -19,7 +32,7 @@ async function RegistrarPatrimonioButton() {
     <form action={registrar}>
       <Button type="submit" size="sm" variant="outline">
         <RefreshCw className="mr-2 h-4 w-4" />
-        Registrar Snapshot Hoy
+        Forzar Snapshot Hoy
       </Button>
     </form>
   )
@@ -29,7 +42,8 @@ async function RecalcularPatrimonioButton() {
   async function recalcular() {
     "use server"
 
-    const fin = getTodayDateOnly()
+    const hoy = getTodayDateOnly()
+    const fin = addDaysToDateOnly(hoy, -1)
     const inicio = addDaysToDateOnly(fin, -89)
 
     await registrarPatrimonioRango(inicio, fin)
@@ -50,9 +64,7 @@ function formatearFechaLocal(fecha: string) {
   return parseDateOnly(fecha).toLocaleDateString("es-AR")
 }
 
-async function PatrimonioActualCard() {
-  const { data: patrimonioActual } = await getPatrimonioTiempoReal()
-
+function PatrimonioActualCard({ patrimonioActual }: { patrimonioActual: PatrimonioActual | null | undefined }) {
   if (!patrimonioActual) {
     return (
       <Card>
@@ -83,8 +95,9 @@ async function PatrimonioActualCard() {
           <div className="text-2xl font-bold">
             ${Number(patrimonioActual.patrimonio_total).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
+          <p className="text-xs text-muted-foreground">En vivo al momento</p>
           <p className="text-xs text-muted-foreground">
-            En vivo - Liquidacion {formatearFechaLocal(String(patrimonioActual.fecha))}
+            Última liquidación cargada: {formatearFechaLocal(String(patrimonioActual.fecha))}
           </p>
         </CardContent>
       </Card>
@@ -145,7 +158,9 @@ async function PatrimonioActualCard() {
   )
 }
 
-export default function PatrimonioPage() {
+export default async function PatrimonioPage() {
+  const { data: patrimonioActual } = await getPatrimonioTiempoReal()
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between">
@@ -156,17 +171,8 @@ export default function PatrimonioPage() {
         </div>
       </div>
 
-      <Suspense fallback={<div>Cargando patrimonio actual...</div>}>
-        <PatrimonioActualCard />
-      </Suspense>
-
-      <Suspense fallback={<div>Cargando conciliacion...</div>}>
-        <PatrimonioConciliacion dias={30} />
-      </Suspense>
-
-      <Suspense fallback={<div>Cargando evolucion...</div>}>
-        <PatrimonioEvolucion />
-      </Suspense>
+      <PatrimonioActualCard patrimonioActual={patrimonioActual as PatrimonioActual | null | undefined} />
+      <PatrimonioEvolucion patrimonioActual={patrimonioActual as PatrimonioActual | null | undefined} />
     </div>
   )
 }

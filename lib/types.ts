@@ -168,6 +168,7 @@ export interface EERRData {
   devolucionesPerdidaTotal?: number // Pérdida asociada a productos no recuperados / pérdida total
   devolucionesCount?: number
   porcentajeDevolucionesSobreVentas?: number
+  perdidasPorDevoluciones?: number
   detalleDevoluciones?: any[]
   devolucionesComisionesTotal?: number // total de comisiones que se devolvieron (para mostrar en EERR)
   devolucionesComisionesRecuperadas?: number // comisiones efectivamente recuperadas (comision + IVA + IIBB) por devoluciones reembolsadas
@@ -212,6 +213,8 @@ export interface EERRData {
   otrosIngresos: number
   resultadoOperativo: number
   gastosPersonales?: number
+  ingresosPersonales?: number
+  detalleIngresosPersonales?: any[]
   margenFinalConPersonales?: number
 }
 

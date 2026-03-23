@@ -16,6 +16,11 @@ const canalOptions = [
   { value: "ML", label: "Mercado Libre" },
 ]
 
+const devolucionesVistaOptions = [
+  { value: "reclamo", label: "Fecha de reclamo" },
+  { value: "compra", label: "Fecha de compra" },
+]
+
 const periodosPreset = [
   { label: "Últimos 7 días", days: 7 },
   { label: "Últimos 30 días", days: 30 },
@@ -30,7 +35,8 @@ export function EERRFilters() {
   const [filters, setFilters] = useState({
     fechaDesde: searchParams.get("fechaDesde") || format(subDays(new Date(), 30), "yyyy-MM-dd"),
     fechaHasta: searchParams.get("fechaHasta") || format(new Date(), "yyyy-MM-dd"),
-  canal: searchParams.get("canal") || "General",
+    canal: searchParams.get("canal") || "General",
+    devolucionesVista: searchParams.get("devolucionesVista") || "reclamo",
   })
 
   const applyFilters = () => {
@@ -97,7 +103,7 @@ export function EERRFilters() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label htmlFor="fechaDesde">Fecha Desde</Label>
             <Input
@@ -126,6 +132,25 @@ export function EERRFilters() {
               </SelectTrigger>
               <SelectContent>
                 {canalOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Devoluciones por</Label>
+            <Select
+              value={filters.devolucionesVista}
+              onValueChange={(value) => setFilters({ ...filters, devolucionesVista: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar vista" />
+              </SelectTrigger>
+              <SelectContent>
+                {devolucionesVistaOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

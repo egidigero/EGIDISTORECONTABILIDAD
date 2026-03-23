@@ -8,6 +8,8 @@ import { calcularVenta, getTarifa } from "@/lib/calculos"
 import { calcularPerdidaTotalAjustada } from "@/lib/devoluciones-loss"
 import { calcularCostoEnvioTotalVenta, GASTO_ENVIO_TN_CATEGORY } from "@/lib/envios"
 
+export type EERRDevolucionesVista = "reclamo" | "compra"
+
 function normalizeText(value: string | null | undefined): string {
   return String(value || "")
     .normalize("NFD")
@@ -20,16 +22,18 @@ export async function calcularEERR(
   fechaDesde: Date,
   fechaHasta: Date,
   canal?: Plataforma | "General",
+  devolucionesVista: EERRDevolucionesVista = "reclamo",
 ): Promise<EERRData> {
   try {
+    const devolucionesDateField = devolucionesVista === "compra" ? "fecha_compra" : "fecha_reclamo"
     // ==== Devoluciones: primero obtener devoluciones finalizadas en el período
     // Queremos identificar las ventas que fueron reembolsadas para EXCLUIRLAS
     // completamente del cálculo de ventas/comisiones/envíos del EERR.
     let devolucionesQueryForExclusion = supabase
       .from('devoluciones')
-      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma, fecha_reclamo')
-      .gte('fecha_reclamo', fechaDesde.toISOString())
-      .lte('fecha_reclamo', fechaHasta.toISOString())
+      .select('id, venta_id, tipo_resolucion, estado, monto_reembolsado, plataforma, fecha_reclamo, fecha_compra')
+      .gte(devolucionesDateField, fechaDesde.toISOString())
+      .lte(devolucionesDateField, fechaHasta.toISOString())
 
     if (canal && canal !== 'General') {
       devolucionesQueryForExclusion = devolucionesQueryForExclusion.eq('plataforma', canal)
@@ -303,23 +307,31 @@ export async function calcularEERR(
     margenFinalConPersonales = Math.round((margenNetoNegocioBase - gastosPersonales + totalIngresosPersonales) * 100) / 100;
   }
 
-    // ==== Devoluciones: leer directamente la tabla `devoluciones` por fecha_reclamo ====
-    // Las devoluciones impactan en el mes en que se reclamaron (fecha_reclamo)
+    // ==== Devoluciones: leer directamente la tabla `devoluciones` por el campo temporal elegido ====
     let devoluciones: any[] = []
     try {
       let query = supabase
         .from('devoluciones')
         .select('*')
-        .gte('fecha_reclamo', fechaDesde.toISOString())
-        .lte('fecha_reclamo', fechaHasta.toISOString())
+        .gte(devolucionesDateField, fechaDesde.toISOString())
+        .lte(devolucionesDateField, fechaHasta.toISOString())
 
       if (canal && canal !== 'General') {
         query = query.eq('plataforma', canal)
       }
 
-  const { data, error: err } = await query
-  try { console.log('EERR debug - devoluciones por fecha_reclamo:', { desde: fechaDesde.toISOString(), hasta: fechaHasta.toISOString(), canal: canal ?? 'General', count: Array.isArray(data) ? data.length : 0, error: err ? JSON.stringify(err) : null }) } catch (e) {}
-  if (!err && Array.isArray(data)) devoluciones = data
+      const { data, error: err } = await query
+      try {
+        console.log('EERR debug - devoluciones por fecha elegida:', {
+          campo: devolucionesDateField,
+          desde: fechaDesde.toISOString(),
+          hasta: fechaHasta.toISOString(),
+          canal: canal ?? 'General',
+          count: Array.isArray(data) ? data.length : 0,
+          error: err ? JSON.stringify(err) : null,
+        })
+      } catch (e) {}
+      if (!err && Array.isArray(data)) devoluciones = data
     } catch (err) {
       // ignore
     }
@@ -534,10 +546,15 @@ export async function calcularEERR(
 
 }
 
-export async function getResumenPorPeriodo(fechaDesde: Date, fechaHasta: Date, canal?: Plataforma | "General") {
+export async function getResumenPorPeriodo(
+  fechaDesde: Date,
+  fechaHasta: Date,
+  canal?: Plataforma | "General",
+  devolucionesVista: EERRDevolucionesVista = "reclamo",
+) {
   try {
     // Calcular EERR para el período actual
-    const eerrActual = await calcularEERR(fechaDesde, fechaHasta, canal)
+    const eerrActual = await calcularEERR(fechaDesde, fechaHasta, canal, devolucionesVista)
 
     // Calcular período anterior (mismo rango de días)
     const diasDiferencia = Math.ceil((fechaHasta.getTime() - fechaDesde.getTime()) / (1000 * 60 * 60 * 24))
@@ -546,7 +563,7 @@ export async function getResumenPorPeriodo(fechaDesde: Date, fechaHasta: Date, c
     const fechaHastaAnterior = new Date(fechaDesde)
     fechaHastaAnterior.setDate(fechaHastaAnterior.getDate() - 1)
 
-    const eerrAnterior = await calcularEERR(fechaDesdeAnterior, fechaHastaAnterior, canal)
+    const eerrAnterior = await calcularEERR(fechaDesdeAnterior, fechaHastaAnterior, canal, devolucionesVista)
 
     return {
       actual: eerrActual,

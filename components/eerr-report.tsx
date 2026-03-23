@@ -49,6 +49,10 @@ const ENVIO_DEVOLUCIONES_CATEGORY = "Gastos del negocio - Envios devoluciones"
 const PAGO_IMPORTACION_CATEGORY = "Pago de Importacion"
 const DAY_MS = 24 * 60 * 60 * 1000
 
+const startOfLocalMonth = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0)
+
+const endOfLocalDay = (date: Date): Date => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+
 const toNumber = (value: unknown): number => {
   const n = Number(value ?? 0)
   return Number.isFinite(n) ? n : 0
@@ -155,10 +159,21 @@ interface TopSkuRow {
   perdida: number
 }
 
+interface StockDrainageProductRow {
+  productoId: string
+  label: string
+  sku: string
+  stockActualUnidades: number
+  stockViejoUnidades: number
+  stockViejoInmovilizado: number
+  pctViejoSobreStockActual: number
+}
+
 interface StockDrainageMetrics {
   stockViejoInmovilizado: number
+  unidadesViejasInmovilizadas: number
   pctDrenadoMes: number
-  margenPromedioLiquidacionPct: number
+  detalleProductos: StockDrainageProductRow[]
 }
 
 const calculateVariationPct = (current: number, previous: number): number | null => {
@@ -361,23 +376,33 @@ const buildTopSkuRows = (
 
 const STOCK_OLD_DAYS = 90
 
-const getStockDrainageMetrics = async (
-  fechaDesde: Date,
-  fechaHasta: Date,
-  detalleVentas: any[],
-): Promise<StockDrainageMetrics> => {
-  const startSnapshotTs = fechaDesde.getTime() - 1
-  const endSnapshotTs = fechaHasta.getTime()
-  const cutoffStartTs = startSnapshotTs - STOCK_OLD_DAYS * DAY_MS
-  const cutoffEndTs = endSnapshotTs - STOCK_OLD_DAYS * DAY_MS
+interface StockLot {
+  remaining: number
+  entryTs: number
+  oldAtMonthStart: boolean
+}
+
+interface StockProductState {
+  lots: StockLot[]
+  oldUnitsAtMonthStart: number
+  drainedOldUnitsMonth: number
+}
+
+const getStockDrainageMetrics = async (fechaHasta: Date): Promise<StockDrainageMetrics> => {
+  const fechaCierre = endOfLocalDay(fechaHasta)
+  const cierreTs = fechaCierre.getTime()
+  const monthStart = startOfLocalMonth(fechaCierre)
+  const monthStartTs = monthStart.getTime()
+  const cutoffMonthStartTs = monthStartTs - STOCK_OLD_DAYS * DAY_MS
+  const cutoffEndTs = cierreTs - STOCK_OLD_DAYS * DAY_MS
 
   const { data: productosData, error: productosError } = await supabase
     .from("productos")
-    .select("id,costoUnitarioARS")
+    .select("id,modelo,sku,costoUnitarioARS")
 
   if (productosError) {
     console.warn("No se pudo calcular drenaje de stock: error leyendo productos", productosError)
-    return { stockViejoInmovilizado: 0, pctDrenadoMes: 0, margenPromedioLiquidacionPct: 0 }
+    return { stockViejoInmovilizado: 0, unidadesViejasInmovilizadas: 0, pctDrenadoMes: 0, detalleProductos: [] }
   }
 
   const movimientos: any[] = []
@@ -387,13 +412,13 @@ const getStockDrainageMetrics = async (
     const { data, error } = await supabase
       .from("movimientos_stock")
       .select("producto_id,tipo,cantidad,fecha")
-      .lte("fecha", fechaHasta.toISOString())
+      .lte("fecha", fechaCierre.toISOString())
       .order("fecha", { ascending: true })
       .range(from, from + pageSize - 1)
 
     if (error) {
       console.warn("No se pudo calcular drenaje de stock: error leyendo movimientos_stock", error)
-      return { stockViejoInmovilizado: 0, pctDrenadoMes: 0, margenPromedioLiquidacionPct: 0 }
+      return { stockViejoInmovilizado: 0, unidadesViejasInmovilizadas: 0, pctDrenadoMes: 0, detalleProductos: [] }
     }
 
     if (!data || data.length === 0) break
@@ -402,20 +427,41 @@ const getStockDrainageMetrics = async (
     from += pageSize
   }
 
-  const costByProduct = new Map<string, number>()
+  const productMeta = new Map<string, { label: string; sku: string; cost: number }>()
   for (const producto of productosData || []) {
     const pid = String((producto as any)?.id ?? "").trim()
     if (!pid) continue
-    costByProduct.set(pid, toNumber((producto as any)?.costoUnitarioARS))
+    const sku = getAlias(producto, ["sku"])
+    const label = getAlias(producto, ["modelo"]) || sku || pid
+    productMeta.set(pid, {
+      label,
+      sku,
+      cost: toNumber((producto as any)?.costoUnitarioARS),
+    })
   }
 
-  const stockStats = new Map<string, { stockStart: number; recentStart: number; stockEnd: number; recentEnd: number }>()
-  const ensureStats = (pid: string) => {
-    const current = stockStats.get(pid)
+  const productStates = new Map<string, StockProductState>()
+  const ensureState = (pid: string) => {
+    const current = productStates.get(pid)
     if (current) return current
-    const created = { stockStart: 0, recentStart: 0, stockEnd: 0, recentEnd: 0 }
-    stockStats.set(pid, created)
+    const created: StockProductState = { lots: [], oldUnitsAtMonthStart: 0, drainedOldUnitsMonth: 0 }
+    productStates.set(pid, created)
     return created
+  }
+
+  let monthStartMarked = false
+  const markMonthStart = () => {
+    if (monthStartMarked) return
+    for (const state of productStates.values()) {
+      let oldUnitsAtMonthStart = 0
+      for (const lot of state.lots) {
+        const isOldAtMonthStart = lot.entryTs <= cutoffMonthStartTs
+        lot.oldAtMonthStart = isOldAtMonthStart
+        if (isOldAtMonthStart) oldUnitsAtMonthStart += lot.remaining
+      }
+      state.oldUnitsAtMonthStart = round2(oldUnitsAtMonthStart)
+    }
+    monthStartMarked = true
   }
 
   for (const mov of movimientos) {
@@ -426,70 +472,88 @@ const getStockDrainageMetrics = async (
     if (qty <= 0 || (tipo !== "entrada" && tipo !== "salida")) continue
     const ts = new Date(mov?.fecha).getTime()
     if (Number.isNaN(ts)) continue
-    const delta = tipo === "salida" ? -qty : qty
-    const stats = ensureStats(pid)
 
-    if (ts <= startSnapshotTs) {
-      stats.stockStart += delta
-      if (tipo === "entrada" && ts > cutoffStartTs) stats.recentStart += qty
+    if (!monthStartMarked && ts >= monthStartTs) {
+      markMonthStart()
     }
-    if (ts <= endSnapshotTs) {
-      stats.stockEnd += delta
-      if (tipo === "entrada" && ts > cutoffEndTs) stats.recentEnd += qty
+
+    const state = ensureState(pid)
+
+    if (tipo === "entrada") {
+      state.lots.push({
+        remaining: qty,
+        entryTs: ts,
+        oldAtMonthStart: false,
+      })
+      continue
+    }
+
+    let remainingToConsume = qty
+    while (remainingToConsume > 0 && state.lots.length > 0) {
+      const lot = state.lots[0]
+      const consumed = Math.min(lot.remaining, remainingToConsume)
+
+      if (monthStartMarked && lot.oldAtMonthStart) {
+        state.drainedOldUnitsMonth = round2(state.drainedOldUnitsMonth + consumed)
+      }
+
+      lot.remaining = round2(lot.remaining - consumed)
+      remainingToConsume = round2(remainingToConsume - consumed)
+      if (lot.remaining <= 0.000001) {
+        state.lots.shift()
+      }
     }
   }
 
-  let oldValueStart = 0
+  markMonthStart()
+
+  let oldValueMonthStart = 0
   let oldValueEnd = 0
-  const drainedUnitsByProduct = new Map<string, number>()
+  let oldUnitsEnd = 0
+  let drainedOldValueMonth = 0
 
-  for (const [pid, cost] of costByProduct.entries()) {
-    const stats = stockStats.get(pid) ?? { stockStart: 0, recentStart: 0, stockEnd: 0, recentEnd: 0 }
-    const oldStartUnits = Math.max(0, stats.stockStart - stats.recentStart)
-    const oldEndUnits = Math.max(0, stats.stockEnd - stats.recentEnd)
-    const drainedUnits = Math.max(0, oldStartUnits - oldEndUnits)
+  const detalleProductos: StockDrainageProductRow[] = []
+  const allProductIds = new Set<string>([...productMeta.keys(), ...productStates.keys()])
+  for (const pid of allProductIds) {
+    const state = productStates.get(pid) ?? { lots: [], oldUnitsAtMonthStart: 0, drainedOldUnitsMonth: 0 }
+    const meta = productMeta.get(pid) ?? { label: pid, sku: "", cost: 0 }
+    const stockActualUnidades = round2(state.lots.reduce((acc, lot) => acc + lot.remaining, 0))
+    const stockViejoUnidades = round2(
+      state.lots.reduce((acc, lot) => acc + (lot.entryTs <= cutoffEndTs ? lot.remaining : 0), 0),
+    )
+    const stockViejoInmovilizado = round2(stockViejoUnidades * meta.cost)
+    const pctViejoSobreStockActual =
+      stockActualUnidades > 0 ? round2((stockViejoUnidades / stockActualUnidades) * 100) : 0
 
-    oldValueStart += oldStartUnits * cost
-    oldValueEnd += oldEndUnits * cost
-    if (drainedUnits > 0) drainedUnitsByProduct.set(pid, drainedUnits)
+    oldValueMonthStart += round2(state.oldUnitsAtMonthStart * meta.cost)
+    drainedOldValueMonth += round2(Math.min(state.drainedOldUnitsMonth, state.oldUnitsAtMonthStart) * meta.cost)
+    oldValueEnd += stockViejoInmovilizado
+    oldUnitsEnd += stockViejoUnidades
+
+    if (stockViejoUnidades <= 0) continue
+    detalleProductos.push({
+      productoId: pid,
+      label: meta.label,
+      sku: meta.sku,
+      stockActualUnidades,
+      stockViejoUnidades,
+      stockViejoInmovilizado,
+      pctViejoSobreStockActual,
+    })
   }
 
-  const pctDrenadoMes = oldValueStart > 0 ? round2((Math.max(0, oldValueStart - oldValueEnd) / oldValueStart) * 100) : 0
-
-  const ventasByProduct = new Map<string, { count: number; revenue: number; margin: number }>()
-  for (const venta of Array.isArray(detalleVentas) ? detalleVentas : []) {
-    const pid = String(
-      venta?.productoId ?? venta?.producto_id ?? venta?.producto?.id ?? venta?.productos?.id ?? "",
-    ).trim()
-    if (!pid) continue
-    const revenue = toNumber(venta?.pvBruto ?? venta?.pv_bruto)
-    const margin = toNumber(venta?.ingresoMargen ?? venta?.ingreso_margen)
-    const current = ventasByProduct.get(pid) ?? { count: 0, revenue: 0, margin: 0 }
-    current.count += 1
-    current.revenue += revenue
-    current.margin += margin
-    ventasByProduct.set(pid, current)
-  }
-
-  let liquidationRevenue = 0
-  let liquidationMargin = 0
-  for (const [pid, drainedUnits] of drainedUnitsByProduct.entries()) {
-    const sales = ventasByProduct.get(pid)
-    if (!sales || sales.count <= 0) continue
-    const unitsUsed = Math.min(drainedUnits, sales.count)
-    const avgRevenue = sales.revenue / sales.count
-    const avgMargin = sales.margin / sales.count
-    liquidationRevenue += avgRevenue * unitsUsed
-    liquidationMargin += avgMargin * unitsUsed
-  }
-
-  const margenPromedioLiquidacionPct =
-    liquidationRevenue > 0 ? round2((liquidationMargin / liquidationRevenue) * 100) : 0
+  const pctDrenadoMes = oldValueMonthStart > 0 ? round2((drainedOldValueMonth / oldValueMonthStart) * 100) : 0
 
   return {
     stockViejoInmovilizado: round2(oldValueEnd),
+    unidadesViejasInmovilizadas: round2(oldUnitsEnd),
     pctDrenadoMes,
-    margenPromedioLiquidacionPct,
+    detalleProductos: detalleProductos.sort((a, b) => {
+      if (b.stockViejoInmovilizado !== a.stockViejoInmovilizado) {
+        return b.stockViejoInmovilizado - a.stockViejoInmovilizado
+      }
+      return b.stockViejoUnidades - a.stockViejoUnidades
+    }),
   }
 }
 
@@ -498,12 +562,15 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const fechaDesdeParam = getFirstParam(searchParams.fechaDesde)
   const fechaHastaParam = getFirstParam(searchParams.fechaHasta)
   const canalParam = getFirstParam(searchParams.canal)
+  const devolucionesVistaParam = getFirstParam(searchParams.devolucionesVista)
 
   const parsedDesde = parseDateOrFallback(fechaDesdeParam, new Date(Date.now() - 30 * DAY_MS))
   const parsedHasta = parseDateOrFallback(fechaHastaParam, new Date())
   const fechaDesde = parsedDesde.getTime() <= parsedHasta.getTime() ? parsedDesde : parsedHasta
   const fechaHasta = parsedDesde.getTime() <= parsedHasta.getTime() ? parsedHasta : parsedDesde
   const canal = canalParam && canalParam !== "all" ? (canalParam as Plataforma | "General") : undefined
+  const devolucionesVista = devolucionesVistaParam === "compra" ? "compra" : "reclamo"
+  const devolucionesVistaLabel = devolucionesVista === "compra" ? "fecha de compra" : "fecha de reclamo"
 
   const { fechaDesdeAnterior, fechaHastaAnterior } = getPreviousRange(fechaDesde, fechaHasta)
 
@@ -515,8 +582,8 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     detalleGastosIngresos,
     detalleGastosIngresosAnterior,
   ] = await Promise.all([
-    calcularEERR(fechaDesde, fechaHasta, canal),
-    calcularEERR(fechaDesdeAnterior, fechaHastaAnterior, canal),
+    calcularEERR(fechaDesde, fechaHasta, canal, devolucionesVista),
+    calcularEERR(fechaDesdeAnterior, fechaHastaAnterior, canal, devolucionesVista),
     getDetalleVentas(fechaDesde, fechaHasta, canal),
     getDetalleVentas(fechaDesdeAnterior, fechaHastaAnterior, canal),
     getDetalleGastosIngresos(fechaDesde, fechaHasta, canal),
@@ -644,12 +711,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
     detalleGastosIngresosAnterior,
     cantidadVentasAnterior,
   )
-  const stockDrainageActual = await getStockDrainageMetrics(fechaDesde, fechaHasta, detalleVentas)
-  const stockDrainageAnterior = await getStockDrainageMetrics(
-    fechaDesdeAnterior,
-    fechaHastaAnterior,
-    detalleVentasAnterior,
-  )
+  const stockDrainageActual = await getStockDrainageMetrics(fechaHasta)
   const topSkuRows = buildTopSkuRows(devoluciones, detalleVentas, ventaIdToModelFallback)
   const marginStatus = getMarginStatus(metricsActual.margenOperativoPct)
   const escalaBadge = getEscalaBadge(metricsActual.margenOperativoPct)
@@ -668,17 +730,6 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
   const trendCostosPlataforma = buildTrend(metricsActual.costosPlataformaPct, metricsAnterior.costosPlataformaPct, false)
   const trendDevoluciones = buildTrend(metricsActual.devolucionesPctSobreVentas, metricsAnterior.devolucionesPctSobreVentas, false)
   const trendDevolucionesTasa = buildTrend(metricsActual.devolucionesTasaPct, metricsAnterior.devolucionesTasaPct, false)
-  const trendStockViejo = buildTrend(
-    stockDrainageActual.stockViejoInmovilizado,
-    stockDrainageAnterior.stockViejoInmovilizado,
-    false,
-  )
-  const trendDrenajeMes = buildTrend(stockDrainageActual.pctDrenadoMes, stockDrainageAnterior.pctDrenadoMes, true)
-  const trendMargenLiquidacion = buildTrend(
-    stockDrainageActual.margenPromedioLiquidacionPct,
-    stockDrainageAnterior.margenPromedioLiquidacionPct,
-    true,
-  )
 
   const objetivosEnRiesgo: string[] = []
   if (metricsActual.margenOperativoPct < 10) objetivosEnRiesgo.push("Margen neto")
@@ -687,6 +738,10 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
   const formatPercent = (value: number) => `${value.toFixed(1)}%`
   const formatRatio = (value: number) => `${value.toFixed(2)}x`
+  const formatUnits = (value: number) =>
+    value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+  const stockDrainageMonthLabel = fechaHasta.toLocaleDateString("es-AR", { month: "long", year: "numeric" })
+  const stockDrainageRows = stockDrainageActual.detalleProductos.slice(0, 8)
 
   const comparisonMetrics: MetricComparison[] = [
     {
@@ -800,6 +855,21 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-700" />
+            <span className="text-sm font-medium">Vista de devoluciones en EERR</span>
+            <Badge variant={devolucionesVista === "compra" ? "default" : "secondary"}>
+              {devolucionesVista === "compra" ? "Fecha de compra" : "Fecha de reclamo"}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Solo cambia la imputacion temporal de devoluciones. Ventas, gastos, publicidad y el resto del EERR siguen con el mismo periodo operativo.
+          </p>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <ROASAnalysisModal
           ventasNetas={ventasNetas}
@@ -1070,33 +1140,58 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             Drenaje de stock
           </CardTitle>
           <CardDescription>
-            Objetivo #3: antigüedad &gt;= {STOCK_OLD_DAYS} días (estimación FIFO sobre movimientos de stock).
+            {`Objetivo #3: stock con mas de ${STOCK_OLD_DAYS} dias al cierre. Un mismo producto puede tener solo una parte vieja.`}
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-            <div className="text-sm font-medium">$ stock viejo inmovilizado</div>
-            <div className="text-2xl font-semibold">{formatCurrency(stockDrainageActual.stockViejoInmovilizado)}</div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{`Anterior: ${formatCurrency(stockDrainageAnterior.stockViejoInmovilizado)}`}</span>
-              {renderTrend(trendStockViejo)}
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
+              <div className="text-sm font-medium">$ stock viejo inmovilizado</div>
+              <div className="text-2xl font-semibold">{formatCurrency(stockDrainageActual.stockViejoInmovilizado)}</div>
+              <div className="text-xs text-muted-foreground">Valuado a costo actual solo para la porcion +90 dias.</div>
+            </div>
+            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
+              <div className="text-sm font-medium">Unidades viejas inmovilizadas</div>
+              <div className="text-2xl font-semibold">{`${formatUnits(stockDrainageActual.unidadesViejasInmovilizadas)}u`}</div>
+              <div className="text-xs text-muted-foreground">Solo cuenta unidades que siguen en stock con antiguedad mayor a 90 dias.</div>
+            </div>
+            <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
+              <div className="text-sm font-medium">% drenado en el mes</div>
+              <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.pctDrenadoMes)}</div>
+              <div className="text-xs text-muted-foreground">{`Sobre el stock +90 dias que existia al arrancar ${stockDrainageMonthLabel}.`}</div>
             </div>
           </div>
-          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-            <div className="text-sm font-medium">% drenado en el mes</div>
-            <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.pctDrenadoMes)}</div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(stockDrainageAnterior.pctDrenadoMes)}`}</span>
-              {renderTrend(trendDrenajeMes)}
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Detalle por producto</div>
+                <div className="text-xs text-muted-foreground">Cada fila muestra solo la parte vieja del stock de ese producto.</div>
+              </div>
+              <div className="text-xs text-muted-foreground">{`${stockDrainageActual.detalleProductos.length} productos con stock +90 dias`}</div>
             </div>
-          </div>
-          <div className="rounded-lg border p-4 bg-slate-50/80 space-y-2">
-            <div className="text-sm font-medium">Margen promedio de liquidacion</div>
-            <div className="text-2xl font-semibold">{formatPercent(stockDrainageActual.margenPromedioLiquidacionPct)}</div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(stockDrainageAnterior.margenPromedioLiquidacionPct)}`}</span>
-              {renderTrend(trendMargenLiquidacion)}
-            </div>
+
+            {stockDrainageRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Sin stock viejo inmovilizado al cierre del periodo.</div>
+            ) : (
+              <div className="space-y-2">
+                {stockDrainageRows.map((row) => (
+                  <div key={row.productoId} className="flex items-center justify-between gap-4 rounded-md bg-slate-50/80 p-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{row.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.sku ? `SKU ${row.sku} - ` : ""}
+                        {`${formatUnits(row.stockViejoUnidades)}u viejas de ${formatUnits(row.stockActualUnidades)}u en stock`}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{formatCurrency(row.stockViejoInmovilizado)}</div>
+                      <div className="text-xs text-muted-foreground">{`${formatPercent(row.pctViejoSobreStockActual)} del stock actual`}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1107,7 +1202,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
             <AlertTriangle className="h-5 w-5 text-amber-700" />
             Devoluciones
           </CardTitle>
-          <CardDescription>Objetivo #4</CardDescription>
+          <CardDescription>{`Objetivo #4 · vista por ${devolucionesVistaLabel}`}</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-lg border p-4 space-y-2">
@@ -1124,6 +1219,7 @@ export async function EERRReport({ searchParams: searchParamsPromise }: EERRRepo
               <Badge variant={devolucionesStatus.variant}>{`${devolucionesStatus.emoji} ${devolucionesStatus.label}`}</Badge>
               <span className="text-xs text-muted-foreground">{`${devoluciones.length} devoluciones sobre ${Array.isArray(detalleVentas) ? detalleVentas.length : 0} ventas`}</span>
             </div>
+            <div className="text-xs text-muted-foreground">{`Base temporal devoluciones: ${devolucionesVistaLabel}`}</div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{`Anterior: ${formatPercent(metricsAnterior.devolucionesTasaPct)}`}</span>
               {renderTrend(trendDevolucionesTasa)}

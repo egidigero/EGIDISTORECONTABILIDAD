@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/patrimonio",
-      "schedule": "0 3 * * *"
+      "schedule": "59 2 * * *"
     }
   ]
 }
