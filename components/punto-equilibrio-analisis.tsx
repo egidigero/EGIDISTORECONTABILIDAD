@@ -9,7 +9,9 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 
 interface PuntoEquilibrioAnalisisProps {
   precioVenta: number
+  margenContribucionUnitario: number
   margenOperativoUnitario: number
+  roasActual?: number
   costosFijosSugeridos?: number
   unidadesSugeridas?: number
   periodoLabel?: string
@@ -22,6 +24,7 @@ interface EscenarioEscala {
   margenNetoPorUnidad: number
   resultadoTotal: number
   margenPctSobreVenta: number
+  roasNegocioBE: number | null
 }
 
 function round2(value: number) {
@@ -37,7 +40,9 @@ function formatCurrency(value: number) {
 
 export function PuntoEquilibrioAnalisis({
   precioVenta,
+  margenContribucionUnitario,
   margenOperativoUnitario,
+  roasActual = 0,
   costosFijosSugeridos,
   unidadesSugeridas,
   periodoLabel = "los ultimos 30 dias",
@@ -81,6 +86,10 @@ export function PuntoEquilibrioAnalisis({
     const costoFijoPorUnidad = round2(costosFijosPeriodo / unidadesNormalizadas)
     const margenNetoPorUnidad = round2(resultadoTotal / unidadesNormalizadas)
     const margenPctSobreVenta = ingresos > 0 ? round2((resultadoTotal / ingresos) * 100) : 0
+    const baseNegocioAntesAds = round2(margenContribucionUnitario * unidadesNormalizadas - costosFijosPeriodo)
+    const roasNegocioBE = ingresos > 0 && baseNegocioAntesAds > 0
+      ? round2(ingresos / baseNegocioAntesAds)
+      : null
 
     return {
       unidades: unidadesNormalizadas,
@@ -89,6 +98,7 @@ export function PuntoEquilibrioAnalisis({
       margenNetoPorUnidad,
       resultadoTotal,
       margenPctSobreVenta,
+      roasNegocioBE,
     }
   }
 
@@ -236,6 +246,27 @@ export function PuntoEquilibrioAnalisis({
           </div>
         </div>
 
+        {costosFijosActivos && (
+          <div className="rounded-xl border bg-white/90 p-4 text-sm">
+            <div className="flex flex-wrap items-center gap-4">
+              <div>
+                <span className="text-muted-foreground">ROAS actual:</span>{" "}
+                <span className={`font-semibold ${roasActual > 0 ? "text-violet-700" : "text-muted-foreground"}`}>
+                  {roasActual > 0 ? `${roasActual.toFixed(2)}x` : "-"}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">ROAS negocio BE con {unidadesReferencia} u.:</span>{" "}
+                <span className="font-semibold text-sky-700">
+                  {escenarios.find((escenario) => escenario.unidades === unidadesReferencia)?.roasNegocioBE
+                    ? `${escenarios.find((escenario) => escenario.unidades === unidadesReferencia)?.roasNegocioBE?.toFixed(2)}x`
+                    : "No cubre estructura"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!costosFijosActivos && (
           <div className="rounded-xl border border-dashed border-sky-300 bg-white/80 p-4 text-sm text-sky-800">
             El punto de equilibrio necesita un costo fijo total del periodo. Si activas el analisis de ultimos 30 dias,
@@ -258,7 +289,7 @@ export function PuntoEquilibrioAnalisis({
                 <div>
                   <div className="font-semibold">Resultado total segun unidades</div>
                   <div className="text-xs text-muted-foreground">
-                    La recta cruza cero en el punto de equilibrio y despues el margen crece con cada unidad adicional.
+                    Azul: resultado total. Violeta: ROAS negocio BE. La linea punteada muestra tu ROAS actual.
                   </div>
                 </div>
               </div>
@@ -269,9 +300,21 @@ export function PuntoEquilibrioAnalisis({
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="unidades" type="number" tickFormatter={(value) => `${value}`} />
                     <YAxis tickFormatter={(value) => `$${formatCurrency(Number(value))}`} width={90} />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tickFormatter={(value) => `${Number(value).toFixed(1)}x`}
+                      width={60}
+                    />
                     <Tooltip
                       formatter={(value: number, name: string) => {
                         if (name === "resultadoTotal") return [`$${formatCurrency(Number(value))}`, "Resultado total"]
+                        if (name === "roasNegocioBE") {
+                          return [
+                            value ? `${Number(value).toFixed(2)}x` : "No cubre estructura",
+                            "ROAS negocio BE",
+                          ]
+                        }
                         return [value, name]
                       }}
                       labelFormatter={(value) => `${value} unidades`}
@@ -291,12 +334,31 @@ export function PuntoEquilibrioAnalisis({
                         label={{ value: `BE ${puntoEquilibrioExacto.toFixed(1)} u.`, position: "top" }}
                       />
                     )}
+                    {roasActual > 0 && (
+                      <ReferenceLine
+                        yAxisId="right"
+                        y={roasActual}
+                        stroke="#7c3aed"
+                        strokeDasharray="4 4"
+                        label={{ value: `ROAS actual ${roasActual.toFixed(2)}x`, position: "insideTopRight" }}
+                      />
+                    )}
                     <Line
                       type="monotone"
                       dataKey="resultadoTotal"
                       stroke="#0284c7"
                       strokeWidth={3}
                       dot={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="roasNegocioBE"
+                      stroke="#7c3aed"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      dot={false}
+                      connectNulls={false}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -343,6 +405,7 @@ export function PuntoEquilibrioAnalisis({
                         <div>Margen/u.: ${formatCurrency(escenario.margenNetoPorUnidad)}</div>
                         <div>Ingresos: ${formatCurrency(escenario.ingresos)}</div>
                         <div>{escenario.margenPctSobreVenta.toFixed(1)}% s/venta</div>
+                        <div>ROAS negocio: {escenario.roasNegocioBE ? `${escenario.roasNegocioBE.toFixed(2)}x` : "No cubre estructura"}</div>
                       </div>
                     </div>
                   )

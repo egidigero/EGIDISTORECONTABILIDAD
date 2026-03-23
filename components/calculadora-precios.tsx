@@ -1308,7 +1308,9 @@ export function CalculadoraPrecios({
             {mostrarPuntoEquilibrio && (
               <PuntoEquilibrioAnalisis
                 precioVenta={resultado.precio}
+                margenContribucionUnitario={resultado.margenContribucion}
                 margenOperativoUnitario={resultado.margenOperativo}
+                roasActual={parametros.roas}
                 costosFijosSugeridos={datosReales30Dias?.totalGastosNegocio || costosEstimados?.totalGastosNegocio}
                 unidadesSugeridas={
                   datosReales30Dias?.unidadesVendidasNoDevueltas ||
